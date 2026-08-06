@@ -87,6 +87,7 @@ export default function DesktopPage(props: Props): React.JSX.Element {
   const [groupPrompt, setGroupPrompt] = useState<
     { mode: 'create' } | { mode: 'rename'; group: Group } | null
   >(null)
+  const gridRef = useRef<HTMLDivElement>(null)
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -307,6 +308,38 @@ export default function DesktopPage(props: Props): React.JSX.Element {
    * The grid gaps themselves receive no drag events, so the edge bands are the only
    * way an insertion point between two tiles can be expressed at all.
    */
+  /**
+   * Work out where a drop in the gaps between tiles belongs.
+   *
+   * The grid gaps are part of the page, not of any tile, yet they are exactly where
+   * one aims when placing something *between* two tiles. Without this the drop fell
+   * through to the page handler and the tile was flung to the end of the list.
+   */
+  const nearestInsertion = (x: number, y: number): { id: string; hint: DropHint } | null => {
+    const grid = gridRef.current
+    if (!grid) return null
+    const items = [...grid.querySelectorAll<HTMLElement>(':scope > .tile[data-game-id]')].map(
+      (el) => ({ id: el.dataset.gameId as string, rect: el.getBoundingClientRect() })
+    )
+    if (items.length === 0) return null
+
+    // Pick the row whose vertical centre is closest, then the slot within it.
+    let row = items[0]
+    let best = Infinity
+    for (const item of items) {
+      const dy = Math.abs(item.rect.top + item.rect.height / 2 - y)
+      if (dy < best) {
+        best = dy
+        row = item
+      }
+    }
+    const sameRow = items.filter((i) => Math.abs(i.rect.top - row.rect.top) < 4)
+    for (const item of sameRow) {
+      if (x < item.rect.left + item.rect.width / 2) return { id: item.id, hint: 'before' }
+    }
+    return { id: sameRow[sameRow.length - 1].id, hint: 'after' }
+  }
+
   const hintFor = (e: React.DragEvent, canGroup: boolean): DropHint => {
     const rect = e.currentTarget.getBoundingClientRect()
     const ratio = (e.clientX - rect.left) / rect.width
@@ -342,13 +375,18 @@ export default function DesktopPage(props: Props): React.JSX.Element {
       }}
       onDragOver={(e) => {
         e.preventDefault()
+        // Handled here, so the page-level gap logic does not also run for this event.
+        e.stopPropagation()
         if (!dragId || dragId === game.id) return
         const source = games.find((g) => g.id === dragId)
         // Merging only applies between siblings in the grouped view.
         const canGroup = useGroups && source?.groupId === game.groupId
         setDrop({ id: game.id, hint: hintFor(e, canGroup) })
       }}
-      onDragLeave={() => setDrop((cur) => (cur?.id === game.id ? null : cur))}
+      onDragLeave={(e) => {
+        e.stopPropagation()
+        setDrop((cur) => (cur?.id === game.id ? null : cur))
+      }}
       onDrop={(e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -387,17 +425,27 @@ export default function DesktopPage(props: Props): React.JSX.Element {
       onClick={(e) => {
         if (e.target === e.currentTarget) onSelect(null)
       }}
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={() => {
-        // Dropping on empty desktop pulls a tile out of its group and sends it to
-        // the end, rather than silently doing nothing.
+      onDragOver={(e) => {
+        e.preventDefault()
+        // A drop in the gaps between tiles resolves to the nearest slot, so the
+        // insertion marker keeps tracking the pointer there too.
+        if (!dragId) return
+        const found = nearestInsertion(e.clientX, e.clientY)
+        setDrop(found && found.id !== dragId ? found : null)
+      }}
+      onDrop={(e) => {
         if (dragId) {
           const source = games.find((g) => g.id === dragId)
+          const target = nearestInsertion(e.clientX, e.clientY)
           if (source?.groupId) onPatch(dragId, { groupId: null })
-          const last = ungrouped[ungrouped.length - 1]
-          if (last && last.id !== dragId) {
+          if (target && target.id !== dragId) {
             if (sortKey !== 'manual') props.onSortChange('manual')
-            reorderWithin(dragId, last.id, ungrouped, 'after')
+            reorderWithin(
+              dragId,
+              target.id,
+              ungrouped,
+              target.hint === 'before' ? 'before' : 'after'
+            )
           }
         }
         setDragId(null)
@@ -405,7 +453,7 @@ export default function DesktopPage(props: Props): React.JSX.Element {
         setDropId(null)
       }}
     >
-      <div className="grid" style={{ ['--tile' as string]: `${tileSize}px` }}>
+      <div className="grid" ref={gridRef} style={{ ['--tile' as string]: `${tileSize}px` }}>
         {groupsWithMembers.map(({ group, members }) => (
           <GroupTile
             key={group.id}

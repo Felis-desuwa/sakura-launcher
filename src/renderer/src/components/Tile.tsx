@@ -18,7 +18,7 @@ interface Props {
   onDragStart: () => void
   onDragEnd: () => void
   onDragOver: (e: React.DragEvent) => void
-  onDragLeave: () => void
+  onDragLeave: (e: React.DragEvent) => void
   onDrop: (e: React.DragEvent) => void
 }
 
@@ -54,6 +54,7 @@ export default function Tile({
     <button
       type="button"
       className={classes}
+      data-game-id={game.id}
       draggable
       onClick={onClick}
       onDoubleClick={onDoubleClick}
