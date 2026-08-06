@@ -55,6 +55,9 @@ const api = {
   ): Promise<{ ok: boolean; sidecar?: boolean; file?: string; error?: string }> =>
     ipcRenderer.invoke('game:rename', id, name),
   resetName: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('game:resetName', id),
+  removeTile: (id: string): Promise<{ ok: boolean; name?: string; error?: string }> =>
+    ipcRenderer.invoke('game:remove', id),
+  unignore: (dir: string): Promise<Settings> => ipcRenderer.invoke('library:unignore', dir),
   reveal: (id: string): Promise<boolean> => ipcRenderer.invoke('game:reveal', id),
   breakdown: (dir: string): Promise<Breakdown | null> => ipcRenderer.invoke('game:breakdown', dir),
   setCover: (id: string): Promise<Game | undefined | null> => ipcRenderer.invoke('game:setCover', id),

@@ -8,6 +8,7 @@ interface Props {
   onRescan: () => void
   onAddFolder: () => void
   onBrowsePath: (dir: string) => void
+  onUnignore: (dir: string) => void
 }
 
 export default function SettingsPage({
@@ -15,7 +16,8 @@ export default function SettingsPage({
   onChange,
   onRescan,
   onAddFolder,
-  onBrowsePath
+  onBrowsePath,
+  onUnignore
 }: Props): React.JSX.Element {
   const [has7z, setHas7z] = useState<boolean | null>(null)
 
@@ -62,6 +64,30 @@ export default function SettingsPage({
           </button>
         </div>
       </div>
+
+      {settings.ignoredDirs.length > 0 && (
+        <div className="card" style={{ maxWidth: 760 }}>
+          <div className="section-title" style={{ marginTop: 0 }}>
+            已移除的条目
+          </div>
+          <p style={{ fontSize: 12.5, color: 'var(--ink-soft)', margin: '0 0 12px', lineHeight: 1.6 }}>
+            这些路径被你从库里移除过，扫描时会跳过。磁盘上的文件从未被改动。
+          </p>
+          {settings.ignoredDirs.map((dir) => (
+            <div className="root-row" key={dir}>
+              <span style={{ flex: 1 }}>{dir}</span>
+              <button
+                type="button"
+                className="btn ghost"
+                style={{ padding: '4px 10px', fontSize: 12 }}
+                onClick={() => onUnignore(dir)}
+              >
+                恢复
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="card" style={{ maxWidth: 760 }}>
         <div className="section-title" style={{ marginTop: 0 }}>外观与行为</div>

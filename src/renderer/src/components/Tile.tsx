@@ -3,12 +3,15 @@ import { TIER_META } from '../../../shared/types'
 import { formatBytes } from '../lib/format'
 import Artwork from './Artwork'
 
+/** Where a dragged tile would land relative to this one. */
+export type DropHint = 'before' | 'after' | 'into'
+
 interface Props {
   game: Game
   selected: boolean
   nudging: boolean
   dragging: boolean
-  dropTarget: boolean
+  dropHint: DropHint | null
   onClick: () => void
   onDoubleClick: () => void
   onContextMenu: (e: React.MouseEvent) => void
@@ -24,7 +27,7 @@ export default function Tile({
   selected,
   nudging,
   dragging,
-  dropTarget,
+  dropHint,
   onClick,
   onDoubleClick,
   onContextMenu,
@@ -39,7 +42,9 @@ export default function Tile({
     selected ? 'selected' : '',
     nudging ? 'nudge' : '',
     dragging ? 'dragging' : '',
-    dropTarget ? 'drop-target' : '',
+    dropHint === 'into' ? 'drop-target' : '',
+    dropHint === 'before' ? 'drop-before' : '',
+    dropHint === 'after' ? 'drop-after' : '',
     game.kind === 'archive' ? 'archive' : ''
   ]
     .filter(Boolean)

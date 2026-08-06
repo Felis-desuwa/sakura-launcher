@@ -61,6 +61,25 @@ export interface Game {
   archiveVolumes?: string[]
 }
 
+/**
+ * Enforce the one rule between the three status flags: "想玩" means *not started yet*,
+ * so it cannot hold at the same time as 在玩 or 玩过. Those two may still coexist —
+ * finishing a game and starting a second run is a normal thing to record.
+ *
+ * Shared by the main process and the renderer so an optimistic UI update can never
+ * disagree with what actually lands in the database.
+ */
+export function normalizeStatus(current: Game, patch: Partial<Game>): Partial<Game> {
+  const next = { ...patch }
+  if (patch.wishlist === true) {
+    next.playing = false
+    next.played = false
+  }
+  const startsPlaying = patch.playing === true || patch.played === true
+  if (startsPlaying) next.wishlist = false
+  return next
+}
+
 export interface Group {
   id: string
   name: string
@@ -87,6 +106,12 @@ export interface Settings {
   tileSize: number
   petals: boolean
   geekPath: string | null
+  /**
+   * Folders the user removed from the library. Kept so a rescan does not keep
+   * re-adding things that are not games — installers, tools, stray folders.
+   * Nothing on disk is touched.
+   */
+  ignoredDirs: string[]
   /** Set once the first-run onboarding has been dismissed. */
   onboarded: boolean
   /** Parent folders already offered for auto-grouping, so we only ask once each. */
@@ -100,6 +125,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tileSize: 180,
   petals: true,
   geekPath: null,
+  ignoredDirs: [],
   onboarded: false,
   groupingPrompted: []
 }

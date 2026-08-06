@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DiskInfo, Game, Group, Settings, SortKey, TabKey } from '../../shared/types'
-import { DEFAULT_SETTINGS } from '../../shared/types'
+import { DEFAULT_SETTINGS, normalizeStatus } from '../../shared/types'
 import ConfirmDialog from './components/ConfirmDialog'
 import DetailDrawer from './components/DetailDrawer'
 import FileBrowser from './components/FileBrowser'
@@ -43,6 +43,7 @@ export default function App(): React.JSX.Element {
   const [groupPrompt, setGroupPrompt] = useState<GroupPrompt | null>(null)
   const [browsing, setBrowsing] = useState<{ dir: string; title: string } | null>(null)
   const [renaming, setRenaming] = useState<Game | null>(null)
+  const [removing, setRemoving] = useState<Game | null>(null)
   const [leftover, setLeftover] = useState<{ game: Game; bytes: number } | null>(null)
   const [extractProgress, setExtractProgress] = useState<Record<string, number>>({})
 
@@ -123,8 +124,11 @@ export default function App(): React.JSX.Element {
   )
 
   const patchGame = useCallback((id: string, patch: Partial<Game>): void => {
-    // Update locally first so toggles and drags feel instant.
-    setGames((cur) => cur.map((g) => (g.id === id ? { ...g, ...patch } : g)))
+    // Update locally first so toggles and drags feel instant, applying the same
+    // status rules the main process will, so the two never disagree.
+    setGames((cur) =>
+      cur.map((g) => (g.id === id ? { ...g, ...normalizeStatus(g, patch) } : g))
+    )
     void window.sakura.updateGame(id, patch)
   }, [])
 
@@ -244,6 +248,7 @@ export default function App(): React.JSX.Element {
             onLaunch={(g) => void launch(g)}
             onPatch={patchGame}
             onUninstall={setUninstallTarget}
+            onRemoveTile={setRemoving}
             onSetCover={async (id) => {
               const updated = await window.sakura.setCover(id)
               if (updated) setGames((cur) => cur.map((g) => (g.id === id ? updated : g)))
@@ -294,6 +299,12 @@ export default function App(): React.JSX.Element {
             onRescan={() => void runScan()}
             onAddFolder={() => void addFolder()}
             onBrowsePath={(dir) => setBrowsing({ dir, title: dir.split('\\').pop() || dir })}
+            onUnignore={async (dir) => {
+              const next = await window.sakura.unignore(dir)
+              setSettings(next)
+              await refresh()
+              toast('已恢复该条目，重新扫描完成')
+            }}
           />
         )}
 
@@ -346,6 +357,36 @@ export default function App(): React.JSX.Element {
                 : `已重命名（无法写入游戏文件夹，仅保存在启动器内${result.error ? '：' + result.error : ''}）`,
               !result.sidecar
             )
+          }}
+        />
+      )}
+
+      {removing && (
+        <ConfirmDialog
+          title={`把《${removing.name}》从库中移除？`}
+          confirmLabel="移除磁贴"
+          body={
+            <>
+              只是把这个磁贴从启动器里拿掉，<b>不会删除磁盘上的任何文件</b>
+              —— 用来清掉误扫进来的非游戏内容。
+              <br />
+              <br />
+              这个路径会被记住，之后重新扫描也不会再加回来。想恢复的话，
+              到「设置 → 已移除的条目」里点一下即可。
+            </>
+          }
+          onCancel={() => setRemoving(null)}
+          onConfirm={async () => {
+            const target = removing
+            setRemoving(null)
+            const result = await window.sakura.removeTile(target.id)
+            if (!result.ok) {
+              toast(result.error ?? '移除失败', true)
+              return
+            }
+            if (selectedId === target.id) setSelectedId(null)
+            await refresh()
+            toast(`已移除《${target.name}》，磁盘上的文件未改动`)
           }}
         />
       )}

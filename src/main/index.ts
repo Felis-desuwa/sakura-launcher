@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Breakdown, Game, Group, Settings } from '../shared/types'
-import { ARCHIVE_GROUP_ID } from '../shared/types'
+import { ARCHIVE_GROUP_ID, normalizeStatus } from '../shared/types'
 import { defaultDestFor, extractArchive, find7z } from './archive'
 import * as db from './db'
 import { diskInfo, redundantArchives, trashArchives } from './disk'
@@ -23,8 +23,18 @@ protocol.registerSchemesAsPrivileged([
 
 let mainWindow: BrowserWindow | null = null
 
+/**
+ * Window icon for development runs. In a packaged build Windows takes the icon from
+ * the executable itself, which electron-builder stamps from build/icon.ico.
+ */
+function devWindowIcon(): string | undefined {
+  const candidate = path.join(__dirname, '../../build/icon.png')
+  return fs.existsSync(candidate) ? candidate : undefined
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
+    icon: devWindowIcon(),
     width: 1400,
     height: 900,
     minWidth: 900,
@@ -182,7 +192,11 @@ function registerIpc(): void {
 
   ipcMain.handle('game:launch', (_e, id: string) => launchGame(id))
 
-  ipcMain.handle('game:update', (_e, id: string, patch: Partial<Game>) => db.updateGame(id, patch))
+  ipcMain.handle('game:update', (_e, id: string, patch: Partial<Game>) => {
+    const game = db.findGame(id)
+    if (!game) return undefined
+    return db.updateGame(id, normalizeStatus(game, patch))
+  })
 
   ipcMain.handle('game:reorder', (_e, ids: string[]) => {
     const byId = new Map(db.getGames().map((g) => [g.id, g]))
@@ -221,6 +235,33 @@ function registerIpc(): void {
     // The sidecar is now the source of truth, so drop the database-only override.
     db.updateGame(id, { name: trimmed, renamed: false })
     return { ok: true, sidecar: true, file: path.join(game.dir, NAME_SIDECAR) }
+  })
+
+  /**
+   * Remove a tile from the library without touching anything on disk.
+   * This is for entries that are not games at all — installers, tools, stray folders.
+   * The path is remembered so the next scan does not add it straight back.
+   */
+  ipcMain.handle('game:remove', (_e, id: string) => {
+    const game = db.findGame(id)
+    if (!game) return { ok: false, error: '找不到该条目' }
+    const settings = db.getSettings()
+    const key = game.dir
+    if (!settings.ignoredDirs.some((d) => d.toLowerCase() === key.toLowerCase())) {
+      db.setSettings({ ignoredDirs: [...settings.ignoredDirs, key] })
+    }
+    db.removeGame(id)
+    return { ok: true, name: game.name }
+  })
+
+  ipcMain.handle('library:unignore', (_e, dir: string) => {
+    const settings = db.getSettings()
+    db.setSettings({
+      ignoredDirs: settings.ignoredDirs.filter((d) => d.toLowerCase() !== dir.toLowerCase())
+    })
+    rescan()
+    void refreshSizes()
+    return db.getSettings()
   })
 
   ipcMain.handle('game:resetName', (_e, id: string) => {

@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Game, Group, SortKey, TabKey, Tier } from '../../../shared/types'
 import { ARCHIVE_GROUP_ID, SORT_META, TIERS, TIER_META } from '../../../shared/types'
 import Artwork from '../components/Artwork'
 import ContextMenu, { type MenuItem } from '../components/ContextMenu'
 import FolderWindow from '../components/FolderWindow'
 import PromptDialog from '../components/PromptDialog'
-import Tile from '../components/Tile'
+import Tile, { type DropHint } from '../components/Tile'
 
 interface Props {
   games: Game[]
@@ -19,6 +19,7 @@ interface Props {
   onLaunch: (game: Game) => void
   onPatch: (id: string, patch: Partial<Game>) => void
   onUninstall: (game: Game) => void
+  onRemoveTile: (game: Game) => void
   onSetCover: (id: string) => void
   onClearCover: (id: string) => void
   onBrowse: (game: Game) => void
@@ -81,6 +82,7 @@ export default function DesktopPage(props: Props): React.JSX.Element {
   const [openGroup, setOpenGroup] = useState<string | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
   const [dropId, setDropId] = useState<string | null>(null)
+  const [drop, setDrop] = useState<{ id: string; hint: DropHint } | null>(null)
   const [nudgeId, setNudgeId] = useState<string | null>(null)
   const [groupPrompt, setGroupPrompt] = useState<
     { mode: 'create' } | { mode: 'rename'; group: Group } | null
@@ -127,6 +129,34 @@ export default function DesktopPage(props: Props): React.JSX.Element {
 
   const launchBlocked = tab === 'wishlist'
 
+  /*
+   * A bare onClick would fire on the first half of a double-click and open the detail
+   * panel, which is enough to keep the second click from ever landing as a dblclick.
+   * So the single-click action waits out the double-click window and is cancelled if
+   * a second click arrives.
+   */
+  const clickTimer = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (clickTimer.current !== null) window.clearTimeout(clickTimer.current)
+    }
+  }, [])
+
+  const handleSingleClick = (game: Game): void => {
+    if (clickTimer.current !== null) return // second click of a pair; dblclick takes over
+    clickTimer.current = window.setTimeout(() => {
+      clickTimer.current = null
+      onSelect(selectedId === game.id ? null : game.id)
+    }, 240)
+  }
+
+  const cancelPendingClick = (): void => {
+    if (clickTimer.current === null) return
+    window.clearTimeout(clickTimer.current)
+    clickTimer.current = null
+  }
+
   const handleDoubleClick = (game: Game): void => {
     if (launchBlocked) {
       setNudgeId(game.id)
@@ -142,21 +172,27 @@ export default function DesktopPage(props: Props): React.JSX.Element {
       { label: '想玩', checked: game.wishlist, onClick: () => onPatch(game.id, { wishlist: !game.wishlist }) },
       { label: '在玩', checked: game.playing, onClick: () => onPatch(game.id, { playing: !game.playing }) },
       { label: '玩过', checked: game.played, onClick: () => onPatch(game.id, { played: !game.played }) },
-      { type: 'separator' },
-      {
-        label: '评价为',
-        submenu: [
-          ...TIERS.map((t: Tier) => ({
-            label: TIER_META[t].label,
-            checked: game.tier === t,
-            onClick: () => onPatch(game.id, { tier: t })
-          })),
-          { type: 'separator' as const },
-          { label: '清除评级', onClick: () => onPatch(game.id, { tier: null }) }
-        ]
-      },
       { type: 'separator' }
     ]
+
+    // Archives are not installed yet, so there is nothing to rate.
+    if (game.kind === 'installed') {
+      items.push(
+        {
+          label: '评价为',
+          submenu: [
+            ...TIERS.map((t: Tier) => ({
+              label: TIER_META[t].label,
+              checked: game.tier === t,
+              onClick: () => onPatch(game.id, { tier: t })
+            })),
+            { type: 'separator' as const },
+            { label: '清除评级', onClick: () => onPatch(game.id, { tier: null }) }
+          ]
+        },
+        { type: 'separator' }
+      )
+    }
 
     if (game.kind === 'archive') {
       items.push({ label: '解压安装', onClick: () => props.onExtract(game) })
@@ -186,7 +222,11 @@ export default function DesktopPage(props: Props): React.JSX.Element {
       }
     }
 
-    items.push({ type: 'separator' }, { label: '卸载…', danger: true, onClick: () => onUninstall(game) })
+    items.push(
+      { type: 'separator' },
+      { label: '从库中移除…', onClick: () => props.onRemoveTile(game) },
+      { label: '卸载…', danger: true, onClick: () => onUninstall(game) }
+    )
     return items
   }
 
@@ -241,13 +281,36 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     setOpenGroup(id)
   }
 
-  const reorderWithin = (sourceId: string, targetId: string, list: Game[]): void => {
+  /** Move `sourceId` to sit immediately before or after `targetId` within `list`. */
+  const reorderWithin = (
+    sourceId: string,
+    targetId: string,
+    list: Game[],
+    position: 'before' | 'after'
+  ): void => {
     const ids = list.map((g) => g.id)
     const from = ids.indexOf(sourceId)
-    const to = ids.indexOf(targetId)
-    if (from < 0 || to < 0) return
-    ids.splice(to, 0, ...ids.splice(from, 1))
+    if (from < 0) return
+    ids.splice(from, 1)
+    let to = ids.indexOf(targetId)
+    if (to < 0) return
+    if (position === 'after') to += 1
+    ids.splice(to, 0, sourceId)
     onReorder(ids)
+  }
+
+  /**
+   * Split each tile into three bands: the outer edges mean "drop between these two
+   * tiles", the middle means "merge into a group". Without the edge bands there is no
+   * way to express an insertion point, since the grid gaps receive no drag events.
+   */
+  const hintFor = (e: React.DragEvent, canReorder: boolean): DropHint => {
+    if (!canReorder) return 'into'
+    const rect = e.currentTarget.getBoundingClientRect()
+    const ratio = (e.clientX - rect.left) / rect.width
+    if (ratio < 0.3) return 'before'
+    if (ratio > 0.7) return 'after'
+    return 'into'
   }
 
   const renderTile = (game: Game, list: Game[]): React.JSX.Element => (
@@ -257,42 +320,49 @@ export default function DesktopPage(props: Props): React.JSX.Element {
       selected={selectedId === game.id}
       nudging={nudgeId === game.id}
       dragging={dragId === game.id}
-      dropTarget={dropId === game.id}
-      onClick={() => onSelect(selectedId === game.id ? null : game.id)}
-      onDoubleClick={() => handleDoubleClick(game)}
+      dropHint={drop?.id === game.id ? drop.hint : null}
+      onClick={() => handleSingleClick(game)}
+      onDoubleClick={() => {
+        cancelPendingClick()
+        handleDoubleClick(game)
+      }}
       onContextMenu={(e) => {
         e.preventDefault()
         e.stopPropagation()
+        cancelPendingClick()
         setMenu({ kind: 'game', x: e.clientX, y: e.clientY, game })
       }}
       onDragStart={() => setDragId(game.id)}
       onDragEnd={() => {
         setDragId(null)
-        setDropId(null)
+        setDrop(null)
       }}
       onDragOver={(e) => {
         e.preventDefault()
-        if (dragId && dragId !== game.id) setDropId(game.id)
+        if (!dragId || dragId === game.id) return
+        const source = games.find((g) => g.id === dragId)
+        // Insertion only makes sense in manual order, and only among siblings.
+        const sameContainer = !useGroups || source?.groupId === game.groupId
+        setDrop({ id: game.id, hint: hintFor(e, sortKey === 'manual' && sameContainer) })
       }}
-      onDragLeave={() => setDropId((cur) => (cur === game.id ? null : cur))}
+      onDragLeave={() => setDrop((cur) => (cur?.id === game.id ? null : cur))}
       onDrop={(e) => {
         e.preventDefault()
         e.stopPropagation()
         const sourceId = dragId
-        setDropId(null)
+        const hint = drop?.id === game.id ? drop.hint : 'into'
+        setDrop(null)
         setDragId(null)
         if (!sourceId || sourceId === game.id) return
         const source = games.find((g) => g.id === sourceId)
         if (!source) return
-        // Same container → reorder. Different container → merge into a group.
-        if (useGroups && source.groupId === game.groupId) {
-          if (sortKey === 'manual') reorderWithin(sourceId, game.id, list)
-          else mergeIntoGroup(sourceId, game.id)
-        } else if (useGroups) {
-          mergeIntoGroup(sourceId, game.id)
-        } else if (sortKey === 'manual') {
-          reorderWithin(sourceId, game.id, list)
+
+        if (hint === 'before' || hint === 'after') {
+          reorderWithin(sourceId, game.id, list, hint)
+          return
         }
+        // Dropped on the middle of a tile: merge the two into a group.
+        if (useGroups) mergeIntoGroup(sourceId, game.id)
       }}
     />
   )

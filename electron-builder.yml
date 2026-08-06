@@ -9,6 +9,7 @@ files:
   - '!{.eslintrc,.prettierrc,tsconfig*.json,electron.vite.config.ts}'
   - '!scripts/*'
 win:
+  icon: build/icon.ico
   target:
     - target: portable
       arch: [x64]

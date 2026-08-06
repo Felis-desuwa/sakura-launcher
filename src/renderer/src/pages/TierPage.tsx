@@ -26,6 +26,9 @@ export default function TierPage({ games, onPatch }: Props): React.JSX.Element {
     const map = new Map<RowKey, Game[]>()
     for (const row of ROWS) map.set(row, [])
     for (const game of games) {
+      // Not-yet-installed archives have nothing to judge yet, so they stay out of the
+      // ranking entirely rather than cluttering the unrated row.
+      if (game.kind !== 'installed') continue
       const key: RowKey = game.tier ?? 'unrated'
       map.get(key)?.push(game)
     }
@@ -67,6 +70,7 @@ export default function TierPage({ games, onPatch }: Props): React.JSX.Element {
     <div className="page" onDragEnd={() => setOverRow(null)}>
       <p style={{ fontSize: 13, color: 'var(--ink-soft)', margin: '0 0 14px' }}>
         拖动图标在各档之间移动；悬停可看名称。此页仅用于评级，不会启动游戏。
+        未安装的压缩包不参与评级。
       </p>
 
       {ROWS.map((row) => {

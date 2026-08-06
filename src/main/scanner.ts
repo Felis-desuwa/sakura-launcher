@@ -45,6 +45,7 @@ export interface ScanOutcome {
 export function rescan(): ScanOutcome {
   const settings = db.getSettings()
   const existing = new Map(db.getGames().map((g) => [g.dir.toLowerCase(), g]))
+  const ignored = new Set(settings.ignoredDirs.map((d) => d.toLowerCase()))
   const next: Game[] = []
   const groupCandidates: ScanOutcome['groupCandidates'] = []
   const seenArchives: FoundArchive[] = []
@@ -58,6 +59,7 @@ export function rescan(): ScanOutcome {
     seenArchives.push(...result.archives)
 
     for (const found of result.games) {
+      if (ignored.has(found.dir.toLowerCase())) continue
       const prev = existing.get(found.dir.toLowerCase())
       const unchanged =
         prev &&
@@ -106,6 +108,7 @@ export function rescan(): ScanOutcome {
   for (const archive of seenArchives) {
     if (findExtractedDir(archive, allGameDirs)) continue
     const key = archive.volumes[0]
+    if (ignored.has(key.toLowerCase())) continue
     const prev = existing.get(key.toLowerCase())
     // Give archives a real timestamp too, so time-based sorting includes them.
     let archiveMtime = 0

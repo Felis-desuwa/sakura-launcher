@@ -2,7 +2,8 @@ node_modules/
 dist/
 out/
 release/
-build/
+# note: build/ is electron-builder's buildResources dir (it holds the app icon),
+# not build output — it is tracked on purpose. Build output goes to release/.
 *.tsbuildinfo
 *.log
 npm-debug.log*

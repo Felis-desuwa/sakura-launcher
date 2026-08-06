@@ -68,6 +68,8 @@ button {
   flex: 1;
   min-height: 0;
   display: flex;
+  /* the detail drawer is positioned against this */
+  overflow: hidden;
 }
 
 .page {
@@ -248,9 +250,32 @@ button {
   opacity: 0.4;
 }
 
+/* middle band: the two tiles would merge into a group */
 .tile.drop-target {
   box-shadow: var(--shadow-md), 0 0 0 3px var(--pink-primary);
   transform: scale(1.04);
+}
+
+/* edge bands: an insertion point between two tiles */
+.tile.drop-before::after,
+.tile.drop-after::after {
+  content: '';
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 4px;
+  border-radius: 3px;
+  background: var(--pink-accent);
+  box-shadow: 0 0 8px rgba(231, 84, 128, 0.6);
+  z-index: 4;
+}
+
+.tile.drop-before::after {
+  left: -12px;
+}
+
+.tile.drop-after::after {
+  right: -12px;
 }
 
 .tile.archive {
@@ -628,8 +653,17 @@ button {
 
 /* ---------- drawer (size detail) ---------- */
 
+/*
+ * Overlaid rather than laid out beside the grid: as a flex sibling it shrank the
+ * page and reflowed every tile the moment it opened, which moved the tile out from
+ * under the cursor mid-double-click.
+ */
 .drawer {
-  flex: none;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
   width: 380px;
   background: var(--glass-strong);
   backdrop-filter: blur(22px);
