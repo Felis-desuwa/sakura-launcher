@@ -1,20 +1,215 @@
+/*
+ * Themes are pure custom-property swaps. Every colour in this file resolves through
+ * one of the slots below, so a theme block only has to restate the slots — no rule
+ * anywhere else needs to know which theme is active.
+ *
+ * Slots: --bg-* page gradient, --glow-* the radial highlights, --panel the surface
+ * that all the frosted glass is mixed from, --brand / --accent the two theme hues,
+ * --ink / --ink-soft text, --folder-* the group tile, --overlay modal scrims.
+ */
 :root {
-  --pink-50: #fff5f9;
-  --pink-100: #ffe9f2;
-  --pink-200: #ffe0ec;
-  --pink-300: #f9c9dd;
-  --pink-primary: #ff8fb1;
-  --pink-accent: #e75480;
+  /* 樱花 — the default */
+  --bg-1: #fff5f9;
+  --bg-2: #ffe9f2;
+  --bg-3: #ffe0ec;
+  --bg-4: #f9c9dd;
+  --glow-1: #fffafc;
+  --glow-2: #ffeaf3;
+  --glow-3: #f7bed6;
+  --brand: #ff8fb1;
+  --accent: #e75480;
   --ink: #4a2c38;
   --ink-soft: #8a6a77;
-  --glass: rgba(255, 255, 255, 0.62);
-  --glass-strong: rgba(255, 255, 255, 0.86);
-  --glass-border: rgba(255, 255, 255, 0.75);
-  --shadow-sm: 0 2px 8px rgba(180, 100, 130, 0.12);
-  --shadow-md: 0 8px 24px rgba(180, 100, 130, 0.18);
-  --shadow-lg: 0 18px 48px rgba(150, 80, 110, 0.26);
+  --panel: #ffffff;
+  --shadow-tint: #b46482;
+  --overlay: #2d1923;
+  --bar-1: #ffd6e7;
+  --bar-2: #ffc7de;
+  --folder-1: #ffc4da;
+  --folder-2: #f9a6c5;
+  --folder-3: #fbb0cc;
+  --folder-front-1: #ffb3d0;
+  --folder-front-2: #f593b8;
+  --folder-front-hover-1: #ffa5c7;
+  --folder-front-hover-2: #f082ac;
+  --tile-art-1: #ffffff;
+  --tile-art-2: #ffeef5;
+  --petal: #ff9ec0;
+  /* generated placeholder tiles: theme hue + a per-name offset, built in CSS so a
+     theme switch repaints them without needing a re-render */
+  --placeholder-hue: 320;
+  --placeholder-s: 72%;
+  --placeholder-l1: 76%;
+  --placeholder-l2: 62%;
+  --placeholder-ink: rgba(255, 255, 255, 0.94);
+
+  --glass: color-mix(in srgb, var(--panel) 62%, transparent);
+  --glass-strong: color-mix(in srgb, var(--panel) 86%, transparent);
+  --glass-border: color-mix(in srgb, var(--panel) 75%, transparent);
+  --shadow-sm: 0 2px 8px color-mix(in srgb, var(--shadow-tint) 12%, transparent);
+  --shadow-md: 0 8px 24px color-mix(in srgb, var(--shadow-tint) 18%, transparent);
+  --shadow-lg: 0 18px 48px color-mix(in srgb, var(--shadow-tint) 26%, transparent);
   --radius: 16px;
   --topbar-h: 60px;
+}
+
+/* 夜樱 — the same blossom after dark */
+[data-theme='midnight'] {
+  --bg-1: #241b29;
+  --bg-2: #1d1621;
+  --bg-3: #241a2a;
+  --bg-4: #2f2038;
+  --glow-1: #35263d;
+  --glow-2: #3b2542;
+  --glow-3: #472850;
+  --brand: #ff8fb1;
+  --accent: #ff6f9d;
+  --ink: #f7ecf2;
+  --ink-soft: #b99ead;
+  --panel: #3c2d43;
+  --shadow-tint: #050306;
+  --overlay: #100a13;
+  --bar-1: #422f4b;
+  --bar-2: #382741;
+  --folder-1: #7a4f6f;
+  --folder-2: #5d3956;
+  --folder-3: #8a5a7e;
+  --folder-front-1: #8d5c81;
+  --folder-front-2: #6b4462;
+  --folder-front-hover-1: #9e6b92;
+  --folder-front-hover-2: #7c5472;
+  --tile-art-1: #3c2d43;
+  --tile-art-2: #2f2436;
+  --petal: #ff8fb1;
+  --placeholder-hue: 320;
+  /* muted and darker, so placeholder tiles do not glare against a dark desktop */
+  --placeholder-s: 38%;
+  --placeholder-l1: 46%;
+  --placeholder-l2: 33%;
+}
+
+/* 抹茶 */
+[data-theme='matcha'] {
+  --bg-1: #f7fbf3;
+  --bg-2: #eef6e6;
+  --bg-3: #e3f0d8;
+  --bg-4: #c9e2b4;
+  --glow-1: #fbfdf8;
+  --glow-2: #e9f5dd;
+  --glow-3: #bfdca8;
+  --brand: #8fbf6a;
+  --accent: #4e8a3a;
+  --ink: #2f3d28;
+  --ink-soft: #6b7d61;
+  --panel: #ffffff;
+  --shadow-tint: #6d8a5c;
+  --overlay: #1f2a1a;
+  --bar-1: #dcefcb;
+  --bar-2: #cfe7ba;
+  --folder-1: #cfe7b6;
+  --folder-2: #a9d189;
+  --folder-3: #bcdca0;
+  --folder-front-1: #b3d894;
+  --folder-front-2: #93c471;
+  --folder-front-hover-1: #a5d083;
+  --folder-front-hover-2: #83b860;
+  --tile-art-1: #ffffff;
+  --tile-art-2: #eef7e4;
+  --petal: #a8d489;
+  --placeholder-hue: 100;
+}
+
+/* 海盐 */
+[data-theme='ocean'] {
+  --bg-1: #f3f9fd;
+  --bg-2: #e6f2fa;
+  --bg-3: #d8ebf7;
+  --bg-4: #b3d7ee;
+  --glow-1: #f8fcfe;
+  --glow-2: #ddeffb;
+  --glow-3: #a5cfea;
+  --brand: #6aabdd;
+  --accent: #2b6fa8;
+  --ink: #24384a;
+  --ink-soft: #5d7488;
+  --panel: #ffffff;
+  --shadow-tint: #5b86a8;
+  --overlay: #16242f;
+  --bar-1: #cfe7f7;
+  --bar-2: #bcdcf2;
+  --folder-1: #bcdcf5;
+  --folder-2: #8ec3e8;
+  --folder-3: #a6cfef;
+  --folder-front-1: #9ac9ec;
+  --folder-front-2: #74b0dc;
+  --folder-front-hover-1: #8abfe6;
+  --folder-front-hover-2: #629fd0;
+  --tile-art-1: #ffffff;
+  --tile-art-2: #e8f3fb;
+  --petal: #8ec6ea;
+  --placeholder-hue: 205;
+}
+
+/* 初音 — built around #39c5bb */
+[data-theme='miku'] {
+  --bg-1: #f2fcfb;
+  --bg-2: #e4f7f5;
+  --bg-3: #d4f1ee;
+  --bg-4: #a9e3dd;
+  --glow-1: #f8fefd;
+  --glow-2: #dcf5f2;
+  --glow-3: #9adcd5;
+  --brand: #6fdcd4;
+  --accent: #39c5bb;
+  --ink: #16403d;
+  --ink-soft: #4f7d78;
+  --panel: #ffffff;
+  --shadow-tint: #4f9c95;
+  --overlay: #10312e;
+  --bar-1: #cdefec;
+  --bar-2: #b8e7e2;
+  --folder-1: #b7e8e3;
+  --folder-2: #86d6ce;
+  --folder-3: #a0dfd9;
+  --folder-front-1: #93dcd5;
+  --folder-front-2: #6bc9c0;
+  --folder-front-hover-1: #83d4cc;
+  --folder-front-hover-2: #58b9b0;
+  --tile-art-1: #ffffff;
+  --tile-art-2: #e6f8f6;
+  --petal: #7fded6;
+  --placeholder-hue: 176;
+}
+
+/* 薰衣草 */
+[data-theme='lavender'] {
+  --bg-1: #f9f6fd;
+  --bg-2: #f0e9fa;
+  --bg-3: #e7ddf6;
+  --bg-4: #cfc0ea;
+  --glow-1: #fcfaff;
+  --glow-2: #ece2f8;
+  --glow-3: #c3b0e4;
+  --brand: #a68ad4;
+  --accent: #6b4aa8;
+  --ink: #342a44;
+  --ink-soft: #6f6285;
+  --panel: #ffffff;
+  --shadow-tint: #7d68a3;
+  --overlay: #201a2b;
+  --bar-1: #e2d6f4;
+  --bar-2: #d5c5ef;
+  --folder-1: #d9c9f2;
+  --folder-2: #b79ee2;
+  --folder-3: #c8b3ea;
+  --folder-front-1: #c2aae8;
+  --folder-front-2: #a488d6;
+  --folder-front-hover-1: #b49ae0;
+  --folder-front-hover-2: #9478c9;
+  --tile-art-1: #ffffff;
+  --tile-art-2: #f1eafb;
+  --petal: #b9a2e2;
+  --placeholder-hue: 268;
 }
 
 * {
@@ -32,7 +227,7 @@ body {
   font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
   color: var(--ink);
   overflow: hidden;
-  background: var(--pink-100);
+  background: var(--bg-2);
 }
 
 button {
@@ -49,17 +244,22 @@ button {
   display: flex;
   flex-direction: column;
   background:
-    radial-gradient(1200px 700px at 12% -10%, #fffafc 0%, rgba(255, 250, 252, 0) 60%),
-    radial-gradient(900px 600px at 88% 8%, #ffeaf3 0%, rgba(255, 234, 243, 0) 65%),
-    radial-gradient(1000px 800px at 50% 110%, #f7bed6 0%, rgba(247, 190, 214, 0) 70%),
-    linear-gradient(170deg, var(--pink-50) 0%, var(--pink-200) 52%, var(--pink-300) 100%);
+    radial-gradient(1200px 700px at 12% -10%, var(--glow-1) 0%, transparent 60%),
+    radial-gradient(900px 600px at 88% 8%, var(--glow-2) 0%, transparent 65%),
+    radial-gradient(1000px 800px at 50% 110%, var(--glow-3) 0%, transparent 70%),
+    linear-gradient(170deg, var(--bg-1) 0%, var(--bg-3) 52%, var(--bg-4) 100%);
 }
 
+/*
+ * Petals drift in front of the whole window rather than behind the grid, so the effect
+ * reads across the entire screen. It sits below menus, dialogs and toasts so it never
+ * lands on top of something being read, and never takes pointer events.
+ */
 .petal-canvas {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 0;
+  z-index: 40;
 }
 
 .app-body {
@@ -101,7 +301,7 @@ button {
   font-weight: 700;
   font-size: 16px;
   letter-spacing: 0.5px;
-  color: var(--pink-accent);
+  color: var(--accent);
   white-space: nowrap;
 }
 
@@ -125,14 +325,14 @@ button {
 }
 
 .tab:hover {
-  background: rgba(255, 255, 255, 0.6);
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
   color: var(--ink);
 }
 
 .tab.active {
-  color: var(--pink-accent);
+  color: var(--accent);
   font-weight: 600;
-  background: rgba(255, 255, 255, 0.78);
+  background: color-mix(in srgb, var(--panel) 78%, transparent);
 }
 
 .tab.active::after {
@@ -143,7 +343,7 @@ button {
   bottom: -1px;
   height: 2.5px;
   border-radius: 2px;
-  background: var(--pink-accent);
+  background: var(--accent);
 }
 
 .badge {
@@ -152,8 +352,8 @@ button {
   border-radius: 9px;
   font-size: 11px;
   font-weight: 600;
-  background: rgba(231, 84, 128, 0.14);
-  color: var(--pink-accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
 }
 
 .topbar-spacer {
@@ -170,8 +370,8 @@ button {
   width: 190px;
   padding: 7px 12px;
   border-radius: 10px;
-  border: 1px solid rgba(231, 84, 128, 0.18);
-  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
   font-size: 13px;
   color: var(--ink);
   outline: none;
@@ -184,8 +384,8 @@ button {
 }
 
 .search:focus {
-  border-color: var(--pink-primary);
-  box-shadow: 0 0 0 3px rgba(255, 143, 177, 0.18);
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 18%, transparent);
 }
 
 .pagebtns {
@@ -204,13 +404,13 @@ button {
 }
 
 .pagebtn:hover {
-  background: rgba(255, 255, 255, 0.6);
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
   color: var(--ink);
 }
 
 .pagebtn.active {
-  background: var(--pink-accent);
-  color: #fff;
+  background: var(--accent);
+  color: var(--panel);
   font-weight: 600;
 }
 
@@ -237,13 +437,22 @@ button {
   text-align: left;
 }
 
+/*
+ * Everything inside a tile is decoration. Without this, moving the pointer from the
+ * artwork onto the label fires dragleave on the tile and wipes the pending drop hint,
+ * so the insertion marker flickers and the drop lands as the wrong kind of action.
+ */
+.tile > * {
+  pointer-events: none;
+}
+
 .tile:hover {
   transform: translateY(-4px);
-  box-shadow: var(--shadow-md), 0 0 0 2px rgba(255, 143, 177, 0.4);
+  box-shadow: var(--shadow-md), 0 0 0 2px color-mix(in srgb, var(--brand) 40%, transparent);
 }
 
 .tile.selected {
-  box-shadow: var(--shadow-md), 0 0 0 3px var(--pink-accent);
+  box-shadow: var(--shadow-md), 0 0 0 3px var(--accent);
 }
 
 .tile.dragging {
@@ -252,7 +461,7 @@ button {
 
 /* middle band: the two tiles would merge into a group */
 .tile.drop-target {
-  box-shadow: var(--shadow-md), 0 0 0 3px var(--pink-primary);
+  box-shadow: var(--shadow-md), 0 0 0 3px var(--brand);
   transform: scale(1.04);
 }
 
@@ -265,8 +474,8 @@ button {
   bottom: -6px;
   width: 4px;
   border-radius: 3px;
-  background: var(--pink-accent);
-  box-shadow: 0 0 8px rgba(231, 84, 128, 0.6);
+  background: var(--accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
   z-index: 4;
 }
 
@@ -288,7 +497,7 @@ button {
   inset: 0;
   display: grid;
   place-items: center;
-  background: linear-gradient(160deg, #fff 0%, #ffeef5 100%);
+  background: linear-gradient(160deg, var(--tile-art-1) 0%, var(--tile-art-2) 100%);
 }
 
 .tile-art img {
@@ -311,8 +520,15 @@ button {
   place-items: center;
   font-size: 3.2em;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--placeholder-ink);
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.16);
+  background: linear-gradient(
+    150deg,
+    hsl(calc(var(--placeholder-hue) + var(--h-offset, 0)) var(--placeholder-s) var(--placeholder-l1))
+      0%,
+    hsl(calc(var(--placeholder-hue) + var(--h-offset, 0) + 18) var(--placeholder-s)
+        var(--placeholder-l2)) 100%
+  );
 }
 
 .tile-label {
@@ -321,9 +537,9 @@ button {
   right: 0;
   bottom: 0;
   padding: 8px 10px 9px;
-  background: rgba(255, 255, 255, 0.72);
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
   backdrop-filter: blur(10px);
-  border-top: 1px solid rgba(255, 255, 255, 0.6);
+  border-top: 1px solid color-mix(in srgb, var(--panel) 60%, transparent);
 }
 
 .tile-name {
@@ -358,7 +574,7 @@ button {
   display: grid;
   place-items: center;
   font-size: 10px;
-  background: rgba(255, 255, 255, 0.9);
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
 }
 
@@ -370,7 +586,7 @@ button {
   border-radius: 7px;
   font-size: 10.5px;
   font-weight: 700;
-  color: #fff;
+  color: var(--panel);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
 }
 
@@ -393,8 +609,8 @@ button {
   position: absolute;
   inset: 0;
   border-radius: 3px 10px 10px 10px;
-  background: linear-gradient(160deg, #ffc4da 0%, #f9a6c5 100%);
-  box-shadow: 0 3px 10px rgba(196, 106, 145, 0.28);
+  background: linear-gradient(160deg, var(--folder-1) 0%, var(--folder-2) 100%);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--shadow-tint) 28%, transparent);
 }
 
 /* the tab */
@@ -406,7 +622,7 @@ button {
   width: 46%;
   height: 13px;
   border-radius: 6px 8px 0 0;
-  background: linear-gradient(160deg, #ffc4da 0%, #fbb0cc 100%);
+  background: linear-gradient(160deg, var(--folder-1) 0%, var(--folder-3) 100%);
 }
 
 .folder-items {
@@ -423,12 +639,12 @@ button {
   position: relative;
   border-radius: 5px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 1px 3px rgba(150, 80, 115, 0.2);
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--shadow-tint) 20%, transparent);
 }
 
 .folder-items > span.empty-slot {
-  background: rgba(255, 255, 255, 0.34);
+  background: color-mix(in srgb, var(--panel) 34%, transparent);
   box-shadow: none;
 }
 
@@ -441,12 +657,12 @@ button {
   height: 34%;
   z-index: 2;
   border-radius: 7px 7px 10px 10px;
-  background: linear-gradient(180deg, #ffb3d0 0%, #f593b8 100%);
-  box-shadow: 0 -3px 8px rgba(190, 100, 140, 0.22);
+  background: linear-gradient(180deg, var(--folder-front-1) 0%, var(--folder-front-2) 100%);
+  box-shadow: 0 -3px 8px color-mix(in srgb, var(--shadow-tint) 22%, transparent);
 }
 
 .tile:hover .folder-front {
-  background: linear-gradient(180deg, #ffa5c7 0%, #f082ac 100%);
+  background: linear-gradient(180deg, var(--folder-front-hover-1) 0%, var(--folder-front-hover-2) 100%);
 }
 
 .group-count-chip {
@@ -458,8 +674,8 @@ button {
   border-radius: 9px;
   font-size: 11px;
   font-weight: 700;
-  color: #fff;
-  background: rgba(198, 74, 122, 0.9);
+  color: var(--panel);
+  background: var(--accent);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.16);
 }
 
@@ -485,8 +701,8 @@ button {
   align-items: center;
   gap: 10px;
   padding: 12px 14px;
-  background: linear-gradient(180deg, rgba(255, 214, 231, 0.95), rgba(255, 199, 222, 0.9));
-  border-bottom: 1px solid rgba(231, 84, 128, 0.18);
+  background: linear-gradient(180deg, var(--bar-1), var(--bar-2));
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .window-title {
@@ -516,7 +732,7 @@ button {
 
 .iconbtn {
   border: 0;
-  background: rgba(255, 255, 255, 0.72);
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
   width: 30px;
   height: 30px;
   border-radius: 9px;
@@ -528,7 +744,7 @@ button {
 }
 
 .iconbtn:hover {
-  background: #fff;
+  background: var(--panel);
 }
 
 .iconbtn:disabled {
@@ -554,11 +770,11 @@ button {
 }
 
 .file-row:hover {
-  background: rgba(255, 255, 255, 0.78);
+  background: color-mix(in srgb, var(--panel) 78%, transparent);
 }
 
 .file-row.selected {
-  background: rgba(255, 143, 177, 0.26);
+  background: color-mix(in srgb, var(--brand) 26%, transparent);
 }
 
 .file-glyph {
@@ -588,7 +804,7 @@ button {
   letter-spacing: 0.5px;
   color: var(--ink-soft);
   text-transform: uppercase;
-  border-bottom: 1px solid rgba(231, 84, 128, 0.14);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 14%, transparent);
   margin-bottom: 4px;
 }
 
@@ -621,7 +837,7 @@ button {
 }
 
 .menu-item:hover {
-  background: rgba(255, 143, 177, 0.18);
+  background: color-mix(in srgb, var(--brand) 18%, transparent);
 }
 
 .menu-item.danger {
@@ -635,13 +851,13 @@ button {
 .menu-item .check {
   width: 14px;
   font-size: 12px;
-  color: var(--pink-accent);
+  color: var(--accent);
 }
 
 .menu-sep {
   height: 1px;
   margin: 5px 6px;
-  background: rgba(231, 84, 128, 0.16);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 .submenu {
@@ -668,7 +884,7 @@ button {
   background: var(--glass-strong);
   backdrop-filter: blur(22px);
   border-left: 1px solid var(--glass-border);
-  box-shadow: -8px 0 28px rgba(180, 100, 130, 0.16);
+  box-shadow: -8px 0 28px color-mix(in srgb, var(--shadow-tint) 16%, transparent);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -686,7 +902,7 @@ button {
 
 .drawer-head {
   padding: 16px 18px 12px;
-  border-bottom: 1px solid rgba(231, 84, 128, 0.14);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .drawer-title {
@@ -745,11 +961,11 @@ button {
 
 .crumbs button {
   border: 0;
-  background: rgba(255, 255, 255, 0.7);
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
   padding: 3px 8px;
   border-radius: 7px;
   font-size: 11.5px;
-  color: var(--pink-accent);
+  color: var(--accent);
 }
 
 .legend {
@@ -774,7 +990,7 @@ button {
 }
 
 .legend-row:hover {
-  background: rgba(255, 255, 255, 0.7);
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
 }
 
 .legend-swatch {
@@ -818,12 +1034,12 @@ button {
   border-radius: 12px;
   overflow: hidden;
   margin-bottom: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  border: 1px solid color-mix(in srgb, var(--panel) 60%, transparent);
   transition: box-shadow 0.15s;
 }
 
 .tier-row.over {
-  box-shadow: 0 0 0 3px var(--pink-primary);
+  box-shadow: 0 0 0 3px var(--brand);
 }
 
 .tier-label {
@@ -833,7 +1049,7 @@ button {
   place-items: center;
   align-content: center;
   gap: 2px;
-  color: #fff;
+  color: var(--panel);
   font-weight: 800;
   font-size: 19px;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
@@ -863,7 +1079,7 @@ button {
   border: 0;
   padding: 0;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.9);
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
   box-shadow: var(--shadow-sm);
   display: grid;
   place-items: center;
@@ -895,8 +1111,8 @@ button {
   z-index: 80;
   padding: 6px 10px;
   border-radius: 8px;
-  background: rgba(45, 25, 35, 0.94);
-  color: #fff;
+  background: color-mix(in srgb, var(--overlay) 94%, transparent);
+  color: var(--panel);
   font-size: 12px;
   pointer-events: none;
   max-width: 300px;
@@ -935,7 +1151,7 @@ button {
   flex: none;
   border-radius: 11px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.85);
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
   display: grid;
   place-items: center;
 }
@@ -969,13 +1185,13 @@ button {
   border-radius: 13px;
   border: 0;
   padding: 0;
-  background: rgba(180, 150, 165, 0.34);
+  background: color-mix(in srgb, var(--ink-soft) 34%, transparent);
   position: relative;
   transition: background 0.18s;
 }
 
 .switch.on {
-  background: var(--pink-accent);
+  background: var(--accent);
 }
 
 .switch::after {
@@ -986,7 +1202,7 @@ button {
   width: 19px;
   height: 19px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--panel);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.24);
   transition: transform 0.18s;
 }
@@ -1010,7 +1226,7 @@ button {
   height: 22px;
   border-radius: 11px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.75);
+  background: color-mix(in srgb, var(--panel) 75%, transparent);
   display: flex;
   margin: 8px 0 6px;
 }
@@ -1033,7 +1249,7 @@ button {
   display: block;
   height: 12px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.7);
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
   overflow: hidden;
 }
 
@@ -1041,18 +1257,18 @@ button {
   display: block;
   height: 100%;
   border-radius: 6px;
-  background: var(--pink-accent);
+  background: var(--accent);
 }
 
 .redundant-row input[type='checkbox'],
 .settings-row input[type='checkbox'] {
-  accent-color: var(--pink-accent);
+  accent-color: var(--accent);
   width: 15px;
   height: 15px;
 }
 
 input[type='range'] {
-  accent-color: var(--pink-accent);
+  accent-color: var(--accent);
 }
 
 .redundant-row {
@@ -1066,7 +1282,7 @@ input[type='range'] {
 }
 
 .redundant-row:hover {
-  background: rgba(255, 255, 255, 0.6);
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
 }
 
 /* ---------- buttons, modals, misc ---------- */
@@ -1077,7 +1293,7 @@ input[type='range'] {
   padding: 9px 18px;
   font-size: 13.5px;
   font-weight: 600;
-  background: rgba(255, 255, 255, 0.85);
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
   box-shadow: var(--shadow-sm);
   transition: transform 0.12s, box-shadow 0.12s;
 }
@@ -1094,24 +1310,24 @@ input[type='range'] {
 }
 
 .btn.primary {
-  background: var(--pink-accent);
-  color: #fff;
+  background: var(--accent);
+  color: var(--panel);
 }
 
 .btn.ghost {
-  background: rgba(255, 255, 255, 0.55);
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
 }
 
 .btn.danger {
   background: #c62828;
-  color: #fff;
+  color: var(--panel);
 }
 
 .modal-backdrop {
   position: fixed;
   inset: 0;
   z-index: 70;
-  background: rgba(90, 50, 68, 0.34);
+  background: color-mix(in srgb, var(--overlay) 34%, transparent);
   backdrop-filter: blur(4px);
   display: grid;
   place-items: center;
@@ -1160,7 +1376,7 @@ input[type='range'] {
   font-size: 11.5px;
   font-weight: 700;
   letter-spacing: 1px;
-  color: var(--pink-accent);
+  color: var(--accent);
   text-transform: uppercase;
 }
 
@@ -1175,15 +1391,15 @@ input[type='range'] {
   width: 100%;
   padding: 11px 14px;
   border-radius: 11px;
-  border: 1.5px solid rgba(231, 84, 128, 0.28);
-  background: rgba(255, 255, 255, 0.9);
+  border: 1.5px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
   font-size: 15px;
   outline: none;
   font-family: inherit;
 }
 
 .field:focus {
-  border-color: var(--pink-accent);
+  border-color: var(--accent);
 }
 
 .field.shake {
@@ -1225,13 +1441,13 @@ input[type='range'] {
   margin-top: 14px;
   padding: 12px 16px;
   border-radius: 12px;
-  background: rgba(231, 84, 128, 0.1);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
   font-size: 13px;
 }
 
 .reclaim b {
   font-size: 17px;
-  color: var(--pink-accent);
+  color: var(--accent);
 }
 
 /* hold-to-confirm */
@@ -1264,7 +1480,7 @@ input[type='range'] {
   gap: 3px;
   font-size: 14px;
   font-weight: 700;
-  color: var(--pink-accent);
+  color: var(--accent);
   pointer-events: none;
 }
 
@@ -1281,7 +1497,7 @@ input[type='range'] {
   margin: 0 auto 4px;
   border-radius: 16px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.85);
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
   display: grid;
   place-items: center;
   box-shadow: var(--shadow-sm);
@@ -1299,7 +1515,7 @@ input[type='range'] {
   width: 10px;
   height: 10px;
   border-radius: 10px 0 10px 0;
-  background: var(--pink-primary);
+  background: var(--brand);
   pointer-events: none;
 }
 
@@ -1319,8 +1535,8 @@ input[type='range'] {
 .toast {
   padding: 11px 17px;
   border-radius: 12px;
-  background: rgba(45, 25, 35, 0.93);
-  color: #fff;
+  background: color-mix(in srgb, var(--overlay) 93%, transparent);
+  color: var(--panel);
   font-size: 13px;
   box-shadow: var(--shadow-lg);
   animation: toast-in 0.2s ease;
@@ -1371,9 +1587,9 @@ input[type='range'] {
   border-radius: 12px;
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.5) 25%,
-    rgba(255, 255, 255, 0.85) 37%,
-    rgba(255, 255, 255, 0.5) 63%
+    color-mix(in srgb, var(--panel) 50%, transparent) 25%,
+    color-mix(in srgb, var(--panel) 85%, transparent) 37%,
+    color-mix(in srgb, var(--panel) 50%, transparent) 63%
   );
   background-size: 400% 100%;
   animation: shimmer 1.3s ease infinite;
@@ -1388,13 +1604,72 @@ input[type='range'] {
   }
 }
 
+/* ---------- theme picker ---------- */
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.theme-card {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 2px solid transparent;
+  background: color-mix(in srgb, var(--panel) 62%, transparent);
+  box-shadow: var(--shadow-sm);
+  text-align: left;
+  transition: transform 0.13s, border-color 0.13s;
+}
+
+.theme-card:hover {
+  transform: translateY(-2px);
+}
+
+.theme-card.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+}
+
+.theme-swatch {
+  display: flex;
+  flex: none;
+  width: 46px;
+  height: 30px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.theme-swatch > span {
+  flex: 1;
+}
+
+.theme-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.theme-name em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
 .settings-row {
   display: grid;
   grid-template-columns: 190px 1fr;
   gap: 14px;
   align-items: center;
   padding: 11px 0;
-  border-bottom: 1px solid rgba(231, 84, 128, 0.1);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 10%, transparent);
   font-size: 13.5px;
 }
 
@@ -1408,7 +1683,7 @@ input[type='range'] {
   gap: 10px;
   padding: 7px 12px;
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.6);
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
   margin-bottom: 6px;
   font-size: 12.5px;
   word-break: break-all;

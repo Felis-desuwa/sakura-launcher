@@ -55,6 +55,11 @@ export default function App(): React.JSX.Element {
     setTimeout(() => setToasts((cur) => cur.filter((t) => t.id !== id)), 4200)
   }, [])
 
+  // Themes are a custom-property swap on the root element.
+  useEffect(() => {
+    document.documentElement.dataset.theme = settings.theme
+  }, [settings.theme])
+
   const refresh = useCallback(async (): Promise<void> => {
     const snap = await window.sakura.snapshot()
     setGames(snap.games)
@@ -199,7 +204,7 @@ export default function App(): React.JSX.Element {
 
   return (
     <div className="app">
-      <PetalCanvas enabled={settings.petals} />
+      <PetalCanvas enabled={settings.petals} themeKey={settings.theme} />
 
       <TopBar
         page={page}

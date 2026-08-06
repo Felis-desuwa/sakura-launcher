@@ -48,7 +48,7 @@ export default function WishlistPage({ games, onPatch }: Props): React.JSX.Eleme
           只看已选
         </button>
         <span style={{ fontSize: 13, color: 'var(--ink-soft)' }}>
-          已选 <b style={{ color: 'var(--pink-accent)' }}>{selectedCount}</b> / {games.length}
+          已选 <b style={{ color: 'var(--accent)' }}>{selectedCount}</b> / {games.length}
         </span>
       </div>
 

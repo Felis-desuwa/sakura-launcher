@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Settings, SortKey, TabKey } from '../../../shared/types'
-import { SORT_META, TAB_META } from '../../../shared/types'
+import { SORT_META, TAB_META, THEMES } from '../../../shared/types'
 
 interface Props {
   settings: Settings
@@ -88,6 +88,30 @@ export default function SettingsPage({
           ))}
         </div>
       )}
+
+      <div className="card" style={{ maxWidth: 760 }}>
+        <div className="section-title" style={{ marginTop: 0 }}>主题</div>
+        <div className="theme-grid">
+          {THEMES.map((t) => (
+            <button
+              type="button"
+              key={t.key}
+              className={`theme-card${settings.theme === t.key ? ' active' : ''}`}
+              onClick={() => onChange({ theme: t.key })}
+            >
+              <span className="theme-swatch">
+                {t.swatch.map((c) => (
+                  <span key={c} style={{ background: c }} />
+                ))}
+              </span>
+              <span className="theme-name">
+                {t.label}
+                {t.note && <em>{t.note}</em>}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="card" style={{ maxWidth: 760 }}>
         <div className="section-title" style={{ marginTop: 0 }}>外观与行为</div>

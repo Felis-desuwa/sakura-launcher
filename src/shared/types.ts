@@ -88,6 +88,18 @@ export interface Group {
   builtin?: boolean
 }
 
+export type ThemeKey = 'sakura' | 'midnight' | 'miku' | 'matcha' | 'ocean' | 'lavender'
+
+/** `swatch` drives the preview chips in settings: [background, brand, accent]. */
+export const THEMES: { key: ThemeKey; label: string; note: string; swatch: [string, string, string] }[] = [
+  { key: 'sakura', label: '樱花', note: '默认', swatch: ['#ffe0ec', '#ff8fb1', '#e75480'] },
+  { key: 'midnight', label: '夜樱', note: '深色', swatch: ['#241a2a', '#ff8fb1', '#ff6f9d'] },
+  { key: 'miku', label: '初音', note: '青绿', swatch: ['#d4f1ee', '#6fdcd4', '#39c5bb'] },
+  { key: 'matcha', label: '抹茶', note: '', swatch: ['#e3f0d8', '#8fbf6a', '#4e8a3a'] },
+  { key: 'ocean', label: '海盐', note: '', swatch: ['#d8ebf7', '#6aabdd', '#2b6fa8'] },
+  { key: 'lavender', label: '薰衣草', note: '', swatch: ['#e7ddf6', '#a68ad4', '#6b4aa8'] }
+]
+
 export type SortKey = 'manual' | 'name' | 'size' | 'mtime' | 'recent'
 
 export const SORT_META: Record<SortKey, string> = {
@@ -103,6 +115,7 @@ export interface Settings {
   roots: string[]
   defaultTab: TabKey
   sortKey: SortKey
+  theme: ThemeKey
   tileSize: number
   petals: boolean
   geekPath: string | null
@@ -122,6 +135,7 @@ export const DEFAULT_SETTINGS: Settings = {
   roots: [],
   defaultTab: 'all',
   sortKey: 'manual',
+  theme: 'sakura',
   tileSize: 180,
   petals: true,
   geekPath: null,

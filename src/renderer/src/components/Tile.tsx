@@ -80,7 +80,7 @@ export default function Tile({
           </span>
         )}
         {game.playing && (
-          <span className="flag" title="在玩" style={{ color: 'var(--pink-accent)' }}>
+          <span className="flag" title="在玩" style={{ color: 'var(--accent)' }}>
             ❀
           </span>
         )}

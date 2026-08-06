@@ -25,15 +25,20 @@ export function formatDate(ts: number | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-/** Deterministic sakura-toned gradient so a game without artwork still looks placed, not broken. */
-export function placeholderGradient(name: string): string {
+/**
+ * Per-name hue offset (-30..+30) for the generated placeholder tiles.
+ *
+ * Only the offset is computed here; the theme's base hue and lightness are applied in
+ * CSS. Building the whole colour in JS would freeze it at whatever theme was active
+ * when the tile first rendered, since switching themes only swaps custom properties
+ * and does not re-render the tree.
+ */
+export function placeholderHueOffset(name: string): number {
   let hash = 0
   for (let i = 0; i < name.length; i++) {
     hash = (hash * 31 + name.charCodeAt(i)) | 0
   }
-  const hue = 320 + (Math.abs(hash) % 60) - 30 // 290..350, the pink/rose arc
-  const hue2 = hue + 18
-  return `linear-gradient(150deg, hsl(${hue} 72% 76%) 0%, hsl(${hue2} 64% 62%) 100%)`
+  return (Math.abs(hash) % 60) - 30
 }
 
 /** First meaningful character(s) for the placeholder tile. */

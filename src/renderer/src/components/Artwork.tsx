@@ -1,5 +1,5 @@
 import type { Game } from '../../../shared/types'
-import { placeholderGradient, placeholderInitial } from '../lib/format'
+import { placeholderHueOffset, placeholderInitial } from '../lib/format'
 
 interface Props {
   game: Game
@@ -32,7 +32,10 @@ export default function Artwork({ game, className }: Props): React.JSX.Element {
   }
   return (
     <div className={`tile-art ${className ?? ''}`}>
-      <div className="tile-placeholder" style={{ background: placeholderGradient(game.name) }}>
+      <div
+        className="tile-placeholder"
+        style={{ ['--h-offset' as string]: placeholderHueOffset(game.name) }}
+      >
         {placeholderInitial(game.name)}
       </div>
     </div>

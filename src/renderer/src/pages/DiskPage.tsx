@@ -75,7 +75,7 @@ export default function DiskPage({ games, onToast, onRescan }: Props): React.JSX
                 <div
                   style={{
                     width: formatPercent(used, d.totalBytes),
-                    background: 'var(--pink-accent)'
+                    background: 'var(--accent)'
                   }}
                 />
                 <div style={{ flex: 1, background: 'rgba(231,84,128,0.12)' }} />
@@ -157,7 +157,7 @@ export default function DiskPage({ games, onToast, onRescan }: Props): React.JSX
               }}
             >
               <span style={{ fontSize: 13 }}>
-                已选 <b style={{ color: 'var(--pink-accent)' }}>{formatBytes(selectedBytes)}</b>
+                已选 <b style={{ color: 'var(--accent)' }}>{formatBytes(selectedBytes)}</b>
               </span>
               <span style={{ flex: 1 }} />
               <button
@@ -196,7 +196,7 @@ export default function DiskPage({ games, onToast, onRescan }: Props): React.JSX
 function Stat({ label, value }: { label: string; value: string }): React.JSX.Element {
   return (
     <div>
-      <div style={{ fontSize: 21, fontWeight: 700, color: 'var(--pink-accent)' }}>{value}</div>
+      <div style={{ fontSize: 21, fontWeight: 700, color: 'var(--accent)' }}>{value}</div>
       <div style={{ fontSize: 12, color: 'var(--ink-soft)' }}>{label}</div>
     </div>
   )

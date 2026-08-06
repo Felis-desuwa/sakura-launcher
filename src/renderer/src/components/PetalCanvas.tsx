@@ -11,12 +11,20 @@ interface Petal {
   alpha: number
 }
 
+interface Props {
+  enabled: boolean
+  /** Re-read the theme colour when this changes. */
+  themeKey: string
+}
+
 /** Ambient falling petals. Deliberately faint and pausable — it must never fight the tiles. */
-export default function PetalCanvas({ enabled }: { enabled: boolean }): React.JSX.Element | null {
+export default function PetalCanvas({ enabled, themeKey }: Props): React.JSX.Element | null {
   const ref = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
     if (!enabled) return
+    const petalColor =
+      getComputedStyle(document.documentElement).getPropertyValue('--petal').trim() || '#ff9ec0'
     const canvas = ref.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
@@ -30,6 +38,10 @@ export default function PetalCanvas({ enabled }: { enabled: boolean }): React.JS
       canvas.width = canvas.clientWidth * dpr
       canvas.height = canvas.clientHeight * dpr
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      // Keep the density right when the window is resized.
+      const want = petalCount()
+      while (petals.length < want) petals.push(spawn())
+      if (petals.length > want) petals.length = want
     }
 
     const spawn = (): Petal => ({
@@ -40,11 +52,19 @@ export default function PetalCanvas({ enabled }: { enabled: boolean }): React.JS
       vx: -0.25 + Math.random() * 0.5,
       spin: (-0.5 + Math.random()) * 0.02,
       angle: Math.random() * Math.PI * 2,
-      alpha: 0.18 + Math.random() * 0.22
+      // Kept faint: these now drift over the tiles, so they must stay clearly
+      // subordinate to the artwork and labels underneath.
+      alpha: 0.1 + Math.random() * 0.18
     })
 
+    // Scale with the window so a wide desktop is covered as evenly as a narrow one.
+    const petalCount = (): number => {
+      const area = canvas.clientWidth * canvas.clientHeight
+      return Math.max(28, Math.min(80, Math.round(area / 26000)))
+    }
+
     resize()
-    petals = Array.from({ length: 26 }, spawn)
+    petals = Array.from({ length: petalCount() }, spawn)
 
     const draw = (): void => {
       const w = canvas.clientWidth
@@ -60,7 +80,7 @@ export default function PetalCanvas({ enabled }: { enabled: boolean }): React.JS
         ctx.translate(p.x, p.y)
         ctx.rotate(p.angle)
         ctx.globalAlpha = p.alpha
-        ctx.fillStyle = '#ff9ec0'
+        ctx.fillStyle = petalColor
         ctx.beginPath()
         ctx.ellipse(0, 0, p.r, p.r * 0.62, 0, 0, Math.PI * 2)
         ctx.fill()
@@ -75,7 +95,7 @@ export default function PetalCanvas({ enabled }: { enabled: boolean }): React.JS
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', resize)
     }
-  }, [enabled])
+  }, [enabled, themeKey])
 
   if (!enabled) return null
   return <canvas className="petal-canvas" ref={ref} />

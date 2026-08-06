@@ -82,7 +82,8 @@ async function maybeCapture(): Promise<void> {
   const script = process.env['SAKURA_CAPTURE_SCRIPT']
   if (script) {
     try {
-      await mainWindow.webContents.executeJavaScript(script)
+      const value = await mainWindow.webContents.executeJavaScript(script)
+      console.log('capture script ->', value)
       await new Promise((r) => setTimeout(r, 900))
     } catch (err) {
       console.error('capture script failed:', err)

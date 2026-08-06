@@ -300,16 +300,19 @@ export default function DesktopPage(props: Props): React.JSX.Element {
   }
 
   /**
-   * Split each tile into three bands: the outer edges mean "drop between these two
-   * tiles", the middle means "merge into a group". Without the edge bands there is no
-   * way to express an insertion point, since the grid gaps receive no drag events.
+   * Split each tile into three bands. The outer 40% on each side means "drop between
+   * these two tiles" — repositioning is the common intent, so it gets most of the
+   * target area. Only the narrow middle merges the two into a group.
+   *
+   * The grid gaps themselves receive no drag events, so the edge bands are the only
+   * way an insertion point between two tiles can be expressed at all.
    */
-  const hintFor = (e: React.DragEvent, canReorder: boolean): DropHint => {
-    if (!canReorder) return 'into'
+  const hintFor = (e: React.DragEvent, canGroup: boolean): DropHint => {
     const rect = e.currentTarget.getBoundingClientRect()
     const ratio = (e.clientX - rect.left) / rect.width
-    if (ratio < 0.3) return 'before'
-    if (ratio > 0.7) return 'after'
+    if (!canGroup) return ratio < 0.5 ? 'before' : 'after'
+    if (ratio < 0.4) return 'before'
+    if (ratio > 0.6) return 'after'
     return 'into'
   }
 
@@ -341,9 +344,9 @@ export default function DesktopPage(props: Props): React.JSX.Element {
         e.preventDefault()
         if (!dragId || dragId === game.id) return
         const source = games.find((g) => g.id === dragId)
-        // Insertion only makes sense in manual order, and only among siblings.
-        const sameContainer = !useGroups || source?.groupId === game.groupId
-        setDrop({ id: game.id, hint: hintFor(e, sortKey === 'manual' && sameContainer) })
+        // Merging only applies between siblings in the grouped view.
+        const canGroup = useGroups && source?.groupId === game.groupId
+        setDrop({ id: game.id, hint: hintFor(e, canGroup) })
       }}
       onDragLeave={() => setDrop((cur) => (cur?.id === game.id ? null : cur))}
       onDrop={(e) => {
@@ -358,6 +361,13 @@ export default function DesktopPage(props: Props): React.JSX.Element {
         if (!source) return
 
         if (hint === 'before' || hint === 'after') {
+          // Dragging a tile out of its group and into the main flow, or vice versa.
+          if (useGroups && source.groupId !== game.groupId) {
+            onPatch(sourceId, { groupId: game.groupId })
+          }
+          // Any other ordering is computed, so an explicit drop means the user wants
+          // manual order. The visible list is the base, so nothing appears to jump.
+          if (sortKey !== 'manual') props.onSortChange('manual')
           reorderWithin(sourceId, game.id, list, hint)
           return
         }
@@ -379,9 +389,19 @@ export default function DesktopPage(props: Props): React.JSX.Element {
       }}
       onDragOver={(e) => e.preventDefault()}
       onDrop={() => {
-        // Dropping on empty desktop pulls a tile out of its group.
-        if (dragId) onPatch(dragId, { groupId: null })
+        // Dropping on empty desktop pulls a tile out of its group and sends it to
+        // the end, rather than silently doing nothing.
+        if (dragId) {
+          const source = games.find((g) => g.id === dragId)
+          if (source?.groupId) onPatch(dragId, { groupId: null })
+          const last = ungrouped[ungrouped.length - 1]
+          if (last && last.id !== dragId) {
+            if (sortKey !== 'manual') props.onSortChange('manual')
+            reorderWithin(dragId, last.id, ungrouped, 'after')
+          }
+        }
         setDragId(null)
+        setDrop(null)
         setDropId(null)
       }}
     >
