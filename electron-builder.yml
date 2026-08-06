@@ -1,0 +1,17 @@
+appId: com.sakura.launcher
+productName: Sakura Launcher
+directories:
+  buildResources: build
+  output: release
+files:
+  - out/**/*
+  - '!**/.vscode/*'
+  - '!{.eslintrc,.prettierrc,tsconfig*.json,electron.vite.config.ts}'
+  - '!scripts/*'
+win:
+  target:
+    - target: portable
+      arch: [x64]
+  artifactName: ${productName}-${version}-portable.${ext}
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
