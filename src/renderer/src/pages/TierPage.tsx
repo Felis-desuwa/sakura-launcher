@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { Game, Tier } from '../../../shared/types'
 import { TIERS, TIER_META } from '../../../shared/types'
 import Artwork from '../components/Artwork'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 type RowKey = Tier | 'unrated'
 
@@ -10,15 +11,17 @@ const ROWS: RowKey[] = [...TIERS, 'unrated']
 interface Props {
   games: Game[]
   onPatch: (id: string, patch: Partial<Game>) => void
+  onClearAll: () => void
 }
 
 /**
  * Tier list. Icons only — no captions — so a row holds many at once; the name shows
  * on hover instead. Launching is disabled here on purpose: this page is for ranking.
  */
-export default function TierPage({ games, onPatch }: Props): React.JSX.Element {
+export default function TierPage({ games, onPatch, onClearAll }: Props): React.JSX.Element {
   const [dragId, setDragId] = useState<string | null>(null)
   const [overRow, setOverRow] = useState<RowKey | null>(null)
+  const [confirmClear, setConfirmClear] = useState(false)
   const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null)
   const hoverTimer = useState<{ id: number | null }>({ id: null })[0]
 
@@ -35,6 +38,11 @@ export default function TierPage({ games, onPatch }: Props): React.JSX.Element {
     for (const list of map.values()) list.sort((a, b) => a.tierOrder - b.tierOrder)
     return map
   }, [games])
+
+  const rated = useMemo(
+    () => games.filter((g) => g.kind === 'installed' && g.tier !== null).length,
+    [games]
+  )
 
   const showTip = (e: React.MouseEvent, name: string): void => {
     const { clientX, clientY } = e
@@ -68,10 +76,20 @@ export default function TierPage({ games, onPatch }: Props): React.JSX.Element {
 
   return (
     <div className="page" onDragEnd={() => setOverRow(null)}>
-      <p style={{ fontSize: 13, color: 'var(--ink-soft)', margin: '0 0 14px' }}>
-        拖动图标在各档之间移动；悬停可看名称。此页仅用于评级，不会启动游戏。
-        未安装的压缩包不参与评级。
-      </p>
+      <div className="tier-head">
+        <p style={{ fontSize: 13, color: 'var(--ink-soft)', margin: 0 }}>
+          拖动图标在各档之间移动；悬停可看名称。此页仅用于评级，不会启动游戏。
+          未安装的压缩包不参与评级。
+        </p>
+        <button
+          type="button"
+          className="btn ghost small"
+          disabled={rated === 0}
+          onClick={() => setConfirmClear(true)}
+        >
+          清除全部评级
+        </button>
+      </div>
 
       {ROWS.map((row) => {
         const meta = TIER_META[row]
@@ -138,6 +156,28 @@ export default function TierPage({ games, onPatch }: Props): React.JSX.Element {
         <div className="tooltip" style={{ left: tip.x + 14, top: tip.y + 18 }}>
           {tip.text}
         </div>
+      )}
+
+      {confirmClear && (
+        <ConfirmDialog
+          title={`清除全部 ${rated} 个游戏的评级？`}
+          danger
+          confirmLabel="清除评级"
+          body={
+            <>
+              所有游戏都会回到「未评级」一行。这不会影响星级评分、游玩记录或磁盘上的任何文件。
+              <br />
+              <br />
+              评级同时记在每个游戏文件夹的 <code>sakura-launcher.md</code> 里，清除后下次
+              扫描会一并同步过去。
+            </>
+          }
+          onCancel={() => setConfirmClear(false)}
+          onConfirm={() => {
+            setConfirmClear(false)
+            onClearAll()
+          }}
+        />
       )}
     </div>
   )

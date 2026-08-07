@@ -2,9 +2,9 @@ import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Database, Game, Group, Settings } from '../shared/types'
-import { DEFAULT_SETTINGS } from '../shared/types'
+import { DEFAULT_SETTINGS, GAME_DEFAULTS } from '../shared/types'
 
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 let dataDir = ''
 let dbPath = ''
@@ -36,6 +36,23 @@ function empty(): Database {
   return { version: DB_VERSION, games: [], groups: [], settings: { ...DEFAULT_SETTINGS } }
 }
 
+/**
+ * Fill in fields a database written by an older version does not have.
+ * Settings have always been merged against their defaults; games were not, so a
+ * field added later arrived as `undefined` and quietly poisoned anything that did
+ * arithmetic on it — `a.tierOrder - b.tierOrder` sorting to NaN, for one.
+ */
+function normalizeGame(raw: Game): Game {
+  const game = { ...GAME_DEFAULTS, ...raw } as Game
+  if (!Array.isArray(game.tags)) game.tags = []
+  if (!Array.isArray(game.sessions)) game.sessions = []
+  if (typeof game.playtimeMs !== 'number' || !isFinite(game.playtimeMs)) game.playtimeMs = 0
+  if (typeof game.tierOrder !== 'number' || !isFinite(game.tierOrder)) game.tierOrder = 0
+  if (typeof game.order !== 'number' || !isFinite(game.order)) game.order = 0
+  if (typeof game.rating !== 'number') game.rating = null
+  return game
+}
+
 export function load(): Database {
   if (cache) return cache
   try {
@@ -44,7 +61,7 @@ export function load(): Database {
     const parsed = JSON.parse(raw) as Database
     cache = {
       version: DB_VERSION,
-      games: Array.isArray(parsed.games) ? parsed.games : [],
+      games: Array.isArray(parsed.games) ? parsed.games.map(normalizeGame) : [],
       groups: Array.isArray(parsed.groups) ? parsed.groups : [],
       // Merge so settings added in later versions get their defaults.
       settings: { ...DEFAULT_SETTINGS, ...(parsed.settings ?? {}) }
@@ -75,7 +92,11 @@ export function save(): void {
   }, 300)
 }
 
-export function flush(): void {
+/**
+ * Write immediately, cancelling any pending debounce. Used for changes worth
+ * losing nothing over — a finished play session, a completed scan — and on quit.
+ */
+export function saveNow(): void {
   if (writeTimer) {
     clearTimeout(writeTimer)
     writeTimer = null
@@ -86,6 +107,8 @@ export function flush(): void {
     /* nothing useful to do while quitting */
   }
 }
+
+export const flush = saveNow
 
 export function getSettings(): Settings {
   return load().settings

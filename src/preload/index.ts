@@ -20,6 +20,33 @@ export interface ListedEntry {
 export interface ScanOutcome {
   games: Game[]
   groupCandidates: { parent: string; name: string; dirs: string[] }[]
+  /** Entries kept but not found this time. */
+  missing: number
+  /** Present only when the scan was asked to reconcile the sidecar files. */
+  sidecars: { imported: number; exported: number } | null
+}
+
+export interface ImportCandidate {
+  dir: string
+  exe: string
+  name: string
+  sizeBytes: number | null
+  /** Why the scanner passed this folder over. Absent for accepted entries. */
+  reason?: string
+  volumes?: string[]
+}
+
+export interface ImportPreview {
+  folder: string
+  games: ImportCandidate[]
+  rejected: ImportCandidate[]
+  archives: ImportCandidate[]
+}
+
+export interface PlaytimeUpdate {
+  id: string
+  playtimeMs: number
+  playing: boolean
 }
 
 export interface UninstallPlan {
@@ -41,8 +68,18 @@ const api = {
   updateSettings: (patch: Partial<Settings>): Promise<Settings> =>
     ipcRenderer.invoke('settings:update', patch),
 
-  scan: (): Promise<ScanOutcome> => ipcRenderer.invoke('scan:run'),
+  /** `sync` also reconciles the per-game sidecar files; reserve it for explicit scans. */
+  scan: (sync = false): Promise<ScanOutcome> => ipcRenderer.invoke('scan:run', sync),
   recomputeSizes: (): Promise<boolean> => ipcRenderer.invoke('scan:recomputeSizes'),
+
+  previewFolder: (folder: string): Promise<ImportPreview> =>
+    ipcRenderer.invoke('scan:preview', folder),
+  commitImport: (
+    folder: string,
+    accept: string[],
+    reject: string[]
+  ): Promise<ScanOutcome & { added: number }> =>
+    ipcRenderer.invoke('scan:commitImport', folder, accept, reject),
 
   launch: (id: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('game:launch', id),
@@ -55,6 +92,8 @@ const api = {
   ): Promise<{ ok: boolean; sidecar?: boolean; file?: string; error?: string }> =>
     ipcRenderer.invoke('game:rename', id, name),
   resetName: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('game:resetName', id),
+  setTags: (id: string, tags: string[]): Promise<Game | undefined> =>
+    ipcRenderer.invoke('game:setTags', id, tags),
   removeTile: (id: string): Promise<{ ok: boolean; name?: string; error?: string }> =>
     ipcRenderer.invoke('game:remove', id),
   unignore: (dir: string): Promise<Settings> => ipcRenderer.invoke('library:unignore', dir),
@@ -121,6 +160,13 @@ const api = {
     const handler = (): void => cb()
     ipcRenderer.on('db:changed', handler)
     return () => ipcRenderer.off('db:changed', handler)
+  },
+
+  activeSessions: (): Promise<string[]> => ipcRenderer.invoke('playtime:active'),
+  onPlaytime: (cb: (payload: PlaytimeUpdate) => void): (() => void) => {
+    const handler = (_e: unknown, payload: PlaytimeUpdate): void => cb(payload)
+    ipcRenderer.on('playtime:changed', handler)
+    return () => ipcRenderer.off('playtime:changed', handler)
   }
 }
 

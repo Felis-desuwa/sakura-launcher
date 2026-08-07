@@ -1,5 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
+// Extension spelled out: the harnesses in scripts/ import this file straight into node,
+// where nothing fills the extension in for them.
+import { formatDuration, parseDuration } from '../shared/types.ts'
 
 export const MAX_DEPTH = 4
 
@@ -105,18 +108,21 @@ export interface ExeCandidate {
 export type IconSizeProbe = (exePath: string) => number
 
 /**
- * Rank the executables in a folder and return the most likely main program.
+ * Rank every plausible main program in a folder, best first.
  * Engine layout signals (Unity `_Data`, RPG Maker `www`, Ren'Py `renpy`) beat name matching,
  * because folder names are frequently unrelated to the executable.
+ *
+ * Blacklisted names (uninstallers, redistributables, patches) are dropped outright.
+ * "Weak" names — launcher, start, nw — are only offered when nothing else qualifies.
  */
-export function pickMainExe(
+export function rankExes(
   dir: string,
   entries: DirEntry[],
   probeIconSize?: IconSizeProbe
-): ExeCandidate | null {
+): ExeCandidate[] {
   const dirName = path.basename(dir)
   const exes = entries.filter((e) => !e.isDir && /\.exe$/i.test(e.name))
-  if (exes.length === 0) return null
+  if (exes.length === 0) return []
 
   const dirNames = new Set(entries.filter((e) => e.isDir).map((e) => e.name.toLowerCase()))
   const fileNames = entries.filter((e) => !e.isDir).map((e) => e.name.toLowerCase())
@@ -158,9 +164,17 @@ export function pickMainExe(
   }
 
   const pool = strong.length > 0 ? strong : weak
-  if (pool.length === 0) return null
   pool.sort((a, b) => b.score - a.score || b.size - a.size)
-  return pool[0]
+  return pool
+}
+
+/** The single best candidate, which is what scanning cares about. */
+export function pickMainExe(
+  dir: string,
+  entries: DirEntry[],
+  probeIconSize?: IconSizeProbe
+): ExeCandidate | null {
+  return rankExes(dir, entries, probeIconSize)[0] ?? null
 }
 
 /** Engines that legitimately ship tiny payloads — their presence vouches for a folder. */
@@ -278,57 +292,262 @@ export function displayNameFor(dir: string): string {
 }
 
 /**
- * Sidecar that records how a game should be titled in the launcher.
+ * Sidecar that records everything the user decided about a game: its title, status,
+ * rating, tags and play history.
  *
  * Renaming the folder itself is not an option — plenty of these games resolve assets
  * by path, or ship shortcuts and save files that point at the original name — so the
- * chosen title is written beside the game instead. The file is plain text and explains
- * itself, because whoever opens it later will not remember what put it there.
+ * title is written beside the game instead. Everything else lives here too because it
+ * makes the record portable: reinstall Windows, point the launcher at the same drive,
+ * and one scan brings the whole library back.
+ *
+ * It is Markdown, editable by hand, and explains itself — whoever opens it later will
+ * not remember what put it there.
  */
-export const NAME_SIDECAR = 'sakura-launcher.txt'
+export const SIDECAR = 'sakura-launcher.md'
 
-const SIDECAR_KEY = /^\s*显示名称\s*=\s*(.+?)\s*$/m
+/** v0.1.0 stored only the display name, in a plain-text file. Migrated on first sync. */
+export const LEGACY_SIDECAR = 'sakura-launcher.txt'
 
-export function readSidecarName(dir: string): string | null {
+export interface SidecarSession {
+  startedAt: number
+  ms: number
+}
+
+/** Every field is optional: a key missing from the file leaves the database value alone. */
+export interface SidecarData {
+  name?: string
+  wishlist?: boolean
+  playing?: boolean
+  played?: boolean
+  rating?: number | null
+  tier?: string | null
+  tags?: string[]
+  playtimeMs?: number
+  launchCount?: number
+  lastLaunchedAt?: number | null
+  sessions?: SidecarSession[]
+}
+
+const HEADER = [
+  '> 这个文件由 Sakura Launcher 维护，记录你对这个游戏的设置与游玩记录。',
+  '> 它不会改动游戏本身的任何文件，也不影响游戏启动 —— 正是为了避免直接',
+  '> 重命名文件夹导致游戏找不到资源，才把这些记在这里。',
+  '>',
+  '> 可以直接编辑，下次在启动器里点「扫描」就会读回去。删掉文件即恢复默认。'
+]
+
+const STATUS_LABELS: [keyof SidecarData, string][] = [
+  ['wishlist', '想玩'],
+  ['playing', '在玩'],
+  ['played', '玩过']
+]
+
+function stars(rating: number): string {
+  return '★'.repeat(rating) + '☆'.repeat(5 - rating)
+}
+
+function formatStamp(ms: number): string {
+  const d = new Date(ms)
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function parseStamp(text: string): number | null {
+  const m = /(\d{4})-(\d{1,2})-(\d{1,2})[ T]+(\d{1,2}):(\d{2})/.exec(text)
+  if (!m) return null
+  const ms = new Date(
+    Number(m[1]),
+    Number(m[2]) - 1,
+    Number(m[3]),
+    Number(m[4]),
+    Number(m[5])
+  ).getTime()
+  return isFinite(ms) ? ms : null
+}
+
+/** Accepts both ASCII and full-width separators — hand-edited files use either. */
+function splitList(value: string): string[] {
+  return value
+    .split(/[,，、]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+export function renderSidecar(data: SidecarData): string {
+  const status = STATUS_LABELS.filter(([key]) => data[key] === true).map(([, label]) => label)
+  const lines: string[] = [`# 《${data.name ?? ''}》`, '', ...HEADER, '', '## 设置', '']
+
+  lines.push(`- 显示名称: ${data.name ?? ''}`)
+  lines.push(`- 状态: ${status.length > 0 ? status.join(', ') : '无'}`)
+  lines.push(
+    `- 评分: ${typeof data.rating === 'number' ? `${stars(data.rating)} (${data.rating})` : '未评分'}`
+  )
+  lines.push(`- 评级: ${data.tier ?? '未评级'}`)
+  lines.push(`- 标签: ${data.tags && data.tags.length > 0 ? data.tags.join(', ') : '无'}`)
+
+  lines.push('', '## 统计', '')
+  lines.push(`- 总时长: ${formatDuration(data.playtimeMs ?? 0)}`)
+  lines.push(`- 启动次数: ${data.launchCount ?? 0}`)
+  lines.push(`- 最后游玩: ${data.lastLaunchedAt ? formatStamp(data.lastLaunchedAt) : '从未'}`)
+
+  const sessions = data.sessions ?? []
+  if (sessions.length > 0) {
+    lines.push('', '## 游玩记录', '', '| 开始时间 | 时长 |', '| --- | --- |')
+    for (const s of sessions) {
+      lines.push(`| ${formatStamp(s.startedAt)} | ${formatDuration(s.ms)} |`)
+    }
+  }
+
+  lines.push('')
+  return lines.join('\r\n')
+}
+
+export function parseSidecar(text: string): SidecarData {
+  const raw = text.replace(/^﻿/, '')
+  const data: SidecarData = {}
+
+  // Tolerant of both colon forms and of the `键 = 值` shape the v0.1.0 file used.
+  const field = (key: string): string | null => {
+    const m = new RegExp(`^[ \\t]*[-*]?[ \\t]*${key}[ \\t]*[:：=][ \\t]*(.+?)[ \\t]*$`, 'm').exec(raw)
+    return m ? m[1].trim() : null
+  }
+
+  const name = field('显示名称')
+  if (name) data.name = name
+
+  const status = field('状态')
+  if (status !== null) {
+    const parts = splitList(status)
+    for (const [key, label] of STATUS_LABELS) {
+      ;(data as Record<string, unknown>)[key] = parts.includes(label)
+    }
+  }
+
+  const rating = field('评分')
+  if (rating !== null) {
+    // The digit in parentheses is authoritative; the stars are decoration for the reader.
+    const digit = /\((\d)\)/.exec(rating) ?? /^\s*(\d)\s*$/.exec(rating)
+    if (digit) data.rating = Math.min(5, Math.max(0, Number(digit[1])))
+    else if (/★/.test(rating)) data.rating = (rating.match(/★/g) ?? []).length
+    else data.rating = null
+  }
+
+  const tier = field('评级')
+  if (tier !== null) {
+    const value = tier.trim()
+    data.tier = /^(T[0-3]|trash)$/i.test(value)
+      ? value.toLowerCase() === 'trash'
+        ? 'trash'
+        : value.toUpperCase()
+      : null
+  }
+
+  const tags = field('标签')
+  if (tags !== null) data.tags = tags === '无' ? [] : splitList(tags)
+
+  const playtime = field('总时长')
+  if (playtime !== null) {
+    const ms = parseDuration(playtime)
+    if (ms !== null) data.playtimeMs = ms
+  }
+
+  const launches = field('启动次数')
+  if (launches !== null) {
+    const n = Number(launches.trim())
+    if (isFinite(n) && n >= 0) data.launchCount = Math.round(n)
+  }
+
+  const last = field('最后游玩')
+  if (last !== null) data.lastLaunchedAt = parseStamp(last)
+
+  const sessions: SidecarSession[] = []
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line.trim().startsWith('|')) continue
+    const cells = line.split('|').map((c) => c.trim())
+    // cells[0] is the empty string before the leading pipe.
+    const startedAt = parseStamp(cells[1] ?? '')
+    const ms = parseDuration(cells[2] ?? '')
+    if (startedAt !== null && ms !== null) sessions.push({ startedAt, ms })
+  }
+  if (sessions.length > 0) data.sessions = sessions
+
+  return data
+}
+
+export function readSidecar(dir: string): SidecarData | null {
   try {
-    const raw = fs.readFileSync(path.join(dir, NAME_SIDECAR), 'utf-8').replace(/^﻿/, '')
-    const m = SIDECAR_KEY.exec(raw)
-    const value = m?.[1]?.trim()
-    return value ? value : null
+    return parseSidecar(fs.readFileSync(path.join(dir, SIDECAR), 'utf-8'))
   } catch {
     return null
   }
 }
 
-export function writeSidecarName(dir: string, name: string): { ok: boolean; error?: string } {
-  const body = [
-    '# Sakura Launcher 显示名称',
-    '#',
-    '# 这个文件只决定该游戏在 Sakura Launcher 里显示成什么名字。',
-    '# 它不会改动游戏本身的任何文件，也不影响游戏启动 —— 正是为了避免',
-    '# 直接重命名文件夹导致游戏找不到资源，才把名字记在这里。',
-    '#',
-    '# 想改名，直接改下面这一行；把这个文件删掉，启动器就会重新使用文件夹名。',
-    '',
-    `显示名称 = ${name}`,
-    ''
-  ].join('\r\n')
+/**
+ * Read just the display name, without parsing the rest. Scanning calls this for every
+ * folder it finds, so it stays deliberately cheap; the full read happens only on an
+ * explicit sync. Falls back to the v0.1.0 plain-text file.
+ */
+export function readSidecarName(dir: string): string | null {
+  for (const file of [SIDECAR, LEGACY_SIDECAR]) {
+    try {
+      const raw = fs.readFileSync(path.join(dir, file), 'utf-8').replace(/^﻿/, '')
+      const m = /^[ \t]*[-*]?[ \t]*显示名称[ \t]*[:：=][ \t]*(.+?)[ \t]*$/m.exec(raw)
+      const value = m?.[1]?.trim()
+      if (value) return value
+    } catch {
+      /* try the next candidate */
+    }
+  }
+  return null
+}
 
+export function writeSidecar(
+  dir: string,
+  data: SidecarData
+): { ok: boolean; mtimeMs?: number; error?: string } {
+  const file = path.join(dir, SIDECAR)
+  const body = renderSidecar(data)
   try {
     // Written with a BOM: this file is meant to be opened by a person, and Windows
     // editors fall back to the ANSI codepage without one, turning Chinese into mojibake.
-    fs.writeFileSync(path.join(dir, NAME_SIDECAR), '﻿' + body, 'utf-8')
-    return { ok: true }
+    fs.writeFileSync(file, '﻿' + body, 'utf-8')
+    // Drop the file the previous version wrote, now that its content lives here.
+    try {
+      fs.unlinkSync(path.join(dir, LEGACY_SIDECAR))
+    } catch {
+      /* absent, which is the common case */
+    }
+    return { ok: true, mtimeMs: fs.statSync(file).mtimeMs }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 }
 
-export function removeSidecarName(dir: string): void {
+/** Skip the write when nothing changed, so mtimes stay meaningful as an edit signal. */
+export function writeSidecarIfChanged(
+  dir: string,
+  data: SidecarData
+): { ok: boolean; mtimeMs?: number; error?: string; skipped?: boolean } {
+  const file = path.join(dir, SIDECAR)
   try {
-    fs.unlinkSync(path.join(dir, NAME_SIDECAR))
+    const existing = fs.readFileSync(file, 'utf-8').replace(/^﻿/, '')
+    if (existing === renderSidecar(data)) {
+      return { ok: true, mtimeMs: fs.statSync(file).mtimeMs, skipped: true }
+    }
   } catch {
-    /* already gone */
+    /* missing or unreadable: fall through and write it */
+  }
+  return writeSidecar(dir, data)
+}
+
+export function removeSidecar(dir: string): void {
+  for (const file of [SIDECAR, LEGACY_SIDECAR]) {
+    try {
+      fs.unlinkSync(path.join(dir, file))
+    } catch {
+      /* already gone */
+    }
   }
 }
 
@@ -383,8 +602,17 @@ function isArchiveFile(fileName: string): boolean {
  * A folder that directly holds a usable .exe is a game and we stop descending;
  * otherwise we keep going down to MAX_DEPTH. That handles libraries where games sit
  * at wildly different depths.
+ *
+ * `readNames` controls whether each folder's sidecar is consulted for a display name.
+ * A rescan already knows the name of every folder it has seen before, so it turns this
+ * off and resolves names only for what actually changed — leaving a routine startup
+ * scan with no sidecar reads at all.
  */
-export function walkRoot(root: string, probeIconSize?: IconSizeProbe): WalkResult {
+export function walkRoot(
+  root: string,
+  probeIconSize?: IconSizeProbe,
+  readNames = true
+): WalkResult {
   const games: FoundGame[] = []
   const archiveParts = new Map<string, { dir: string; volumes: string[]; size: number }>()
   const collections = new Map<string, string[]>()
@@ -425,7 +653,7 @@ export function walkRoot(root: string, probeIconSize?: IconSizeProbe): WalkResul
           dir,
           exe: main.fullPath,
           // The sidecar, when present, is the user's explicit choice and wins.
-          name: readSidecarName(dir) ?? displayNameFor(dir),
+          name: (readNames ? readSidecarName(dir) : null) ?? displayNameFor(dir),
           mtimeMs: stat?.mtimeMs ?? 0,
           childCount: entries.length
         })

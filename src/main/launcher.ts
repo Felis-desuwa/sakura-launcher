@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import * as db from './db'
+import { beginSession } from './playtime'
 
 /**
  * Launch a game detached, with the working directory set to the game folder.
@@ -26,10 +27,9 @@ export function launchGame(id: string): { ok: boolean; error?: string } {
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 
-  db.updateGame(id, {
-    lastLaunchedAt: Date.now(),
-    launchCount: game.launchCount + 1
-  })
+  // Opens the play session, which is what bumps lastLaunchedAt and launchCount —
+  // and closes it again once the game is gone, recording how long it ran.
+  beginSession(game)
   return { ok: true }
 }
 

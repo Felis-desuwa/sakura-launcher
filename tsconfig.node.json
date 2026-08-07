@@ -13,6 +13,9 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
+    // scan-core is imported directly by the CLI harnesses in scripts/, which run under
+    // plain node with no bundler to fill in extensions for them.
+    "allowImportingTsExtensions": true,
     "baseUrl": ".",
     "paths": {
       "@shared/*": ["src/shared/*"]

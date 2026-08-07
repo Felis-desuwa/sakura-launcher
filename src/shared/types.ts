@@ -23,6 +23,23 @@ export const TAB_META: Record<TabKey, { label: string }> = {
 
 export type GameKind = 'installed' | 'archive'
 
+/** One stretch of time the game was actually running. */
+export interface PlaySession {
+  /** Epoch milliseconds the session started. */
+  startedAt: number
+  /** How long it ran, in milliseconds. */
+  ms: number
+}
+
+/** How many sessions to keep per game. Older ones fall off the timeline. */
+export const MAX_SESSIONS = 50
+
+/**
+ * Sessions shorter than this are discarded. A mis-double-click or a game that
+ * fails to start would otherwise litter the timeline with junk entries.
+ */
+export const MIN_SESSION_MS = 60_000
+
 export interface Game {
   id: string
   name: string
@@ -49,17 +66,62 @@ export interface Game {
   tier: Tier | null
   tierOrder: number
 
+  /** 0–5 stars. `null` means unrated, which is not the same as a zero-star verdict. */
+  rating: number | null
+  /** Free-form user tags. Searched alongside the name. */
+  tags: string[]
+
   lastLaunchedAt: number | null
   launchCount: number
+
+  /** Total time played, in milliseconds. */
+  playtimeMs: number
+  /** Most recent first, capped at MAX_SESSIONS. */
+  sessions: PlaySession[]
+
+  /**
+   * The sidecar file's mtime as of the last time we wrote it. A newer mtime means
+   * the user edited the file by hand, and their edit wins on the next sync.
+   */
+  sidecarSyncedAt?: number
 
   /** Folder modification time — doubles as the incremental-scan fingerprint and as
    *  the "installed / last updated" timestamp shown and sorted on. */
   mtimeMs: number
   childCount: number
 
+  /**
+   * The folder was not found on the last scan — an unmounted drive, or content
+   * moved away. The entry is kept (with everything the user recorded on it)
+   * rather than dropped, and the tile greys out.
+   */
+  missing?: boolean
+
   /** Archive entries only: every volume that makes up the archive. */
   archiveVolumes?: string[]
 }
+
+/** Everything a Game carries that the user chose, rather than the scanner found. */
+export const GAME_DEFAULTS = {
+  renamed: false,
+  coverPath: null,
+  groupId: null,
+  order: 0,
+  wishlist: false,
+  playing: false,
+  played: false,
+  tier: null,
+  tierOrder: 0,
+  rating: null,
+  tags: [] as string[],
+  lastLaunchedAt: null,
+  launchCount: 0,
+  playtimeMs: 0,
+  sessions: [] as PlaySession[],
+  mtimeMs: 0,
+  childCount: 0,
+  missing: false
+} satisfies Partial<Game>
 
 /**
  * Enforce the one rule between the three status flags: "想玩" means *not started yet*,
@@ -78,6 +140,45 @@ export function normalizeStatus(current: Game, patch: Partial<Game>): Partial<Ga
   const startsPlaying = patch.playing === true || patch.played === true
   if (startsPlaying) next.wishlist = false
   return next
+}
+
+/**
+ * Playtime as a person would say it. Used both on screen and in the sidecar file,
+ * so the two always read the same and a hand-edited file round-trips.
+ */
+export function formatDuration(ms: number): string {
+  if (ms <= 0) return '0 分'
+  const totalMinutes = Math.round(ms / 60_000)
+  if (totalMinutes < 1) return '不到 1 分'
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  if (hours === 0) return `${minutes} 分`
+  if (minutes === 0) return `${hours} 小时`
+  return `${hours} 小时 ${minutes} 分`
+}
+
+/** Coarser form for tiles, where there is only room for the headline number. */
+export function formatDurationShort(ms: number): string {
+  if (ms <= 0) return ''
+  const minutes = Math.round(ms / 60_000)
+  if (minutes < 60) return `${minutes} 分`
+  const hours = minutes / 60
+  // One decimal below ten hours, so "3.5 小时" does not round away to "4 小时".
+  return hours < 10 ? `${Math.round(hours * 10) / 10} 小时` : `${Math.round(hours)} 小时`
+}
+
+/** Inverse of formatDuration, forgiving enough for hand-written values. */
+export function parseDuration(text: string): number | null {
+  if (text.includes('不到')) return 0
+  const hours = /(\d+)\s*(?:小时|h)/i.exec(text)
+  // The \b belongs only to the Latin forms. A word boundary cannot follow 分, which
+  // is not a word character, so anchoring the whole group on it never matched Chinese.
+  const minutes = /(\d+)\s*(?:分钟|分|m(?:in)?\b)/i.exec(text)
+  if (!hours && !minutes) {
+    const bare = /^\s*(\d+)\s*$/.exec(text)
+    return bare ? Number(bare[1]) * 60_000 : null
+  }
+  return (Number(hours?.[1] ?? 0) * 60 + Number(minutes?.[1] ?? 0)) * 60_000
 }
 
 export interface Group {
@@ -100,14 +201,15 @@ export const THEMES: { key: ThemeKey; label: string; note: string; swatch: [stri
   { key: 'lavender', label: '薰衣草', note: '', swatch: ['#e7ddf6', '#a68ad4', '#6b4aa8'] }
 ]
 
-export type SortKey = 'manual' | 'name' | 'size' | 'mtime' | 'recent'
+export type SortKey = 'manual' | 'name' | 'size' | 'mtime' | 'recent' | 'playtime'
 
 export const SORT_META: Record<SortKey, string> = {
   manual: '手动',
   name: '名称',
   size: '体积',
   mtime: '安装/修改时间',
-  recent: '最近启动'
+  recent: '最近启动',
+  playtime: '游玩时长'
 }
 
 export interface Settings {
@@ -129,6 +231,8 @@ export interface Settings {
   onboarded: boolean
   /** Parent folders already offered for auto-grouping, so we only ask once each. */
   groupingPrompted: string[]
+  /** How often to check whether a launched game is still running. */
+  playtimePollSeconds: number
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -141,8 +245,11 @@ export const DEFAULT_SETTINGS: Settings = {
   geekPath: null,
   ignoredDirs: [],
   onboarded: false,
-  groupingPrompted: []
+  groupingPrompted: [],
+  playtimePollSeconds: 15
 }
+
+export const POLL_CHOICES = [15, 30, 60]
 
 export interface Database {
   version: number

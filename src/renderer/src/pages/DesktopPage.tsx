@@ -5,7 +5,10 @@ import Artwork from '../components/Artwork'
 import ContextMenu, { type MenuItem } from '../components/ContextMenu'
 import FolderWindow from '../components/FolderWindow'
 import PromptDialog from '../components/PromptDialog'
-import Tile, { type DropHint } from '../components/Tile'
+import Tile from '../components/Tile'
+import { formatBytes } from '../lib/format'
+import { useFlip } from '../lib/useFlip'
+import { useTileDrag, type DropTarget } from '../lib/useTileDrag'
 
 interface Props {
   games: Game[]
@@ -14,12 +17,18 @@ interface Props {
   sortKey: SortKey
   tileSize: number
   search: string
-  selectedId: string | null
-  onSelect: (id: string | null) => void
+  selectedIds: string[]
+  playingIds: string[]
+  /**
+   * Accepts an updater as well as a plain list. Toggling has to build on the latest
+   * selection: two clicks landing in the same render would otherwise both read the
+   * same stale array, and the second would discard the first.
+   */
+  onSelectionChange: (ids: string[] | ((current: string[]) => string[])) => void
   onLaunch: (game: Game) => void
   onPatch: (id: string, patch: Partial<Game>) => void
-  onUninstall: (game: Game) => void
-  onRemoveTile: (game: Game) => void
+  onUninstall: (games: Game[]) => void
+  onRemoveTile: (games: Game[]) => void
   onSetCover: (id: string) => void
   onClearCover: (id: string) => void
   onBrowse: (game: Game) => void
@@ -31,12 +40,14 @@ interface Props {
   onRescan: () => void
   onSortChange: (key: SortKey) => void
   onRename: (game: Game) => void
+  onEditTags: (game: Game) => void
   onBlockedLaunch: () => void
   extractProgress: Record<string, number>
 }
 
 type MenuState =
   | { kind: 'game'; x: number; y: number; game: Game }
+  | { kind: 'bulk'; x: number; y: number; targets: Game[] }
   | { kind: 'blank'; x: number; y: number }
   | { kind: 'group'; x: number; y: number; group: Group }
   | null
@@ -55,6 +66,8 @@ function sortGames(games: Game[], key: SortKey): Game[] {
       return list.sort((a, b) => (b.mtimeMs || 0) - (a.mtimeMs || 0) || byName(a, b))
     case 'recent':
       return list.sort((a, b) => (b.lastLaunchedAt ?? 0) - (a.lastLaunchedAt ?? 0) || byName(a, b))
+    case 'playtime':
+      return list.sort((a, b) => b.playtimeMs - a.playtimeMs || byName(a, b))
     default:
       return list.sort((a, b) => a.order - b.order)
   }
@@ -68,8 +81,9 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     sortKey,
     tileSize,
     search,
-    selectedId,
-    onSelect,
+    selectedIds,
+    playingIds,
+    onSelectionChange,
     onLaunch,
     onPatch,
     onUninstall,
@@ -80,19 +94,29 @@ export default function DesktopPage(props: Props): React.JSX.Element {
 
   const [menu, setMenu] = useState<MenuState>(null)
   const [openGroup, setOpenGroup] = useState<string | null>(null)
-  const [dragId, setDragId] = useState<string | null>(null)
-  const [dropId, setDropId] = useState<string | null>(null)
-  const [drop, setDrop] = useState<{ id: string; hint: DropHint } | null>(null)
   const [nudgeId, setNudgeId] = useState<string | null>(null)
   const [groupPrompt, setGroupPrompt] = useState<
     { mode: 'create' } | { mode: 'rename'; group: Group } | null
   >(null)
   const gridRef = useRef<HTMLDivElement>(null)
+  const pageRef = useRef<HTMLDivElement>(null)
+  const drawerRef = useRef<HTMLDivElement>(null)
+  /** Where a shift-click range starts from. */
+  const anchorRef = useRef<string | null>(null)
+
+  const selection = useMemo(() => new Set(selectedIds), [selectedIds])
+  const playing = useMemo(() => new Set(playingIds), [playingIds])
+  const selectedGames = useMemo(
+    () => games.filter((g) => selection.has(g.id)),
+    [games, selection]
+  )
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
     return games.filter((g) => {
-      if (q && !g.name.toLowerCase().includes(q)) return false
+      // Tags are searchable too, which is most of what makes them worth keeping.
+      if (q && !g.name.toLowerCase().includes(q) && !g.tags.some((t) => t.toLowerCase().includes(q)))
+        return false
       switch (tab) {
         case 'wishlist':
           return g.wishlist
@@ -129,6 +153,16 @@ export default function DesktopPage(props: Props): React.JSX.Element {
   }, [groups, visible, useGroups, sortKey])
 
   const launchBlocked = tab === 'wishlist'
+  /** Star ratings are a verdict on a game you have played, so they live in that tab. */
+  const canRate = tab === 'played'
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape' && selectedIds.length > 0) onSelectionChange([])
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selectedIds.length, onSelectionChange])
 
   /*
    * A bare onClick would fire on the first half of a double-click and open the detail
@@ -137,6 +171,8 @@ export default function DesktopPage(props: Props): React.JSX.Element {
    * a second click arrives.
    */
   const clickTimer = useRef<number | null>(null)
+  /** The game a still-pending plain click belongs to, so it can be settled early. */
+  const pendingClick = useRef<Game | null>(null)
 
   useEffect(() => {
     return () => {
@@ -144,18 +180,74 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     }
   }, [])
 
-  const handleSingleClick = (game: Game): void => {
+  /** Order tiles the way they are laid out, so a shift-range matches what is on screen. */
+  const flatOrder = useMemo(() => {
+    const rows: Game[] = [...ungrouped]
+    for (const { members } of groupsWithMembers) rows.push(...members)
+    return rows.map((g) => g.id)
+  }, [ungrouped, groupsWithMembers])
+
+  const applyClick = (game: Game, mods: { toggle: boolean; range: boolean }): void => {
+    if (mods.toggle) {
+      anchorRef.current = game.id
+      onSelectionChange((cur) =>
+        cur.includes(game.id) ? cur.filter((id) => id !== game.id) : [...cur, game.id]
+      )
+      return
+    }
+
+    if (mods.range && anchorRef.current) {
+      const from = flatOrder.indexOf(anchorRef.current)
+      const to = flatOrder.indexOf(game.id)
+      if (from >= 0 && to >= 0) {
+        const [lo, hi] = from < to ? [from, to] : [to, from]
+        onSelectionChange(flatOrder.slice(lo, hi + 1))
+        return
+      }
+    }
+
+    anchorRef.current = game.id
+    // Clicking the one already selected closes the detail panel again.
+    onSelectionChange((cur) => (cur.length === 1 && cur[0] === game.id ? [] : [game.id]))
+  }
+
+  const handleSingleClick = (game: Game, e: React.MouseEvent): void => {
+    // The click a finished drag leaves behind is not a click the user made.
+    if (drag.didDrag()) return
+    const toggle = e.ctrlKey || e.metaKey
+    const range = e.shiftKey
+    // A modified click edits the selection and can never begin a launch, so it applies
+    // at once instead of waiting out the double-click window. Any plain click still
+    // waiting out that window is settled first: it resolves to "select only this one",
+    // so left to land afterwards it would wipe the selection just built — and simply
+    // dropping it would lose the tile the user picked before reaching for Ctrl.
+    if (toggle || range) {
+      flushPendingClick()
+      applyClick(game, { toggle, range })
+      return
+    }
     if (clickTimer.current !== null) return // second click of a pair; dblclick takes over
+    pendingClick.current = game
     clickTimer.current = window.setTimeout(() => {
       clickTimer.current = null
-      onSelect(selectedId === game.id ? null : game.id)
+      pendingClick.current = null
+      applyClick(game, { toggle: false, range: false })
     }, 240)
   }
 
+  /** Drop a pending plain click unapplied — a double-click or a right-click supersedes it. */
   const cancelPendingClick = (): void => {
     if (clickTimer.current === null) return
     window.clearTimeout(clickTimer.current)
     clickTimer.current = null
+    pendingClick.current = null
+  }
+
+  /** Apply a pending plain click now rather than waiting out the double-click window. */
+  const flushPendingClick = (): void => {
+    const game = pendingClick.current
+    cancelPendingClick()
+    if (game) applyClick(game, { toggle: false, range: false })
   }
 
   const handleDoubleClick = (game: Game): void => {
@@ -168,6 +260,52 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     onLaunch(game)
   }
 
+  const ratingSubmenu = (targets: Game[]): MenuItem => {
+    if (!canRate) {
+      return { label: '评分（仅「玩过」标签页可用）', disabled: true }
+    }
+    const current = targets.length === 1 ? targets[0].rating : null
+    return {
+      label: '评分',
+      submenu: [
+        ...[1, 2, 3, 4, 5].map((n) => ({
+          label: '★'.repeat(n) + '☆'.repeat(5 - n),
+          checked: current === n,
+          onClick: () => targets.forEach((g) => onPatch(g.id, { rating: n }))
+        })),
+        { type: 'separator' as const },
+        {
+          label: '清除评分',
+          onClick: () => targets.forEach((g) => onPatch(g.id, { rating: null }))
+        }
+      ]
+    }
+  }
+
+  const tierSubmenu = (targets: Game[]): MenuItem => {
+    const current = targets.length === 1 ? targets[0].tier : null
+    return {
+      label: '评价为',
+      submenu: [
+        ...TIERS.map((t: Tier) => ({
+          label: TIER_META[t].label,
+          checked: current === t,
+          onClick: () => targets.forEach((g) => onPatch(g.id, { tier: t }))
+        })),
+        { type: 'separator' as const },
+        { label: '清除评级', onClick: () => targets.forEach((g) => onPatch(g.id, { tier: null })) }
+      ]
+    }
+  }
+
+  /** Put every target into a brand-new group. */
+  const groupTargets = (targets: Game[], name: string): void => {
+    const id = `g-${Date.now().toString(36)}`
+    onGroupsChange([...groups, { id, name, order: groups.length }])
+    targets.forEach((g) => onPatch(g.id, { groupId: id }))
+    setOpenGroup(id)
+  }
+
   const gameMenu = (game: Game): MenuItem[] => {
     const items: MenuItem[] = [
       { label: '想玩', checked: game.wishlist, onClick: () => onPatch(game.id, { wishlist: !game.wishlist }) },
@@ -178,21 +316,7 @@ export default function DesktopPage(props: Props): React.JSX.Element {
 
     // Archives are not installed yet, so there is nothing to rate.
     if (game.kind === 'installed') {
-      items.push(
-        {
-          label: '评价为',
-          submenu: [
-            ...TIERS.map((t: Tier) => ({
-              label: TIER_META[t].label,
-              checked: game.tier === t,
-              onClick: () => onPatch(game.id, { tier: t })
-            })),
-            { type: 'separator' as const },
-            { label: '清除评级', onClick: () => onPatch(game.id, { tier: null }) }
-          ]
-        },
-        { type: 'separator' }
-      )
+      items.push(tierSubmenu([game]), ratingSubmenu([game]), { type: 'separator' })
     }
 
     if (game.kind === 'archive') {
@@ -204,7 +328,8 @@ export default function DesktopPage(props: Props): React.JSX.Element {
       { label: '打开所在文件夹', onClick: () => props.onBrowse(game) },
       { label: '设置封面…', onClick: () => props.onSetCover(game.id) },
       ...(game.coverPath ? [{ label: '清除封面', onClick: () => props.onClearCover(game.id) }] : []),
-      { label: '重命名…', onClick: () => props.onRename(game) }
+      { label: '重命名…', onClick: () => props.onRename(game) },
+      { label: '编辑标签…', onClick: () => props.onEditTags(game) }
     )
 
     if (useGroups) {
@@ -225,8 +350,59 @@ export default function DesktopPage(props: Props): React.JSX.Element {
 
     items.push(
       { type: 'separator' },
-      { label: '从库中移除…', onClick: () => props.onRemoveTile(game) },
-      { label: '卸载…', danger: true, onClick: () => onUninstall(game) }
+      { label: '从库中移除…', onClick: () => props.onRemoveTile([game]) },
+      { label: '卸载…', danger: true, onClick: () => onUninstall([game]) }
+    )
+    return items
+  }
+
+  /**
+   * The menu for a multi-tile selection. Status entries set rather than toggle: with a
+   * mixed selection there is no state to flip, and "make all of these 在玩" is the
+   * intent anyway.
+   */
+  const bulkMenu = (targets: Game[]): MenuItem[] => {
+    const installed = targets.filter((g) => g.kind === 'installed')
+    const items: MenuItem[] = [
+      { label: `已选 ${targets.length} 个`, disabled: true },
+      { type: 'separator' },
+      { label: '标记为想玩', onClick: () => targets.forEach((g) => onPatch(g.id, { wishlist: true })) },
+      { label: '标记为在玩', onClick: () => targets.forEach((g) => onPatch(g.id, { playing: true })) },
+      { label: '标记为玩过', onClick: () => targets.forEach((g) => onPatch(g.id, { played: true })) },
+      { type: 'separator' }
+    ]
+
+    if (installed.length > 0) {
+      items.push(tierSubmenu(installed), ratingSubmenu(installed), { type: 'separator' })
+    }
+
+    if (useGroups) {
+      items.push({
+        label: '新建分组并放入…',
+        onClick: () => setGroupPrompt({ mode: 'create' })
+      })
+      const groupTargetList = groups.filter((g) => g.id !== ARCHIVE_GROUP_ID)
+      if (groupTargetList.length > 0) {
+        items.push({
+          label: '移动到分组',
+          submenu: groupTargetList.map((t) => ({
+            label: t.name,
+            onClick: () => targets.forEach((g) => onPatch(g.id, { groupId: t.id }))
+          }))
+        })
+      }
+      if (targets.some((g) => g.groupId)) {
+        items.push({
+          label: '移出分组',
+          onClick: () => targets.forEach((g) => onPatch(g.id, { groupId: null }))
+        })
+      }
+      items.push({ type: 'separator' })
+    }
+
+    items.push(
+      { label: `从库中移除这 ${targets.length} 个…`, onClick: () => props.onRemoveTile(targets) },
+      { label: `卸载这 ${targets.length} 个…`, danger: true, onClick: () => onUninstall(targets) }
     )
     return items
   }
@@ -235,7 +411,7 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     { label: '新建分组', onClick: () => setGroupPrompt({ mode: 'create' }) },
     { type: 'separator' },
     { label: '添加游戏…', onClick: props.onAddGame },
-    { label: '添加扫描文件夹…', onClick: props.onAddFolder },
+    { label: '导入文件夹…', onClick: props.onAddFolder },
     { label: '重新扫描', onClick: props.onRescan },
     { type: 'separator' },
     {
@@ -266,98 +442,156 @@ export default function DesktopPage(props: Props): React.JSX.Element {
   }
 
   /** Dropping one tile on another merges them into a new group, iOS-style. */
-  const mergeIntoGroup = (sourceId: string, targetId: string): void => {
-    const source = games.find((g) => g.id === sourceId)
+  const mergeIntoGroup = (sourceIds: string[], targetId: string): void => {
+    const sources = games.filter((g) => sourceIds.includes(g.id) && g.id !== targetId)
     const target = games.find((g) => g.id === targetId)
-    if (!source || !target || source.id === target.id) return
+    if (sources.length === 0 || !target) return
 
     if (target.groupId) {
-      onPatch(source.id, { groupId: target.groupId })
+      sources.forEach((s) => onPatch(s.id, { groupId: target.groupId }))
       return
     }
     const id = `g-${Date.now().toString(36)}`
     onGroupsChange([...groups, { id, name: target.name, order: groups.length }])
     onPatch(target.id, { groupId: id })
-    onPatch(source.id, { groupId: id })
+    sources.forEach((s) => onPatch(s.id, { groupId: id }))
     setOpenGroup(id)
   }
 
-  /** Move `sourceId` to sit immediately before or after `targetId` within `list`. */
+  /**
+   * Move every dragged tile to sit immediately before or after `targetId` within `list`,
+   * keeping the order they appear in on screen.
+   */
   const reorderWithin = (
-    sourceId: string,
+    sourceIds: string[],
     targetId: string,
     list: Game[],
     position: 'before' | 'after'
   ): void => {
-    const ids = list.map((g) => g.id)
-    const from = ids.indexOf(sourceId)
-    if (from < 0) return
-    ids.splice(from, 1)
+    const moving = list.filter((g) => sourceIds.includes(g.id)).map((g) => g.id)
+    if (moving.length === 0) return
+    const ids = list.map((g) => g.id).filter((id) => !moving.includes(id))
     let to = ids.indexOf(targetId)
-    if (to < 0) return
+    if (to < 0) return // dropped onto one of the tiles being dragged
     if (position === 'after') to += 1
-    ids.splice(to, 0, sourceId)
+    ids.splice(to, 0, ...moving)
     onReorder(ids)
   }
 
-  /**
-   * Split each tile into three bands. The outer 40% on each side means "drop between
-   * these two tiles" — repositioning is the common intent, so it gets most of the
-   * target area. Only the narrow middle merges the two into a group.
-   *
-   * The grid gaps themselves receive no drag events, so the edge bands are the only
-   * way an insertion point between two tiles can be expressed at all.
-   */
-  /**
-   * Work out where a drop in the gaps between tiles belongs.
-   *
-   * The grid gaps are part of the page, not of any tile, yet they are exactly where
-   * one aims when placing something *between* two tiles. Without this the drop fell
-   * through to the page handler and the tile was flung to the end of the list.
-   */
-  const nearestInsertion = (x: number, y: number): { id: string; hint: DropHint } | null => {
-    const grid = gridRef.current
-    if (!grid) return null
-    const items = [...grid.querySelectorAll<HTMLElement>(':scope > .tile[data-game-id]')].map(
-      (el) => ({ id: el.dataset.gameId as string, rect: el.getBoundingClientRect() })
-    )
-    if (items.length === 0) return null
+  /** Apply the drop the pointer landed on. Runs before the tile animates into place. */
+  const commitDrop = (sourceIds: string[], landing: DropTarget | null): void => {
+    if (sourceIds.length === 0 || landing === null) return
 
-    // Pick the row whose vertical centre is closest, then the slot within it.
-    let row = items[0]
-    let best = Infinity
-    for (const item of items) {
-      const dy = Math.abs(item.rect.top + item.rect.height / 2 - y)
-      if (dy < best) {
-        best = dy
-        row = item
+    if (landing.kind === 'group') {
+      sourceIds.forEach((id) => onPatch(id, { groupId: landing.id }))
+      return
+    }
+    if (sourceIds.includes(landing.id)) return
+
+    const target = games.find((g) => g.id === landing.id)
+    if (!target) return
+
+    if (landing.hint === 'into') {
+      if (useGroups) mergeIntoGroup(sourceIds, landing.id)
+      return
+    }
+
+    // The list the target belongs to is the one being reordered — the main flow, or
+    // the members of an open group.
+    const list = target.groupId
+      ? (groupsWithMembers.find((g) => g.group.id === target.groupId)?.members ?? ungrouped)
+      : ungrouped
+
+    if (useGroups) {
+      // Dragging tiles out of their group into the main flow, or between groups.
+      for (const id of sourceIds) {
+        const source = games.find((g) => g.id === id)
+        if (source && source.groupId !== target.groupId) onPatch(id, { groupId: target.groupId })
       }
     }
-    const sameRow = items.filter((i) => Math.abs(i.rect.top - row.rect.top) < 4)
-    for (const item of sameRow) {
-      if (x < item.rect.left + item.rect.width / 2) return { id: item.id, hint: 'before' }
-    }
-    return { id: sameRow[sameRow.length - 1].id, hint: 'after' }
+    // Every other ordering is computed, so an explicit drop means the user wants manual
+    // order. The visible list is the base, so nothing appears to jump.
+    if (sortKey !== 'manual') props.onSortChange('manual')
+    reorderWithin(sourceIds, landing.id, list, landing.hint)
   }
 
-  const hintFor = (e: React.DragEvent, canGroup: boolean): DropHint => {
-    const rect = e.currentTarget.getBoundingClientRect()
-    const ratio = (e.clientX - rect.left) / rect.width
-    if (!canGroup) return ratio < 0.5 ? 'before' : 'after'
-    if (ratio < 0.4) return 'before'
-    if (ratio > 0.6) return 'after'
-    return 'into'
+  const drag = useTileDrag({
+    scrollRef: pageRef,
+    selectedIds,
+    // Merging only applies between siblings in the grouped view.
+    canGroup: (sourceId, targetId) => {
+      if (!useGroups) return false
+      const source = games.find((g) => g.id === sourceId)
+      const target = games.find((g) => g.id === targetId)
+      return !!source && !!target && source.groupId === target.groupId
+    },
+    onDrop: commitDrop
+  })
+
+  const dragging = useMemo(() => new Set(drag.dragIds), [drag.dragIds])
+
+  /**
+   * The order the grid would be in if the tile were dropped right now.
+   *
+   * Rendering this rather than the stored order is the whole trick behind tiles making
+   * room: the dragged tile is pulled out and reinserted at the landing slot, which
+   * pushes the tile it lands in front of — and everything after it — one cell along.
+   * The FLIP pass then plays that shift as a slide instead of a jump, and the cell the
+   * dragged tile now occupies, drawn as a hole, is the gap opening up.
+   */
+  const project = (list: Game[]): Game[] => {
+    if (drag.dragIds.length === 0) return list
+    // Nothing has been aimed at yet — the tile has only just been lifted, and the grid
+    // should sit still until the pointer asks for room somewhere.
+    const landing = drag.insertion
+    if (landing === null || landing.kind === 'group') return list
+
+    // Lifted tiles leave the list they were in, so the ranks close behind them.
+    const rest = list.filter((g) => !dragging.has(g.id))
+    const at = rest.findIndex((g) => g.id === landing.id)
+    if (at < 0) return rest // the slot belongs to some other container
+
+    // Keep the tiles in the order they appear on screen. Dragged in from another
+    // container they are not in this list yet, so fall back to the grab order.
+    const here = list.filter((g) => dragging.has(g.id))
+    const moving =
+      here.length > 0
+        ? here
+        : drag.dragIds.map((id) => games.find((g) => g.id === id)).filter((g): g is Game => !!g)
+
+    const index = landing.hint === 'after' ? at + 1 : at
+    return [...rest.slice(0, index), ...moving, ...rest.slice(index)]
   }
 
-  const renderTile = (game: Game, list: Game[]): React.JSX.Element => (
+  const mainList = project(ungrouped)
+  const openMembers = openGroup
+    ? project(groupsWithMembers.find((g) => g.group.id === openGroup)?.members ?? [])
+    : []
+
+  /*
+   * Replay every layout change as motion. The key is the rendered order itself, so any
+   * reshuffle animates — a drag stepping tiles aside, but equally a sort change or a
+   * game leaving the tab it was filtered into.
+   */
+  const layoutKey = mainList.map((g) => g.id).join(',')
+  useFlip(gridRef, `${groupsWithMembers.length}:${layoutKey}`)
+  useFlip(drawerRef, openMembers.map((g) => g.id).join(','))
+
+  const renderTile = (game: Game): React.JSX.Element => (
     <Tile
       key={game.id}
       game={game}
-      selected={selectedId === game.id}
+      selected={selection.has(game.id)}
+      playing={playing.has(game.id)}
       nudging={nudgeId === game.id}
-      dragging={dragId === game.id}
-      dropHint={drop?.id === game.id ? drop.hint : null}
-      onClick={() => handleSingleClick(game)}
+      hole={dragging.has(game.id)}
+      merging={
+        drag.target?.kind === 'tile' &&
+        drag.target.id === game.id &&
+        drag.target.hint === 'into'
+      }
+      onPointerDown={(e) => drag.start(e, game.id)}
+      onClick={(e) => handleSingleClick(game, e)}
       onDoubleClick={() => {
         cancelPendingClick()
         handleDoubleClick(game)
@@ -366,91 +600,30 @@ export default function DesktopPage(props: Props): React.JSX.Element {
         e.preventDefault()
         e.stopPropagation()
         cancelPendingClick()
-        setMenu({ kind: 'game', x: e.clientX, y: e.clientY, game })
-      }}
-      onDragStart={() => setDragId(game.id)}
-      onDragEnd={() => {
-        setDragId(null)
-        setDrop(null)
-      }}
-      onDragOver={(e) => {
-        e.preventDefault()
-        // Handled here, so the page-level gap logic does not also run for this event.
-        e.stopPropagation()
-        if (!dragId || dragId === game.id) return
-        const source = games.find((g) => g.id === dragId)
-        // Merging only applies between siblings in the grouped view.
-        const canGroup = useGroups && source?.groupId === game.groupId
-        setDrop({ id: game.id, hint: hintFor(e, canGroup) })
-      }}
-      onDragLeave={(e) => {
-        e.stopPropagation()
-        setDrop((cur) => (cur?.id === game.id ? null : cur))
-      }}
-      onDrop={(e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        const sourceId = dragId
-        const hint = drop?.id === game.id ? drop.hint : 'into'
-        setDrop(null)
-        setDragId(null)
-        if (!sourceId || sourceId === game.id) return
-        const source = games.find((g) => g.id === sourceId)
-        if (!source) return
-
-        if (hint === 'before' || hint === 'after') {
-          // Dragging a tile out of its group and into the main flow, or vice versa.
-          if (useGroups && source.groupId !== game.groupId) {
-            onPatch(sourceId, { groupId: game.groupId })
-          }
-          // Any other ordering is computed, so an explicit drop means the user wants
-          // manual order. The visible list is the base, so nothing appears to jump.
-          if (sortKey !== 'manual') props.onSortChange('manual')
-          reorderWithin(sourceId, game.id, list, hint)
+        if (selection.has(game.id) && selectedGames.length > 1) {
+          setMenu({ kind: 'bulk', x: e.clientX, y: e.clientY, targets: selectedGames })
           return
         }
-        // Dropped on the middle of a tile: merge the two into a group.
-        if (useGroups) mergeIntoGroup(sourceId, game.id)
+        // Right-clicking outside the selection replaces it, the way file managers do.
+        onSelectionChange([game.id])
+        anchorRef.current = game.id
+        setMenu({ kind: 'game', x: e.clientX, y: e.clientY, game })
       }}
     />
   )
 
+  const selectionBytes = selectedGames.reduce((sum, g) => sum + (g.sizeBytes ?? 0), 0)
+
   return (
     <div
       className="page"
+      ref={pageRef}
       onContextMenu={(e) => {
         e.preventDefault()
         setMenu({ kind: 'blank', x: e.clientX, y: e.clientY })
       }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onSelect(null)
-      }}
-      onDragOver={(e) => {
-        e.preventDefault()
-        // A drop in the gaps between tiles resolves to the nearest slot, so the
-        // insertion marker keeps tracking the pointer there too.
-        if (!dragId) return
-        const found = nearestInsertion(e.clientX, e.clientY)
-        setDrop(found && found.id !== dragId ? found : null)
-      }}
-      onDrop={(e) => {
-        if (dragId) {
-          const source = games.find((g) => g.id === dragId)
-          const target = nearestInsertion(e.clientX, e.clientY)
-          if (source?.groupId) onPatch(dragId, { groupId: null })
-          if (target && target.id !== dragId) {
-            if (sortKey !== 'manual') props.onSortChange('manual')
-            reorderWithin(
-              dragId,
-              target.id,
-              ungrouped,
-              target.hint === 'before' ? 'before' : 'after'
-            )
-          }
-        }
-        setDragId(null)
-        setDrop(null)
-        setDropId(null)
+        if (e.target === e.currentTarget) onSelectionChange([])
       }}
     >
       <div className="grid" ref={gridRef} style={{ ['--tile' as string]: `${tileSize}px` }}>
@@ -460,30 +633,17 @@ export default function DesktopPage(props: Props): React.JSX.Element {
             group={group}
             members={members}
             open={openGroup === group.id}
-            highlighted={dropId === group.id}
+            highlighted={drag.target?.kind === 'group' && drag.target.id === group.id}
             onToggle={() => setOpenGroup(openGroup === group.id ? null : group.id)}
             onContextMenu={(e) => {
               e.preventDefault()
               e.stopPropagation()
               setMenu({ kind: 'group', x: e.clientX, y: e.clientY, group })
             }}
-            onDragOver={(e) => {
-              e.preventDefault()
-              if (dragId) setDropId(group.id)
-            }}
-            onDragLeave={() => setDropId((cur) => (cur === group.id ? null : cur))}
-            onDrop={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              if (dragId) onPatch(dragId, { groupId: group.id })
-              setDragId(null)
-              setDropId(null)
-            }}
           />
         ))}
 
-        {ungrouped.map((game) => renderTile(game, ungrouped))}
-
+        {mainList.map((game) => renderTile(game))}
       </div>
 
       {openGroup &&
@@ -511,8 +671,12 @@ export default function DesktopPage(props: Props): React.JSX.Element {
                 </button>
               }
             >
-              <div className="grid" style={{ ['--tile' as string]: `${tileSize}px` }}>
-                {members.map((game) => renderTile(game, members))}
+              <div
+                className="grid"
+                ref={drawerRef}
+                style={{ ['--tile' as string]: `${tileSize}px` }}
+              >
+                {openMembers.map((game) => renderTile(game))}
               </div>
             </FolderWindow>
           ))}
@@ -522,7 +686,7 @@ export default function DesktopPage(props: Props): React.JSX.Element {
           <h2>这里还没有游戏</h2>
           <p>
             {tab === 'all'
-              ? '右键空白处可以添加游戏或扫描文件夹。'
+              ? '右键空白处可以添加游戏或导入文件夹。'
               : '在「全部」里右键磁贴，把游戏标记到这个清单。'}
           </p>
         </div>
@@ -546,6 +710,33 @@ export default function DesktopPage(props: Props): React.JSX.Element {
         </div>
       )}
 
+      {selectedGames.length > 1 && (
+        <div className="selection-bar">
+          <span className="selection-count">已选 {selectedGames.length} 个</span>
+          <span className="selection-size">合计 {formatBytes(selectionBytes)}</span>
+          <span style={{ flex: 1 }} />
+          <button
+            type="button"
+            className="btn ghost small"
+            onClick={() => onSelectionChange(flatOrder)}
+          >
+            全选
+          </button>
+          <button
+            type="button"
+            className="btn ghost small"
+            onClick={(e) =>
+              setMenu({ kind: 'bulk', x: e.clientX, y: e.clientY - 8, targets: selectedGames })
+            }
+          >
+            批量操作
+          </button>
+          <button type="button" className="btn ghost small" onClick={() => onSelectionChange([])}>
+            清空选择
+          </button>
+        </div>
+      )}
+
       {groupPrompt && (
         <PromptDialog
           title={groupPrompt.mode === 'create' ? '新建分组' : '重命名分组'}
@@ -555,10 +746,13 @@ export default function DesktopPage(props: Props): React.JSX.Element {
           onCancel={() => setGroupPrompt(null)}
           onConfirm={(name) => {
             if (groupPrompt.mode === 'create') {
-              onGroupsChange([
-                ...groups,
-                { id: `g-${Date.now().toString(36)}`, name, order: groups.length }
-              ])
+              // Created from a multi-selection, the new group takes those games with it.
+              if (selectedGames.length > 1) groupTargets(selectedGames, name)
+              else
+                onGroupsChange([
+                  ...groups,
+                  { id: `g-${Date.now().toString(36)}`, name, order: groups.length }
+                ])
             } else {
               onGroupsChange(
                 groups.map((g) => (g.id === groupPrompt.group.id ? { ...g, name } : g))
@@ -576,9 +770,11 @@ export default function DesktopPage(props: Props): React.JSX.Element {
           items={
             menu.kind === 'game'
               ? gameMenu(menu.game)
-              : menu.kind === 'group'
-                ? groupMenu(menu.group)
-                : blankMenu()
+              : menu.kind === 'bulk'
+                ? bulkMenu(menu.targets)
+                : menu.kind === 'group'
+                  ? groupMenu(menu.group)
+                  : blankMenu()
           }
           onClose={() => setMenu(null)}
         />
@@ -594,9 +790,6 @@ interface GroupTileProps {
   highlighted: boolean
   onToggle: () => void
   onContextMenu: (e: React.MouseEvent) => void
-  onDragOver: (e: React.DragEvent) => void
-  onDragLeave: () => void
-  onDrop: (e: React.DragEvent) => void
 }
 
 function GroupTile({
@@ -605,21 +798,19 @@ function GroupTile({
   open,
   highlighted,
   onToggle,
-  onContextMenu,
-  onDragOver,
-  onDragLeave,
-  onDrop
+  onContextMenu
 }: GroupTileProps): React.JSX.Element {
   const shown = members.slice(0, 4)
   return (
     <button
       type="button"
       className={`tile group-tile${highlighted ? ' drop-target' : ''}${open ? ' selected' : ''}`}
+      // The drag hook hit-tests against these attributes rather than listening for
+      // dragover, so a group can take a drop without any handlers of its own.
+      data-group-id={group.id}
+      data-flip-id={`group-${group.id}`}
       onDoubleClick={onToggle}
       onContextMenu={onContextMenu}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
       title={`${group.name} — 双击打开`}
     >
       <span className="group-count-chip">{members.length}</span>

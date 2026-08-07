@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Breakdown, DiskInfo, Game } from '../../../shared/types'
+import { formatDuration } from '../../../shared/types'
 import { formatBytes, formatDate, formatPercent } from '../lib/format'
 import SizeDonut, { type Slice } from './SizeDonut'
 
@@ -31,10 +32,17 @@ interface Props {
   game: Game
   allGames: Game[]
   disks: DiskInfo[]
+  playing: boolean
   onClose: () => void
 }
 
-export default function DetailDrawer({ game, allGames, disks, onClose }: Props): React.JSX.Element {
+export default function DetailDrawer({
+  game,
+  allGames,
+  disks,
+  playing,
+  onClose
+}: Props): React.JSX.Element {
   const [mode, setMode] = useState<Mode>('usage')
   const [stack, setStack] = useState<string[]>([game.dir])
   const [data, setData] = useState<Breakdown | null>(null)
@@ -248,17 +256,58 @@ export default function DetailDrawer({ game, allGames, disks, onClose }: Props):
           <>
             <div className="section-title">详情</div>
             <dl className="info-grid">
+              {/* Playtime first: it is what someone opens this panel to see. */}
+              <dt>游玩时长</dt>
+              <dd>
+                <b className="stat-strong">
+                  {game.playtimeMs > 0 ? formatDuration(game.playtimeMs) : '未记录'}
+                </b>
+                {playing && <span className="drawer-running">游玩中</span>}
+              </dd>
+              <dt>最后启动</dt>
+              <dd>{formatDate(game.lastLaunchedAt)}</dd>
+              <dt>启动次数</dt>
+              <dd>{game.launchCount} 次</dd>
               <dt>主程序</dt>
               <dd>{game.exe ? game.exe.split('\\').pop() : '（压缩包，未安装）'}</dd>
               <dt>体积</dt>
               <dd>{formatBytes(game.sizeBytes)}</dd>
               <dt>安装/修改</dt>
               <dd>{game.mtimeMs ? formatDate(game.mtimeMs) : '未知'}</dd>
-              <dt>最后启动</dt>
-              <dd>{formatDate(game.lastLaunchedAt)}</dd>
-              <dt>启动次数</dt>
-              <dd>{game.launchCount} 次</dd>
             </dl>
+
+            {game.tags.length > 0 && (
+              <>
+                <div className="section-title">标签</div>
+                <div className="tag-row">
+                  {game.tags.map((t) => (
+                    <span className="tag" key={t}>
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {game.sessions.length > 0 && (
+              <>
+                <div className="section-title">游玩记录</div>
+                <div className="session-list">
+                  {game.sessions.slice(0, 12).map((s) => (
+                    <div className="session-row" key={s.startedAt}>
+                      <span className="session-date">{formatDate(s.startedAt)}</span>
+                      <span className="session-len">{formatDuration(s.ms)}</span>
+                    </div>
+                  ))}
+                  {game.sessions.length > 12 && (
+                    <div className="session-more">
+                      还有 {game.sessions.length - 12} 条，完整记录在游戏文件夹的
+                      <code>sakura-launcher.md</code> 里
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </>
         )}
       </div>

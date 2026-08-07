@@ -10,8 +10,10 @@ import { defaultDestFor, extractArchive, find7z } from './archive'
 import * as db from './db'
 import { diskInfo, redundantArchives, trashArchives } from './disk'
 import { launchGame, revealInExplorer } from './launcher'
-import { listDirShallow, NAME_SIDECAR, removeSidecarName, writeSidecarName } from './scan-core'
-import { addGameByExe, rescan } from './scanner'
+import { onPlaytimeChange, playingIds, shutdownPlaytime } from './playtime'
+import { listDirShallow, removeSidecar, SIDECAR, writeSidecar } from './scan-core'
+import { addGameByExe, importFolder, previewFolder, rescan } from './scanner'
+import { syncAll, toSidecar as sidecarFrom } from './sidecar-sync'
 import { performUninstall, planUninstall, trashLeftovers } from './uninstaller'
 import { computeBreakdown, computeSize, shutdown as shutdownWorkers } from './worker-pool'
 
@@ -180,10 +182,18 @@ function registerIpc(): void {
 
   ipcMain.handle('settings:update', (_e, patch: Partial<Settings>) => db.setSettings(patch))
 
-  ipcMain.handle('scan:run', async () => {
+  /**
+   * `sync` distinguishes the scan the user asked for from the quiet one at startup.
+   * Reconciling every sidecar means a stat (and sometimes a read and a write) per game;
+   * that belongs behind a deliberate click, not in the path between launching the app
+   * and seeing the library.
+   */
+  ipcMain.handle('scan:run', async (_e, sync = false) => {
     const outcome = rescan()
+    const sidecars = sync ? syncAll() : null
+    db.saveNow()
     void refreshSizes()
-    return outcome
+    return { ...outcome, games: db.getGames(), sidecars }
   })
 
   ipcMain.handle('scan:recomputeSizes', async () => {
@@ -199,11 +209,19 @@ function registerIpc(): void {
     return db.updateGame(id, normalizeStatus(game, patch))
   })
 
+  /**
+   * `ids` is only the subset the user can currently see — one tab, one group, or a
+   * search result. Numbering it 0..n-1 would give those games the same order values as
+   * everything else in the library, so an arrangement made in 「在玩」 would scramble
+   * 「全部」. Instead the subset is rearranged within the slots it already occupies,
+   * leaving every other game exactly where it was.
+   */
   ipcMain.handle('game:reorder', (_e, ids: string[]) => {
     const byId = new Map(db.getGames().map((g) => [g.id, g]))
-    ids.forEach((id, i) => {
-      const g = byId.get(id)
-      if (g) g.order = i
+    const targets = ids.map((id) => byId.get(id)).filter((g): g is Game => g !== undefined)
+    const slots = targets.map((g) => g.order).sort((a, b) => a - b)
+    targets.forEach((g, i) => {
+      g.order = slots[i]
     })
     db.setGames([...byId.values()])
     return true
@@ -228,14 +246,19 @@ function registerIpc(): void {
       return { ok: true, sidecar: false }
     }
 
-    const result = writeSidecarName(game.dir, trimmed)
+    const result = writeSidecar(game.dir, { ...sidecarFrom(game), name: trimmed })
     if (!result.ok) {
       db.updateGame(id, { name: trimmed, renamed: true })
       return { ok: true, sidecar: false, error: result.error }
     }
     // The sidecar is now the source of truth, so drop the database-only override.
-    db.updateGame(id, { name: trimmed, renamed: false })
-    return { ok: true, sidecar: true, file: path.join(game.dir, NAME_SIDECAR) }
+    db.updateGame(id, { name: trimmed, renamed: false, sidecarSyncedAt: result.mtimeMs })
+    return { ok: true, sidecar: true, file: path.join(game.dir, SIDECAR) }
+  })
+
+  ipcMain.handle('game:setTags', (_e, id: string, tags: string[]) => {
+    const clean = [...new Set(tags.map((t) => t.trim()).filter(Boolean))]
+    return db.updateGame(id, { tags: clean })
   })
 
   /**
@@ -268,7 +291,12 @@ function registerIpc(): void {
   ipcMain.handle('game:resetName', (_e, id: string) => {
     const game = db.findGame(id)
     if (!game) return { ok: false }
-    if (game.kind === 'installed' && fs.existsSync(game.dir)) removeSidecarName(game.dir)
+    if (game.kind === 'installed' && fs.existsSync(game.dir)) {
+      // Drop the whole sidecar rather than just the name line: the user is asking for
+      // the default, and everything else in it is recoverable from the database.
+      removeSidecar(game.dir)
+      db.updateGame(id, { sidecarSyncedAt: undefined })
+    }
     db.updateGame(id, { renamed: false })
     rescan()
     return { ok: true }
@@ -372,6 +400,18 @@ function registerIpc(): void {
     return res.canceled ? null : res.filePaths[0]
   })
 
+  /** Scan a folder without touching the library, so the user can vet what goes in. */
+  ipcMain.handle('scan:preview', (_e, folder: string) => previewFolder(folder))
+
+  ipcMain.handle(
+    'scan:commitImport',
+    (_e, folder: string, accept: string[], reject: string[]) => {
+      const outcome = importFolder(folder, accept, reject)
+      void refreshSizes()
+      return outcome
+    }
+  )
+
   ipcMain.handle('dialog:pickExe', async () => {
     if (!mainWindow) return null
     const res = await dialog.showOpenDialog(mainWindow, {
@@ -398,12 +438,16 @@ function registerIpc(): void {
     revealInExplorer(target)
     return true
   })
+
+  /** Which games are running right now, so a reload of the UI does not lose the badge. */
+  ipcMain.handle('playtime:active', () => playingIds())
 }
 
 app.whenReady().then(() => {
   db.initPaths()
   registerAssetProtocol()
   registerIpc()
+  onPlaytimeChange((payload) => mainWindow?.webContents.send('playtime:changed', payload))
   createWindow()
 
   // Ensure the built-in bucket for not-yet-installed archives always exists.
@@ -425,6 +469,8 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
-  db.flush()
+  // Settle open sessions first: it writes playtime that the flush then commits.
+  shutdownPlaytime()
+  db.saveNow()
   shutdownWorkers()
 })

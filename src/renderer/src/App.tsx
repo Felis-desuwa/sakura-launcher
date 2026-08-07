@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ImportPreview } from '../../preload/index'
 import type { DiskInfo, Game, Group, Settings, SortKey, TabKey } from '../../shared/types'
 import { DEFAULT_SETTINGS, normalizeStatus } from '../../shared/types'
+import BulkUninstallDialog from './components/BulkUninstallDialog'
 import ConfirmDialog from './components/ConfirmDialog'
 import DetailDrawer from './components/DetailDrawer'
 import FileBrowser from './components/FileBrowser'
+import ImportDialog from './components/ImportDialog'
 import PromptDialog from './components/PromptDialog'
 import PetalCanvas from './components/PetalCanvas'
 import TopBar, { type PageKey } from './components/TopBar'
@@ -34,16 +37,20 @@ export default function App(): React.JSX.Element {
   const [page, setPage] = useState<PageKey>('desktop')
   const [tab, setTab] = useState<TabKey>('all')
   const [search, setSearch] = useState('')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [scanning, setScanning] = useState(false)
+  /** Games with a live play session, so tiles can show they are running. */
+  const [playing, setPlaying] = useState<string[]>([])
 
   const [disks, setDisks] = useState<DiskInfo[]>([])
   const [toasts, setToasts] = useState<Toast[]>([])
-  const [uninstallTarget, setUninstallTarget] = useState<Game | null>(null)
+  const [uninstallTargets, setUninstallTargets] = useState<Game[]>([])
   const [groupPrompt, setGroupPrompt] = useState<GroupPrompt | null>(null)
   const [browsing, setBrowsing] = useState<{ dir: string; title: string } | null>(null)
   const [renaming, setRenaming] = useState<Game | null>(null)
-  const [removing, setRemoving] = useState<Game | null>(null)
+  const [tagging, setTagging] = useState<Game | null>(null)
+  const [removing, setRemoving] = useState<Game[]>([])
+  const [importing, setImporting] = useState<ImportPreview | null>(null)
   const [leftover, setLeftover] = useState<{ game: Game; bytes: number } | null>(null)
   const [extractProgress, setExtractProgress] = useState<Record<string, number>>({})
 
@@ -78,7 +85,11 @@ export default function App(): React.JSX.Element {
       setTab(snap.settings.defaultTab)
       setLoaded(true)
       window.sakura.diskInfo().then(setDisks)
-      if (snap.settings.roots.length > 0) void runScan(false)
+      window.sakura.activeSessions().then(setPlaying)
+      // Quiet startup scan: it picks up newly installed games, but does not reconcile
+      // the sidecar files. That costs a disk round-trip per game and belongs behind
+      // the scan button, not between launching the app and seeing the library.
+      if (snap.settings.roots.length > 0) void runScan(false, false)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -99,23 +110,39 @@ export default function App(): React.JSX.Element {
       toast(ok ? '解压完成，已重新扫描' : `解压失败：${error ?? '未知错误'}`, !ok)
     })
     const offDb = window.sakura.onDbChanged(() => void refresh())
+    const offPlaytime = window.sakura.onPlaytime(({ id, playtimeMs, playing: running }) => {
+      setGames((cur) => cur.map((g) => (g.id === id ? { ...g, playtimeMs } : g)))
+      setPlaying((cur) =>
+        running ? (cur.includes(id) ? cur : [...cur, id]) : cur.filter((x) => x !== id)
+      )
+    })
     return () => {
       offSize()
       offProgress()
       offDone()
       offDb()
+      offPlaytime()
     }
   }, [refresh, toast])
 
   const runScan = useCallback(
-    async (announce = true): Promise<void> => {
+    async (announce = true, sync = true): Promise<void> => {
       setScanning(true)
       try {
-        const outcome = await window.sakura.scan()
+        const outcome = await window.sakura.scan(sync)
         setGames(outcome.games)
         if (announce) {
           const installed = outcome.games.filter((g) => g.kind === 'installed').length
-          toast(`扫描完成，找到 ${installed} 个游戏`)
+          const notes: string[] = [`扫描完成，找到 ${installed} 个游戏`]
+          if (outcome.sidecars && outcome.sidecars.imported > 0) {
+            notes.push(`${outcome.sidecars.imported} 个说明文件被手动改过，已读回`)
+          }
+          toast(notes.join('，'))
+        }
+        // Worth saying out loud: an unmounted drive would otherwise look like the
+        // library quietly shrank.
+        if (outcome.missing > 0) {
+          toast(`有 ${outcome.missing} 个条目这次没找到，已保留其评级与记录`, true)
         }
         if (outcome.groupCandidates.length > 0) {
           setGroupPrompt({ candidates: outcome.groupCandidates })
@@ -142,18 +169,27 @@ export default function App(): React.JSX.Element {
     void window.sakura.updateSettings(patch)
   }, [])
 
+  /**
+   * Adding a folder goes through a preview first. Vetting what comes in is much less
+   * work than picking non-games back out of the library afterwards.
+   */
   const addFolder = useCallback(async (): Promise<void> => {
     const folder = await window.sakura.pickFolder()
     if (!folder) return
-    if (settings.roots.includes(folder)) {
-      toast('该文件夹已在扫描列表中')
-      return
+    setScanning(true)
+    try {
+      const preview = await window.sakura.previewFolder(folder)
+      const total = preview.games.length + preview.rejected.length + preview.archives.length
+      if (total === 0) {
+        if (settings.roots.includes(folder)) toast('该文件夹已在扫描列表中，没有新内容')
+        else toast('这个文件夹里没有找到可以添加的内容')
+        return
+      }
+      setImporting(preview)
+    } finally {
+      setScanning(false)
     }
-    const roots = [...settings.roots, folder]
-    setSettings((cur) => ({ ...cur, roots }))
-    await window.sakura.updateSettings({ roots, onboarded: true })
-    await runScan()
-  }, [settings.roots, runScan, toast])
+  }, [settings.roots, toast])
 
   const addGame = useCallback(async (): Promise<void> => {
     const game = await window.sakura.pickExe()
@@ -178,6 +214,9 @@ export default function App(): React.JSX.Element {
               : g
           )
         )
+        // The main process confirms this over playtime:changed, but showing it now
+        // keeps the tile from looking inert while the game loads.
+        setPlaying((cur) => (cur.includes(game.id) ? cur : [...cur, game.id]))
       } else {
         toast(result.error ?? '启动失败', true)
       }
@@ -195,9 +234,10 @@ export default function App(): React.JSX.Element {
     [games]
   )
 
+  /** The detail drawer only makes sense for exactly one game. */
   const selected = useMemo(
-    () => games.find((g) => g.id === selectedId) ?? null,
-    [games, selectedId]
+    () => (selectedIds.length === 1 ? games.find((g) => g.id === selectedIds[0]) ?? null : null),
+    [games, selectedIds]
   )
 
   const needsOnboarding = loaded && settings.roots.length === 0 && games.length === 0
@@ -247,13 +287,15 @@ export default function App(): React.JSX.Element {
             sortKey={settings.sortKey}
             tileSize={settings.tileSize}
             search={search}
-            selectedId={selectedId}
+            selectedIds={selectedIds}
+            playingIds={playing}
             extractProgress={extractProgress}
-            onSelect={setSelectedId}
+            onSelectionChange={setSelectedIds}
             onLaunch={(g) => void launch(g)}
             onPatch={patchGame}
-            onUninstall={setUninstallTarget}
+            onUninstall={setUninstallTargets}
             onRemoveTile={setRemoving}
+            onEditTags={setTagging}
             onSetCover={async (id) => {
               const updated = await window.sakura.setCover(id)
               if (updated) setGames((cur) => cur.map((g) => (g.id === id ? updated : g)))
@@ -292,11 +334,20 @@ export default function App(): React.JSX.Element {
             onRename={setRenaming}
           />
         ) : page === 'tier' ? (
-          <TierPage games={games} onPatch={patchGame} />
+          <TierPage
+            games={games}
+            onPatch={patchGame}
+            onClearAll={() => {
+              for (const g of games) {
+                if (g.tier !== null) patchGame(g.id, { tier: null, tierOrder: 0 })
+              }
+              toast('已清除全部评级')
+            }}
+          />
         ) : page === 'wishlist' ? (
           <WishlistPage games={games} onPatch={patchGame} />
         ) : page === 'disk' ? (
-          <DiskPage games={games} onToast={toast} onRescan={() => void runScan(false)} />
+          <DiskPage games={games} onToast={toast} onRescan={() => void runScan(false, false)} />
         ) : (
           <SettingsPage
             settings={settings}
@@ -318,7 +369,8 @@ export default function App(): React.JSX.Element {
             game={selected}
             allGames={games}
             disks={disks}
-            onClose={() => setSelectedId(null)}
+            playing={playing.includes(selected.id)}
+            onClose={() => setSelectedIds([])}
           />
         )}
       </div>
@@ -330,10 +382,10 @@ export default function App(): React.JSX.Element {
           placeholder="游戏名称"
           description={
             <>
-              新名字会写进游戏文件夹里的 <code>sakura-launcher.txt</code>，
+              新名字会写进游戏文件夹里的 <code>sakura-launcher.md</code>，
               <b>不会改动文件夹名，也不影响游戏启动</b>
               —— 很多游戏按路径找资源，直接改文件夹名会让它们打不开。
-              删掉那个文件就会恢复成文件夹名。
+              那个文件里还记着这个游戏的状态、评分、标签和游玩时长，删掉它就全部恢复默认。
             </>
           }
           extraAction={{
@@ -366,32 +418,104 @@ export default function App(): React.JSX.Element {
         />
       )}
 
-      {removing && (
-        <ConfirmDialog
-          title={`把《${removing.name}》从库中移除？`}
-          confirmLabel="移除磁贴"
-          body={
+      {tagging && (
+        <PromptDialog
+          title={`《${tagging.name}》的标签`}
+          initialValue={tagging.tags.join(', ')}
+          placeholder="用逗号分隔，例如：战棋, 已打汉化补丁"
+          confirmLabel="保存"
+          description={
             <>
-              只是把这个磁贴从启动器里拿掉，<b>不会删除磁盘上的任何文件</b>
-              —— 用来清掉误扫进来的非游戏内容。
-              <br />
-              <br />
-              这个路径会被记住，之后重新扫描也不会再加回来。想恢复的话，
-              到「设置 → 已移除的条目」里点一下即可。
+              标签会一起写进游戏文件夹里的 <code>sakura-launcher.md</code>，
+              在顶部搜索框里输入标签也能筛选出对应的游戏。
             </>
           }
-          onCancel={() => setRemoving(null)}
+          onCancel={() => setTagging(null)}
+          onConfirm={async (value) => {
+            const target = tagging
+            setTagging(null)
+            const tags = [
+              ...new Set(
+                value
+                  .split(/[,，、]/)
+                  .map((t) => t.trim())
+                  .filter(Boolean)
+              )
+            ]
+            setGames((cur) => cur.map((g) => (g.id === target.id ? { ...g, tags } : g)))
+            await window.sakura.setTags(target.id, tags)
+          }}
+        />
+      )}
+
+      {removing.length > 0 && (
+        <ConfirmDialog
+          title={
+            removing.length === 1
+              ? `把《${removing[0].name}》从库中移除？`
+              : `把选中的 ${removing.length} 个条目从库中移除？`
+          }
+          confirmLabel={removing.length === 1 ? '移除磁贴' : `移除 ${removing.length} 个磁贴`}
+          body={
+            <>
+              只是把{removing.length === 1 ? '这个磁贴' : '这些磁贴'}从启动器里拿掉，
+              <b>不会删除磁盘上的任何文件</b> —— 用来清掉误扫进来的非游戏内容。
+              {removing.length > 1 && (
+                <ul style={{ margin: '10px 0 0', paddingLeft: 20, lineHeight: 1.8, fontSize: 13 }}>
+                  {removing.slice(0, 8).map((g) => (
+                    <li key={g.id}>{g.name}</li>
+                  ))}
+                  {removing.length > 8 && <li>…等共 {removing.length} 个</li>}
+                </ul>
+              )}
+              <br />
+              这{removing.length === 1 ? '个路径' : '些路径'}会被记住，之后重新扫描也不会再加回来。
+              想恢复的话，到「设置 → 已移除的条目」里点一下即可。
+            </>
+          }
+          onCancel={() => setRemoving([])}
           onConfirm={async () => {
-            const target = removing
-            setRemoving(null)
-            const result = await window.sakura.removeTile(target.id)
-            if (!result.ok) {
-              toast(result.error ?? '移除失败', true)
-              return
+            const targets = removing
+            setRemoving([])
+            let failed = 0
+            for (const target of targets) {
+              const result = await window.sakura.removeTile(target.id)
+              if (!result.ok) failed++
             }
-            if (selectedId === target.id) setSelectedId(null)
+            setSelectedIds([])
             await refresh()
-            toast(`已移除《${target.name}》，磁盘上的文件未改动`)
+            if (failed > 0) toast(`${failed} 个条目移除失败`, true)
+            else if (targets.length === 1) toast(`已移除《${targets[0].name}》，磁盘上的文件未改动`)
+            else toast(`已移除 ${targets.length} 个条目，磁盘上的文件未改动`)
+          }}
+        />
+      )}
+
+      {importing && (
+        <ImportDialog
+          preview={importing}
+          onCancel={() => setImporting(null)}
+          onConfirm={async (accept, reject) => {
+            const folder = importing.folder
+            setImporting(null)
+            setScanning(true)
+            try {
+              const outcome = await window.sakura.commitImport(folder, accept, reject)
+              setGames(outcome.games)
+              const snap = await window.sakura.snapshot()
+              setSettings(snap.settings)
+              toast(
+                outcome.added > 0
+                  ? `已导入 ${outcome.added} 个条目`
+                  : '没有新增条目，扫描列表已更新'
+              )
+              if (outcome.groupCandidates.length > 0) {
+                setGroupPrompt({ candidates: outcome.groupCandidates })
+              }
+            } finally {
+              setScanning(false)
+              window.sakura.diskInfo().then(setDisks)
+            }
           }}
         />
       )}
@@ -428,13 +552,13 @@ export default function App(): React.JSX.Element {
         />
       )}
 
-      {uninstallTarget && (
+      {uninstallTargets.length === 1 && (
         <UninstallRitual
-          game={uninstallTarget}
-          onCancel={() => setUninstallTarget(null)}
+          game={uninstallTargets[0]}
+          onCancel={() => setUninstallTargets([])}
           onDone={async (result) => {
-            const target = uninstallTarget
-            setUninstallTarget(null)
+            const target = uninstallTargets[0]
+            setUninstallTargets([])
             if (!result.ok) {
               toast(result.error ?? '卸载失败', true)
               return
@@ -448,8 +572,23 @@ export default function App(): React.JSX.Element {
                   : `《${target.name}》已卸载`
               )
             }
-            setSelectedId(null)
+            setSelectedIds([])
             await refresh()
+          }}
+        />
+      )}
+
+      {uninstallTargets.length > 1 && (
+        <BulkUninstallDialog
+          games={uninstallTargets}
+          onCancel={() => setUninstallTargets([])}
+          onDone={async (results) => {
+            setUninstallTargets([])
+            const failed = results.filter((r) => !r.ok)
+            setSelectedIds([])
+            await refresh()
+            if (failed.length === 0) toast(`已卸载 ${results.length} 个游戏`)
+            else toast(`${results.length - failed.length} 个已卸载，${failed.length} 个失败`, true)
           }}
         />
       )}

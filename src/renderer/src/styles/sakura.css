@@ -49,6 +49,10 @@
   --shadow-sm: 0 2px 8px color-mix(in srgb, var(--shadow-tint) 12%, transparent);
   --shadow-md: 0 8px 24px color-mix(in srgb, var(--shadow-tint) 18%, transparent);
   --shadow-lg: 0 18px 48px color-mix(in srgb, var(--shadow-tint) 26%, transparent);
+  /* Backdrop that grows behind a tile about to become a group. Derived from --brand, so
+     every theme gets its own without restating it — custom properties resolve where
+     they are used, which is on an element that already carries the theme's brand. */
+  --merge-plate: color-mix(in srgb, var(--brand) 55%, transparent);
   --radius: 16px;
   --topbar-h: 60px;
 }
@@ -256,8 +260,15 @@ button {
  * lands on top of something being read, and never takes pointer events.
  */
 .petal-canvas {
-  position: absolute;
+  position: fixed;
   inset: 0;
+  /*
+   * A canvas is a replaced element with an intrinsic 300x150 size. With width and
+   * height left auto, `inset: 0` cannot stretch it — the over-constrained edges are
+   * dropped and it stays that size in the corner. The size has to be stated outright.
+   */
+  width: 100%;
+  height: 100%;
   pointer-events: none;
   z-index: 40;
 }
@@ -455,36 +466,105 @@ button {
   box-shadow: var(--shadow-md), 0 0 0 3px var(--accent);
 }
 
+/*
+ * The tile being dragged is not hidden but hollowed out: it keeps its grid cell, and
+ * that cell — sliding around as the projected order changes — is the hole the tile will
+ * drop into. A fully blank cell reads as a rendering fault in a wall of artwork, so the
+ * hole keeps a faint recess to say "something belongs here".
+ */
 .tile.dragging {
-  opacity: 0.4;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  box-shadow: inset 0 1px 5px color-mix(in srgb, var(--ink) 12%, transparent);
+  transition: none;
 }
 
-/* middle band: the two tiles would merge into a group */
+.tile.dragging > * {
+  visibility: hidden;
+}
+
+.tile.dragging:hover {
+  transform: none;
+}
+
+/*
+ * Middle band: the two tiles would merge into a group. The target shrinks and a rounded
+ * plate grows behind it, so it reads as a container opening up to swallow what is being
+ * carried — the same idea as a folder forming on a phone home screen.
+ *
+ * The plate is a spread shadow rather than a real element: a shadow paints outside the
+ * border box without being clipped by the tile's own `overflow: hidden`, and it picks up
+ * the border radius for free, so no wrapper element is needed just to hold it.
+ */
 .tile.drop-target {
-  box-shadow: var(--shadow-md), 0 0 0 3px var(--brand);
-  transform: scale(1.04);
+  transform: scale(0.85);
+  box-shadow: var(--shadow-md), 0 0 0 14px var(--merge-plate);
 }
 
-/* edge bands: an insertion point between two tiles */
-.tile.drop-before::after,
-.tile.drop-after::after {
-  content: '';
+.tile.drop-target:hover {
+  transform: scale(0.85);
+}
+
+/* While a drag is in flight the pointer owns the grid; hover states only add noise. */
+body.tiles-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+body.tiles-dragging .tile:hover {
+  transform: none;
+  box-shadow: var(--shadow-sm);
+}
+
+body.tiles-dragging .tile.drop-target:hover {
+  transform: scale(0.85);
+  box-shadow: var(--shadow-md), 0 0 0 14px var(--merge-plate);
+}
+
+/* ---------- the tile that follows the pointer ---------- */
+
+.drag-proxy {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 45; /* above the petals, below menus and dialogs */
+  pointer-events: none;
+  transform-origin: center;
+  will-change: transform;
+  scale: 1;
+  rotate: 0deg;
+}
+
+.drag-proxy.lifted {
+  scale: 1.06;
+  rotate: -1.5deg;
+  filter: drop-shadow(0 18px 30px color-mix(in srgb, var(--shadow-tint) 55%, transparent));
+}
+
+.drag-proxy .tile {
+  transition: none;
+}
+
+.drag-proxy-layer {
   position: absolute;
-  top: -6px;
-  bottom: -6px;
-  width: 4px;
-  border-radius: 3px;
+  inset: 0;
+  opacity: 0.75;
+}
+
+.drag-proxy-count {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 12px;
   background: var(--accent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
-  z-index: 4;
-}
-
-.tile.drop-before::after {
-  left: -12px;
-}
-
-.tile.drop-after::after {
-  right: -12px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 24px;
+  text-align: center;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--shadow-tint) 60%, transparent);
 }
 
 .tile.archive {
@@ -553,10 +633,58 @@ button {
   -webkit-box-orient: vertical;
 }
 
-.tile-size {
+.tile-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
   margin-top: 2px;
+}
+
+.tile-size {
   font-size: 11px;
   color: var(--ink-soft);
+  /* Truncate the playtime + size pair rather than pushing the stars off the tile. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Only drawn when a rating exists — an empty row would read as a zero-star verdict. */
+.tile-stars {
+  font-size: 10.5px;
+  letter-spacing: 0.5px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.tile-stars .dim {
+  color: color-mix(in srgb, var(--ink-soft) 40%, transparent);
+}
+
+.tile-running {
+  position: absolute;
+  left: 8px;
+  bottom: 52px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--panel);
+  background: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+
+/* The folder was not found on the last scan; everything recorded on it is still here. */
+.tile.missing {
+  filter: grayscale(0.8);
+  opacity: 0.6;
+}
+
+.tile.missing .tile-size {
+  color: #c62828;
+  font-weight: 600;
 }
 
 .tile-flags {
@@ -1318,6 +1446,11 @@ input[type='range'] {
   background: color-mix(in srgb, var(--panel) 55%, transparent);
 }
 
+.btn.small {
+  padding: 5px 12px;
+  font-size: 12px;
+}
+
 .btn.danger {
   background: #c62828;
   color: var(--panel);
@@ -1692,4 +1825,304 @@ input[type='range'] {
 select.field {
   font-size: 13.5px;
   padding: 8px 12px;
+}
+
+/* ---------- multi-selection ---------- */
+
+/*
+ * Sits above the grid rather than replacing the detail drawer, so what is selected
+ * stays visible while acting on it.
+ */
+.selection-bar {
+  position: sticky;
+  bottom: 16px;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  backdrop-filter: blur(16px);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  box-shadow: var(--shadow-md);
+  font-size: 13px;
+}
+
+.selection-count {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.selection-size {
+  color: var(--ink-soft);
+  font-size: 12.5px;
+}
+
+/* ---------- import dialog ---------- */
+
+.import-modal {
+  width: min(720px, 94vw);
+}
+
+.import-modal h2 {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  word-break: break-all;
+}
+
+.import-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 10px;
+}
+
+.import-summary {
+  flex: 1;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.import-list {
+  max-height: min(46vh, 420px);
+  overflow-y: auto;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-1) 55%, transparent);
+  padding: 6px;
+}
+
+.import-section + .import-section {
+  margin-top: 10px;
+}
+
+.import-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 8px 6px;
+  font-size: 12.5px;
+}
+
+.import-section-head span {
+  color: var(--ink-soft);
+  font-size: 11.5px;
+}
+
+.import-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) minmax(0, 0.9fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.import-row:hover {
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+}
+
+.import-row input[type='checkbox'] {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+}
+
+.import-name,
+.import-note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-note {
+  color: var(--ink-soft);
+  font-size: 11.5px;
+}
+
+.import-size {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.import-foot {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-soft);
+}
+
+/* ---------- bulk uninstall ---------- */
+
+.bulk-list {
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 14px 0 0;
+  padding: 6px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-1) 55%, transparent);
+}
+
+.bulk-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 8px;
+  font-size: 12.5px;
+}
+
+.bulk-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bulk-size {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.bulk-confirm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  font-size: 13px;
+}
+
+.bulk-confirm input {
+  width: 90px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
+  font-size: 13.5px;
+  color: var(--ink);
+  text-align: center;
+}
+
+.bulk-confirm input.wrong {
+  border-color: #c62828;
+  color: #c62828;
+}
+
+.bulk-progress-label {
+  margin: 14px 0 8px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+/* ---------- tier page head ---------- */
+
+.tier-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.tier-head p {
+  flex: 1;
+}
+
+/* ---------- tags and play sessions ---------- */
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.session-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.session-date {
+  color: var(--ink-soft);
+}
+
+.session-len {
+  font-variant-numeric: tabular-nums;
+}
+
+.session-more {
+  margin-top: 6px;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--ink-soft);
+}
+
+.stat-strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.drawer-running {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--panel);
+  background: var(--accent);
+}
+
+.settings-hint {
+  display: block;
+  margin-top: 3px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  font-weight: 400;
+  color: var(--ink-soft);
+}
+
+/* ---------- motion ---------- */
+
+/*
+ * Everything the drag adds is motion for its own sake: the lift, the tiles stepping
+ * aside, the glide back down. Someone who has asked the system for less of that still
+ * needs the drag to work, so the states remain — only the animation between them goes.
+ * The FLIP pass checks the same query and skips measuring entirely.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .tile,
+  .drag-proxy,
+  .drag-proxy .tile {
+    transition: none !important;
+  }
+
+  .tile:hover,
+  .tile.drop-target {
+    transform: none;
+  }
+
+  .drag-proxy.lifted {
+    scale: 1;
+    rotate: 0deg;
+  }
 }

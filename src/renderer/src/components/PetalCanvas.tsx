@@ -9,6 +9,11 @@ interface Petal {
   spin: number
   angle: number
   alpha: number
+  /** Phase of the flutter that makes a petal turn edge-on as it falls. */
+  flip: number
+  flipSpeed: number
+  /** Horizontal sway phase, so petals do not all drift in step. */
+  sway: number
 }
 
 interface Props {
@@ -47,20 +52,38 @@ export default function PetalCanvas({ enabled, themeKey }: Props): React.JSX.Ele
     const spawn = (): Petal => ({
       x: Math.random() * canvas.clientWidth,
       y: -20 - Math.random() * canvas.clientHeight,
-      r: 4 + Math.random() * 5,
-      vy: 0.25 + Math.random() * 0.5,
+      r: 5 + Math.random() * 6,
+      vy: 0.25 + Math.random() * 0.55,
       vx: -0.25 + Math.random() * 0.5,
-      spin: (-0.5 + Math.random()) * 0.02,
+      spin: (-0.5 + Math.random()) * 0.018,
       angle: Math.random() * Math.PI * 2,
-      // Kept faint: these now drift over the tiles, so they must stay clearly
-      // subordinate to the artwork and labels underneath.
-      alpha: 0.1 + Math.random() * 0.18
+      // Faint enough to stay subordinate to the artwork and labels they drift over,
+      // but the petal colour sits close to the background: much below this and the
+      // effect is invisible on the pale themes.
+      alpha: 0.16 + Math.random() * 0.26,
+      flip: Math.random() * Math.PI * 2,
+      flipSpeed: 0.008 + Math.random() * 0.014,
+      sway: Math.random() * Math.PI * 2
     })
 
     // Scale with the window so a wide desktop is covered as evenly as a narrow one.
     const petalCount = (): number => {
       const area = canvas.clientWidth * canvas.clientHeight
-      return Math.max(28, Math.min(80, Math.round(area / 26000)))
+      return Math.max(36, Math.min(120, Math.round(area / 17000)))
+    }
+
+    /**
+     * A single blossom petal: broad at the tip, tapering to the stem, with the notch
+     * that makes a sakura petal recognisable. Drawn in units of `r` around the origin.
+     */
+    const petalPath = (r: number): void => {
+      ctx.beginPath()
+      ctx.moveTo(0, r)
+      ctx.bezierCurveTo(r * 0.9, r * 0.5, r * 0.8, -r * 0.7, r * 0.28, -r)
+      // The notch at the wide end.
+      ctx.quadraticCurveTo(0, -r * 0.72, -r * 0.28, -r)
+      ctx.bezierCurveTo(-r * 0.8, -r * 0.7, -r * 0.9, r * 0.5, 0, r)
+      ctx.closePath()
     }
 
     resize()
@@ -70,19 +93,26 @@ export default function PetalCanvas({ enabled, themeKey }: Props): React.JSX.Ele
       const w = canvas.clientWidth
       const h = canvas.clientHeight
       ctx.clearRect(0, 0, w, h)
+      ctx.fillStyle = petalColor
       for (const p of petals) {
         p.y += p.vy
-        p.x += p.vx + Math.sin(p.y / 90) * 0.25
+        p.sway += 0.012
+        p.x += p.vx + Math.sin(p.sway) * 0.4
         p.angle += p.spin
-        if (p.y > h + 20) Object.assign(p, spawn(), { y: -20 })
+        p.flip += p.flipSpeed
+        if (p.y > h + 24) Object.assign(p, spawn(), { y: -24 })
+        // Wrap sideways rather than letting a petal drift off and leave a bare column.
+        if (p.x < -24) p.x = w + 24
+        else if (p.x > w + 24) p.x = -24
 
         ctx.save()
         ctx.translate(p.x, p.y)
         ctx.rotate(p.angle)
+        // Squashing the width as the flutter phase turns is what reads as a petal
+        // tumbling through its own plane rather than a flat shape sliding down.
+        ctx.scale(Math.max(0.18, Math.abs(Math.cos(p.flip))), 1)
         ctx.globalAlpha = p.alpha
-        ctx.fillStyle = petalColor
-        ctx.beginPath()
-        ctx.ellipse(0, 0, p.r, p.r * 0.62, 0, 0, Math.PI * 2)
+        petalPath(p.r)
         ctx.fill()
         ctx.restore()
       }

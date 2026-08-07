@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Settings, SortKey, TabKey } from '../../../shared/types'
-import { SORT_META, TAB_META, THEMES } from '../../../shared/types'
+import { POLL_CHOICES, SORT_META, TAB_META, THEMES } from '../../../shared/types'
 
 interface Props {
   settings: Settings
@@ -57,7 +57,7 @@ export default function SettingsPage({
         ))}
         <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
           <button type="button" className="btn primary" onClick={onAddFolder}>
-            添加文件夹…
+            导入文件夹…
           </button>
           <button type="button" className="btn ghost" onClick={onRescan}>
             立即重新扫描
@@ -175,6 +175,27 @@ export default function SettingsPage({
             className={`switch${settings.petals ? ' on' : ''}`}
             onClick={() => onChange({ petals: !settings.petals })}
           />
+        </div>
+
+        <div className="settings-row">
+          <label htmlFor="poll">
+            游玩时长检查间隔
+            <span className="settings-hint">
+              游戏运行期间，每隔这么久确认一次它还开着。间隔越长越省电，
+              但记录到的时长最多会短这么多。
+            </span>
+          </label>
+          <select
+            id="poll"
+            value={settings.playtimePollSeconds}
+            onChange={(e) => onChange({ playtimePollSeconds: Number(e.target.value) })}
+          >
+            {POLL_CHOICES.map((s) => (
+              <option key={s} value={s}>
+                {s} 秒
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 

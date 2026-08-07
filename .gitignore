@@ -4,6 +4,8 @@ out/
 release/
 # note: build/ is electron-builder's buildResources dir (it holds the app icon),
 # not build output — it is tracked on purpose. Build output goes to release/.
+# The contact sheet is a scratch aid for judging the icon at small sizes.
+build/icon-preview.png
 *.tsbuildinfo
 *.log
 npm-debug.log*
