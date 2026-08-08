@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Game, Group, SortKey, TabKey, Tier } from '../../../shared/types'
+import type {
+  DownloadStatus,
+  Game,
+  Group,
+  PendingDownload,
+  SortKey,
+  TabKey,
+  Tier
+} from '../../../shared/types'
 import { ARCHIVE_GROUP_ID, SORT_META, TIERS, TIER_META } from '../../../shared/types'
 import Artwork from '../components/Artwork'
 import ContextMenu, { type MenuItem } from '../components/ContextMenu'
@@ -32,6 +40,8 @@ interface Props {
   onSetCover: (id: string) => void
   onClearCover: (id: string) => void
   onBrowse: (game: Game) => void
+  /** Open the picker for which executable actually starts this game. */
+  onChooseExe: (game: Game) => void
   onExtract: (game: Game) => void
   onGroupsChange: (groups: Group[]) => void
   onReorder: (ids: string[]) => void
@@ -43,6 +53,17 @@ interface Props {
   onEditTags: (game: Game) => void
   onBlockedLaunch: () => void
   extractProgress: Record<string, number>
+  downloads: PendingDownload[]
+  onCancelDownload: (id: string) => void
+  onClearDownloads: () => void
+}
+
+const DOWNLOAD_LABELS: Record<DownloadStatus, string> = {
+  downloading: '等待下载完成…',
+  extracting: '解压中',
+  importing: '导入中…',
+  done: '已完成',
+  failed: '失败'
 }
 
 type MenuState =
@@ -89,7 +110,10 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     onUninstall,
     onGroupsChange,
     onReorder,
-    extractProgress
+    extractProgress,
+    downloads,
+    onCancelDownload,
+    onClearDownloads
   } = props
 
   const [menu, setMenu] = useState<MenuState>(null)
@@ -322,7 +346,10 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     if (game.kind === 'archive') {
       items.push({ label: '解压安装', onClick: () => props.onExtract(game) })
     } else {
-      items.push({ label: '打开游戏', onClick: () => onLaunch(game) })
+      items.push(
+        { label: '打开游戏', onClick: () => onLaunch(game) },
+        { label: '更换主程序…', onClick: () => props.onChooseExe(game) }
+      )
     }
     items.push(
       { label: '打开所在文件夹', onClick: () => props.onBrowse(game) },
@@ -412,7 +439,7 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     { type: 'separator' },
     { label: '添加游戏…', onClick: props.onAddGame },
     { label: '导入文件夹…', onClick: props.onAddFolder },
-    { label: '重新扫描', onClick: props.onRescan },
+    { label: '刷新', onClick: props.onRescan },
     { type: 'separator' },
     {
       label: '排序方式',
@@ -626,6 +653,7 @@ export default function DesktopPage(props: Props): React.JSX.Element {
         if (e.target === e.currentTarget) onSelectionChange([])
       }}
     >
+
       <div className="grid" ref={gridRef} style={{ ['--tile' as string]: `${tileSize}px` }}>
         {groupsWithMembers.map(({ group, members }) => (
           <GroupTile
@@ -689,6 +717,53 @@ export default function DesktopPage(props: Props): React.JSX.Element {
               ? '右键空白处可以添加游戏或导入文件夹。'
               : '在「全部」里右键磁贴，把游戏标记到这个清单。'}
           </p>
+        </div>
+      )}
+
+      {downloads.length > 0 && (
+        <div className="download-strip">
+          <div className="download-strip-head">
+            <b>下载</b>
+            {downloads.some((d) => d.status === 'done' || d.status === 'failed') && (
+              <button type="button" className="btn ghost small" onClick={onClearDownloads}>
+                清除已完成
+              </button>
+            )}
+          </div>
+          {downloads.map((d) => (
+            <div className="bar-row" key={d.id}>
+              <span className="legend-name" title={d.url}>
+                {d.url.split('/').pop() || d.url}
+              </span>
+              <span className="bar-track">
+                <span
+                  className={`bar-fill${d.status === 'failed' ? ' failed' : ''}`}
+                  // Nothing to show a proportion of when the downloader does not report
+                  // one, so the track stays empty rather than inventing a position.
+                  style={{ width: `${d.percent ?? (d.status === 'done' ? 100 : 0)}%` }}
+                />
+              </span>
+              <span className="download-state" title={d.message ?? ''}>
+                {DOWNLOAD_LABELS[d.status]}
+                {d.percent !== null && d.status !== 'done' ? ` ${d.percent}%` : ''}
+              </span>
+              <button
+                type="button"
+                className="btn ghost small"
+                onClick={() => onCancelDownload(d.id)}
+              >
+                {d.status === 'downloading' || d.status === 'extracting' ? '取消' : '移除'}
+              </button>
+            </div>
+          ))}
+          {downloads.map(
+            (d) =>
+              d.message && (
+                <div className="download-message" key={`m-${d.id}`}>
+                  {d.message}
+                </div>
+              )
+          )}
         </div>
       )}
 

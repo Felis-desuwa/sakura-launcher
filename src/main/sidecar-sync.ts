@@ -3,7 +3,7 @@ import path from 'node:path'
 import type { Game, Tier } from '../shared/types'
 import { MAX_SESSIONS, normalizeStatus, TIERS } from '../shared/types'
 import * as db from './db'
-import { readSidecar, SIDECAR, writeSidecarIfChanged, type SidecarData } from './scan-core'
+import { isUnder, readSidecar, SIDECAR, writeSidecarIfChanged, type SidecarData } from './scan-core'
 
 /**
  * Keeping the per-game Markdown files in step with the database.
@@ -34,9 +34,37 @@ function statMtime(file: string): number | null {
   }
 }
 
+/**
+ * Paths inside the game folder are written relative to it.
+ *
+ * The whole point of this file is that it travels with the folder — an absolute path
+ * baked into it stops being true the moment the library moves to another drive.
+ * Anything that is not a path into this folder (`-applaunch 123`) is left alone.
+ */
+function relativizeArgs(game: Game, args: string[] | undefined): string[] | undefined {
+  if (!args || args.length === 0) return undefined
+  return args.map((arg) =>
+    path.isAbsolute(arg) && isUnder(arg, game.dir) ? path.relative(game.dir, arg) : arg
+  )
+}
+
+/** The inverse, applied only to arguments that name a file actually sitting there. */
+function absolutizeArgs(game: Game, args: string[] | undefined): string[] | undefined {
+  if (!args || args.length === 0) return undefined
+  return args.map((arg) => {
+    if (path.isAbsolute(arg) || !/\.[a-z0-9]{1,5}$/i.test(arg)) return arg
+    const resolved = path.resolve(game.dir, arg)
+    return isUnder(resolved, game.dir) && fs.existsSync(resolved) ? resolved : arg
+  })
+}
+
 export function toSidecar(game: Game): SidecarData {
   return {
     name: game.name,
+    // Only a deliberate choice is recorded. Writing the scanner's own guess would turn
+    // it into a decision the user appears to have made, and it would come back as one.
+    exe: game.exePinned && game.exe ? path.relative(game.dir, game.exe) : undefined,
+    launchArgs: game.exePinned ? relativizeArgs(game, game.launchArgs) : undefined,
     wishlist: game.wishlist,
     playing: game.playing,
     played: game.played,
@@ -57,6 +85,18 @@ function applySidecar(game: Game, data: SidecarData): void {
     // The sidecar is the source of truth for the title, so the database-only
     // override that `renamed` represents no longer applies.
     game.renamed = false
+  }
+
+  // A hand-written path is only honoured if it actually resolves inside the game folder.
+  // Anything else — a typo, a leftover from another machine — would leave the tile
+  // pointing at nothing, which is worse than ignoring the line.
+  if (data.exe) {
+    const resolved = path.resolve(game.dir, data.exe)
+    if (isUnder(resolved, game.dir) && fs.existsSync(resolved)) {
+      game.exe = resolved
+      game.exePinned = true
+      game.launchArgs = absolutizeArgs(game, data.launchArgs)
+    }
   }
 
   const status: Partial<Game> = {}

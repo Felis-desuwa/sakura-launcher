@@ -4,18 +4,62 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { Breakdown, Game, Group, Settings } from '../shared/types'
+import type {
+  Breakdown,
+  DownloaderKey,
+  ExeChoice,
+  ExeChoices,
+  Game,
+  Group,
+  Settings
+} from '../shared/types'
 import { ARCHIVE_GROUP_ID, normalizeStatus } from '../shared/types'
 import { defaultDestFor, extractArchive, find7z } from './archive'
 import * as db from './db'
 import { diskInfo, redundantArchives, trashArchives } from './disk'
+import {
+  cancelDownload,
+  clearFinishedDownloads,
+  detectDownloader,
+  onDownloadsChanged,
+  resumeDownloads,
+  shutdownDownloads,
+  startDownload
+} from './downloader'
+import { resolveArtwork } from './icon'
 import { launchGame, revealInExplorer } from './launcher'
-import { onPlaytimeChange, playingIds, shutdownPlaytime } from './playtime'
-import { listDirShallow, removeSidecar, SIDECAR, writeSidecar } from './scan-core'
-import { addGameByExe, importFolder, previewFolder, rescan } from './scanner'
-import { syncAll, toSidecar as sidecarFrom } from './sidecar-sync'
+import { probeExeMeta } from './pe-icon'
+import { onPlaytimeChange, playingIds, runningInDir, shutdownPlaytime } from './playtime'
+import {
+  classifyExes,
+  collectSubExes,
+  exeKindLabel,
+  isUnder,
+  listDirShallow,
+  removeSidecar,
+  SIDECAR,
+  splitArgs,
+  writeSidecar
+} from './scan-core'
+import {
+  addGameByExe,
+  importFolder,
+  previewFolder,
+  rescan,
+  type AddGameExtras
+} from './scanner'
+import { syncAll, toSidecar as sidecarFrom, writeGameSidecar } from './sidecar-sync'
 import { performUninstall, planUninstall, trashLeftovers } from './uninstaller'
 import { computeBreakdown, computeSize, shutdown as shutdownWorkers } from './worker-pool'
+
+/** Outcome of dropping a file onto the window. */
+export interface ImportDropResult {
+  ok: boolean
+  game?: Game
+  /** The folder was already in the library; only the status was applied. */
+  alreadyKnown?: boolean
+  error?: string
+}
 
 const ASSET_SCHEME = 'sakura-asset'
 
@@ -274,6 +318,9 @@ function registerIpc(): void {
     if (!settings.ignoredDirs.some((d) => d.toLowerCase() === key.toLowerCase())) {
       db.setSettings({ ignoredDirs: [...settings.ignoredDirs, key] })
     }
+    // Keep the record itself, not just the path: removing is reversible, and adding the
+    // folder back should return the cover, rating and grid position with it.
+    db.rememberRemoved(game)
     db.removeGame(id)
     return { ok: true, name: game.name }
   })
@@ -283,9 +330,61 @@ function registerIpc(): void {
     db.setSettings({
       ignoredDirs: settings.ignoredDirs.filter((d) => d.toLowerCase() !== dir.toLowerCase())
     })
-    rescan()
+    // Restoring one path is exactly the case where the scan is meant to add something.
+    rescan({ discoverIn: [dir] })
     void refreshSizes()
     return db.getSettings()
+  })
+
+  /**
+   * Forget removal records without acting on them.
+   *
+   * Distinct from restoring: the path simply stops being skipped, so it is offered
+   * again the next time the user rescans that folder. The record of what they had
+   * marked on it is deliberately kept — clearing a list is about tidying the list, and
+   * a custom cover is not something a rescan could ever bring back on its own.
+   */
+  ipcMain.handle('library:clearIgnored', (_e, dirs?: string[]) => {
+    const settings = db.getSettings()
+    if (!dirs || dirs.length === 0) {
+      db.setSettings({ ignoredDirs: [] })
+    } else {
+      const gone = new Set(dirs.map((d) => d.toLowerCase()))
+      db.setSettings({
+        ignoredDirs: settings.ignoredDirs.filter((d) => !gone.has(d.toLowerCase()))
+      })
+    }
+    db.saveNow()
+    return db.getSettings()
+  })
+
+  /**
+   * Drop a scan folder and everything that came from it.
+   *
+   * Leaving the games behind was the old behaviour and it read as a bug: the folder is
+   * off the list, yet a refresh still shows its contents. What each game recorded is
+   * written out to its own sidecar first, so putting the folder back restores the
+   * ratings and play history rather than starting over.
+   */
+  ipcMain.handle('library:removeRoot', (_e, folder: string) => {
+    const settings = db.getSettings()
+    const doomed = db.getGames().filter((g) => isUnder(g.dir, folder))
+    for (const game of doomed) writeGameSidecar(game)
+
+    db.setGames(db.getGames().filter((g) => !isUnder(g.dir, folder)))
+    db.setRemoved(db.getRemoved().filter((g) => !isUnder(g.dir, folder)))
+    db.setSettings({
+      roots: settings.roots.filter((r) => !isUnder(r, folder)),
+      ignoredDirs: settings.ignoredDirs.filter((d) => !isUnder(d, folder)),
+      groupingPrompted: settings.groupingPrompted.filter((d) => !isUnder(d, folder))
+    })
+
+    // Groups left with nothing in them would sit on the desktop as empty folders.
+    const live = new Set(db.getGames().map((g) => g.groupId))
+    db.setGroups(db.getGroups().filter((g) => g.builtin || live.has(g.id)))
+
+    db.saveNow()
+    return { removed: doomed.length, games: db.getGames(), settings: db.getSettings() }
   })
 
   ipcMain.handle('game:resetName', (_e, id: string) => {
@@ -300,6 +399,121 @@ function registerIpc(): void {
     db.updateGame(id, { renamed: false })
     rescan()
     return { ok: true }
+  })
+
+  /**
+   * Every executable in a game folder, named and explained.
+   *
+   * A folder with a dozen of them tells the user nothing on its own — which is the
+   * whole problem this answers. The scanner's own judgement is shown rather than
+   * applied silently, so picking is a decision instead of a guess.
+   */
+  ipcMain.handle('game:exeCandidates', (_e, id: string): ExeChoices | null => {
+    const game = db.findGame(id)
+    if (!game || game.kind !== 'installed') return null
+
+    const currentPath = game.exe ? path.resolve(game.exe) : null
+    const isCurrent = (full: string): boolean =>
+      currentPath !== null && path.resolve(full).toLowerCase() === currentPath.toLowerCase()
+
+    const entries = listDirShallow(game.dir).map((e) => ({
+      name: e.name,
+      isDir: e.isDir,
+      size: e.sizeBytes
+    }))
+
+    const choices: ExeChoice[] = classifyExes(game.dir, entries, probeExeMeta).map((v) => ({
+      rel: v.name,
+      fullPath: v.fullPath,
+      sizeBytes: v.size,
+      kind: v.kind,
+      label: exeKindLabel(v.kind),
+      reasons: v.reasons,
+      rankable: v.rankable,
+      current: isCurrent(v.fullPath)
+    }))
+
+    // Ranked ones first, in the order the scanner would have picked them.
+    choices.sort((a, b) => Number(b.rankable) - Number(a.rankable))
+
+    for (const sub of collectSubExes(game.dir)) {
+      choices.push({
+        rel: sub.rel,
+        fullPath: sub.fullPath,
+        sizeBytes: sub.size,
+        kind: 'sub',
+        label: exeKindLabel('sub'),
+        reasons: [`位于 ${path.dirname(sub.rel)}\\`],
+        rankable: false,
+        current: isCurrent(sub.fullPath)
+      })
+    }
+
+    return {
+      dir: game.dir,
+      current: currentPath ? path.relative(game.dir, currentPath) : null,
+      currentArgs: game.launchArgs ?? [],
+      pinned: game.exePinned === true,
+      choices
+    }
+  })
+
+  /** Adopt an executable as the game's main program, optionally with arguments. */
+  ipcMain.handle('game:setExe', (_e, id: string, exePath: string, args: string[] = []) => {
+    const game = db.findGame(id)
+    if (!game) return { ok: false, error: '找不到该游戏' }
+
+    const target = path.resolve(exePath)
+    // The picker only ever offers paths inside the folder; enforcing it here means a
+    // malformed call cannot point a tile at an executable somewhere else on the disk.
+    if (!isUnder(target, game.dir)) return { ok: false, error: '只能选择游戏文件夹里的程序' }
+    if (!fs.existsSync(target)) return { ok: false, error: '这个文件已经不在了' }
+
+    const clean = args.map((a) => a.trim()).filter(Boolean)
+    const art = resolveArtwork(game.dir, target)
+    db.updateGame(id, {
+      exe: target,
+      exePinned: true,
+      launchArgs: clean.length > 0 ? clean : undefined,
+      launchCwd: undefined,
+      // The tile should look like whatever now starts the game.
+      iconPath: art.iconPath ?? game.iconPath
+    })
+    const updated = db.findGame(id)
+    if (updated) writeGameSidecar(updated)
+    db.saveNow()
+    return { ok: true, game: updated }
+  })
+
+  /**
+   * Run one candidate without adopting it. Deliberately not a play session: trying four
+   * executables in a row should not add four launches to the game's history.
+   */
+  ipcMain.handle('game:tryExe', (_e, id: string, exePath: string, args: string[] = []) => {
+    const game = db.findGame(id)
+    if (!game) return { ok: false, error: '找不到该游戏' }
+    const target = path.resolve(exePath)
+    if (!isUnder(target, game.dir)) return { ok: false, error: '只能试运行游戏文件夹里的程序' }
+    if (!fs.existsSync(target)) return { ok: false, error: '这个文件已经不在了' }
+
+    try {
+      const child = spawn(target, args, {
+        cwd: path.dirname(target),
+        detached: true,
+        stdio: 'ignore'
+      })
+      child.unref()
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  /** Whether anything is running out of the game folder at this moment. */
+  ipcMain.handle('game:probeRunning', async (_e, id: string) => {
+    const game = db.findGame(id)
+    if (!game) return null
+    return runningInDir(game.dir)
   })
 
   ipcMain.handle('game:reveal', (_e, id: string) => {
@@ -382,7 +596,9 @@ function registerIpc(): void {
       (result) => {
         mainWindow?.webContents.send('archive:done', { id, ...result })
         if (result.ok) {
-          rescan()
+          // The user asked for this install, so what came out of the archive may join
+          // the library without a second confirmation.
+          rescan({ discoverIn: [dest] })
           void refreshSizes()
           mainWindow?.webContents.send('db:changed')
         }
@@ -423,6 +639,63 @@ function registerIpc(): void {
     return addGameByExe(res.filePaths[0])
   })
 
+  /**
+   * Add a game from a path the user dropped onto the window.
+   *
+   * Shortcuts are resolved first: dragging a game off the desktop or the start menu
+   * hands over a .lnk, not the executable, and refusing those would reject the most
+   * natural way to do this.
+   */
+  ipcMain.handle(
+    'game:importPath',
+    (_e, filePath: string, patch: Partial<Game> = {}): ImportDropResult => {
+      let target = filePath
+      const extras: AddGameExtras = {}
+      if (target.toLowerCase().endsWith('.lnk')) {
+        try {
+          const link = shell.readShortcutLink(target)
+          target = link.target
+          // Everything else the shortcut carries matters as much as the target does.
+          // A launcher started without its arguments usually does nothing visible.
+          const args = splitArgs(link.args ?? '')
+          if (args.length > 0) extras.launchArgs = args
+          if (link.cwd) extras.launchCwd = link.cwd
+          if (link.icon && /\.(ico|png)$/i.test(link.icon) && fs.existsSync(link.icon)) {
+            extras.iconPath = link.icon
+          }
+        } catch {
+          return { ok: false, error: '无法解析这个快捷方式' }
+        }
+      }
+
+      if (!target.toLowerCase().endsWith('.exe')) {
+        return { ok: false, error: `${path.basename(filePath)} 不是可执行文件` }
+      }
+      if (!fs.existsSync(target)) {
+        return { ok: false, error: `找不到 ${path.basename(target)}` }
+      }
+
+      // Already in the library: report it and change nothing. Silently re-marking an
+      // existing game would hide the far more likely reading — that the wrong thing was
+      // dragged, or that it was dragged twice by accident.
+      const existing = db
+        .getGames()
+        .find((g) => g.dir.toLowerCase() === path.dirname(target).toLowerCase())
+      if (existing) {
+        return { ok: false, alreadyKnown: true, game: existing, error: `《${existing.name}》已经在库里了` }
+      }
+
+      const game = addGameByExe(target, extras)
+      if (!game) return { ok: false, error: '无法读取该程序所在的文件夹' }
+
+      const applied = normalizeStatus(game, patch)
+      if (Object.keys(applied).length > 0) db.updateGame(game.id, applied)
+      db.saveNow()
+      void refreshSizes()
+      return { ok: true, game: db.findGame(game.id) ?? game }
+    }
+  )
+
   /** Pick an executable path without registering it as a game (used for external tools). */
   ipcMain.handle('dialog:pickExePath', async () => {
     if (!mainWindow) return null
@@ -441,6 +714,27 @@ function registerIpc(): void {
 
   /** Which games are running right now, so a reload of the UI does not lose the badge. */
   ipcMain.handle('playtime:active', () => playingIds())
+
+  ipcMain.handle('download:start', (_e, url: string, dir?: string) => startDownload(url, dir))
+  ipcMain.handle('download:list', () => db.getDownloads())
+  ipcMain.handle('download:cancel', (_e, id: string) => {
+    cancelDownload(id)
+    return true
+  })
+  ipcMain.handle('download:clearFinished', () => {
+    clearFinishedDownloads()
+    return true
+  })
+  ipcMain.handle('download:detect', (_e, key: DownloaderKey) => detectDownloader(key))
+
+  ipcMain.handle('dialog:pickDownloadDir', async () => {
+    if (!mainWindow) return null
+    const res = await dialog.showOpenDialog(mainWindow, {
+      title: '选择下载目录',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    return res.canceled ? null : res.filePaths[0]
+  })
 }
 
 app.whenReady().then(() => {
@@ -448,7 +742,12 @@ app.whenReady().then(() => {
   registerAssetProtocol()
   registerIpc()
   onPlaytimeChange((payload) => mainWindow?.webContents.send('playtime:changed', payload))
+  // The list is short enough that pushing it whole beats tracking what changed.
+  onDownloadsChanged(() => mainWindow?.webContents.send('download:changed', db.getDownloads()))
   createWindow()
+  // Downloads outlive the app: one still running belongs to another process, so pick
+  // the watch back up rather than starting the job over.
+  resumeDownloads()
 
   // Ensure the built-in bucket for not-yet-installed archives always exists.
   const groups = db.getGroups()
@@ -471,6 +770,10 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   // Settle open sessions first: it writes playtime that the flush then commits.
   shutdownPlaytime()
+  // Stops the watch timers. Downloads themselves keep running in their own process and
+  // are picked back up next launch; an extract in flight is cancelled rather than left
+  // to write into a folder nothing is tracking any more.
+  shutdownDownloads()
   db.saveNow()
   shutdownWorkers()
 })

@@ -1939,6 +1939,163 @@ select.field {
   white-space: nowrap;
 }
 
+/* ---- executable picker ---- */
+
+.exe-lede {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink-soft);
+}
+
+.exe-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'main actions'
+    'why actions';
+  gap: 2px 12px;
+  align-items: center;
+  padding: 8px;
+  border-radius: 10px;
+}
+
+.exe-row:hover {
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+}
+
+.exe-row.current {
+  background: color-mix(in srgb, var(--brand) 14%, transparent);
+}
+
+.exe-main {
+  grid-area: main;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.exe-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exe-size {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  margin-left: auto;
+  padding-left: 8px;
+  flex: none;
+}
+
+.exe-chip {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: color-mix(in srgb, var(--ink-soft) 18%, transparent);
+  color: var(--ink-soft);
+}
+
+.exe-chip.main {
+  background: color-mix(in srgb, var(--brand) 30%, transparent);
+  color: var(--ink);
+}
+
+.exe-chip.locale {
+  background: color-mix(in srgb, #6aabdd 32%, transparent);
+  color: var(--ink);
+}
+
+.exe-chip.uninstall,
+.exe-chip.patch {
+  background: color-mix(in srgb, #ffb07c 34%, transparent);
+  color: var(--ink);
+}
+
+.exe-chip.current {
+  background: var(--accent);
+  color: var(--panel);
+}
+
+.exe-why {
+  grid-area: why;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.exe-trial {
+  display: block;
+  margin-top: 2px;
+  font-weight: 600;
+}
+
+.exe-trial.alive {
+  color: #1b7a3d;
+}
+
+.exe-trial.dead,
+.exe-trial.failed {
+  color: #c62828;
+}
+
+.exe-actions {
+  grid-area: actions;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.exe-combo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  font-size: 12.5px;
+}
+
+.exe-combo select {
+  max-width: 220px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 12.5px;
+}
+
+.exe-combo-note {
+  margin: 0 8px 4px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.drawer-args {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: color-mix(in srgb, var(--brand) 28%, transparent);
+}
+
+.linkish {
+  margin-left: 8px;
+  border: 0;
+  background: none;
+  padding: 0;
+  font-size: 11.5px;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .import-note {
   color: var(--ink-soft);
   font-size: 11.5px;
@@ -2125,4 +2282,154 @@ select.field {
     scale: 1;
     rotate: 0deg;
   }
+}
+
+/* ---------- downloads ---------- */
+
+.download-modal {
+  width: min(620px, 92vw);
+}
+
+.download-urls {
+  width: 100%;
+  min-height: 110px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  font: 12.5px/1.7 Consolas, 'Cascadia Mono', monospace;
+  resize: vertical;
+}
+
+.download-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.download-label {
+  width: 62px;
+  flex: none;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.download-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--ink);
+  /* Paths and URLs are long and have no spaces; let them wrap rather than push the
+     buttons off the dialog. */
+  word-break: break-all;
+}
+
+.download-note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-soft);
+}
+
+.download-warn {
+  margin: 10px 0 0;
+  padding: 8px 11px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--accent);
+}
+
+.download-strip {
+  margin-top: 20px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+}
+
+.download-strip-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.download-strip-head b {
+  flex: 1;
+}
+
+.download-state {
+  min-width: 110px;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.download-message {
+  padding: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.bar-fill.failed {
+  background: #9e9e9e;
+}
+
+/* ---------- dropping files in from Explorer ---------- */
+
+.page.file-over {
+  /* Inset rather than a border: a real border would change the page's size and shift
+     every tile the moment a file crosses the window. */
+  box-shadow: inset 0 0 0 3px var(--accent);
+  border-radius: var(--radius);
+}
+
+.file-drop-overlay {
+  position: fixed;
+  inset: var(--topbar-h) 0 0 0;
+  z-index: 50; /* over the petals, under menus and dialogs */
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--overlay) 34%, transparent);
+  backdrop-filter: blur(3px);
+  animation: fade-in 0.14s ease-out;
+}
+
+.file-drop-card {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 26px 40px;
+  border-radius: 20px;
+  background: var(--glass-strong);
+  border: 2px dashed var(--accent);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+}
+
+.file-drop-icon {
+  font-size: 30px;
+  color: var(--accent);
+}
+
+.file-drop-card b {
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.file-drop-card span {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.file-drop-card em {
+  font-size: 11.5px;
+  font-style: normal;
+  color: var(--ink-soft);
+  opacity: 0.75;
 }

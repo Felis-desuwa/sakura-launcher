@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import { NtExecutable, NtExecutableResource, Resource } from 'resedit'
+import type { ExeMeta, ExeVersionInfo } from './scan-core.ts'
 
 const RT_ICON = 3
 
@@ -10,12 +11,43 @@ export interface ExtractedIcon {
   ico: Buffer
 }
 
-interface CachedProbe {
-  maxSize: number
+interface CachedProbe extends ExeMeta {
   mtimeMs: number
 }
 
 const probeCache = new Map<string, CachedProbe>()
+
+const EMPTY: ExeMeta = { maxIconSize: 0, version: null }
+
+function readVersionInfo(res: NtExecutableResource): ExeVersionInfo | null {
+  let entries: ReturnType<typeof Resource.VersionInfo.fromEntries>
+  try {
+    entries = Resource.VersionInfo.fromEntries(res.entries)
+  } catch {
+    return null
+  }
+  if (entries.length === 0) return null
+
+  try {
+    const info = entries[0]
+    const languages = info.getAllLanguagesForStringValues()
+    if (languages.length === 0) return null
+    const values = info.getStringValues(languages[0]) as Record<string, string | undefined>
+    const pick = (key: string): string | undefined => {
+      const value = values[key]?.trim()
+      return value ? value : undefined
+    }
+    const out: ExeVersionInfo = {
+      description: pick('FileDescription'),
+      product: pick('ProductName'),
+      company: pick('CompanyName'),
+      originalName: pick('OriginalFilename')
+    }
+    return out.description || out.product || out.company || out.originalName ? out : null
+  } catch {
+    return null
+  }
+}
 
 function readExeResources(exePath: string): NtExecutableResource | null {
   let buf: Buffer
@@ -40,35 +72,46 @@ function realDim(v: number): number {
 }
 
 /**
- * Largest icon dimension embedded in the executable, or 0 if it has none.
- * Cached per path+mtime because the scanner uses it as a tie-break while ranking
- * candidate executables.
+ * Icon size and self-description in a single pass.
+ *
+ * Both come out of the same parsed resource table, so reading the version strings
+ * alongside the icon costs one extra lookup rather than a second file read — which is
+ * what makes it affordable during a full library scan. Cached per path+mtime.
  */
-export function probeMaxIconSize(exePath: string): number {
+export function probeExeMeta(exePath: string): ExeMeta {
   let mtimeMs = 0
   try {
     mtimeMs = fs.statSync(exePath).mtimeMs
   } catch {
-    return 0
+    return EMPTY
   }
   const hit = probeCache.get(exePath)
-  if (hit && hit.mtimeMs === mtimeMs) return hit.maxSize
+  if (hit && hit.mtimeMs === mtimeMs) return hit
 
-  let maxSize = 0
+  let maxIconSize = 0
+  let version: ExeVersionInfo | null = null
   const res = readExeResources(exePath)
   if (res) {
     try {
       for (const group of Resource.IconGroupEntry.fromEntries(res.entries)) {
         for (const icon of group.icons) {
-          maxSize = Math.max(maxSize, realDim(icon.width))
+          maxIconSize = Math.max(maxIconSize, realDim(icon.width))
         }
       }
     } catch {
-      maxSize = 0
+      maxIconSize = 0
     }
+    version = readVersionInfo(res)
   }
-  probeCache.set(exePath, { maxSize, mtimeMs })
-  return maxSize
+
+  const meta: CachedProbe = { maxIconSize, version, mtimeMs }
+  probeCache.set(exePath, meta)
+  return meta
+}
+
+/** Largest icon dimension embedded in the executable, or 0 if it has none. */
+export function probeMaxIconSize(exePath: string): number {
+  return probeExeMeta(exePath).maxIconSize
 }
 
 /** Wrap a raw RT_ICON payload (BITMAPINFOHEADER + masks, or a PNG) in an .ico container. */

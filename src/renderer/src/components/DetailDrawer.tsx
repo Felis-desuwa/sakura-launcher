@@ -34,6 +34,8 @@ interface Props {
   disks: DiskInfo[]
   playing: boolean
   onClose: () => void
+  /** Open the picker for which executable actually starts this game. */
+  onChooseExe?: () => void
 }
 
 export default function DetailDrawer({
@@ -41,7 +43,8 @@ export default function DetailDrawer({
   allGames,
   disks,
   playing,
-  onClose
+  onClose,
+  onChooseExe
 }: Props): React.JSX.Element {
   const [mode, setMode] = useState<Mode>('usage')
   const [stack, setStack] = useState<string[]>([game.dir])
@@ -269,7 +272,19 @@ export default function DetailDrawer({
               <dt>启动次数</dt>
               <dd>{game.launchCount} 次</dd>
               <dt>主程序</dt>
-              <dd>{game.exe ? game.exe.split('\\').pop() : '（压缩包，未安装）'}</dd>
+              <dd>
+                {game.exe ? game.exe.split('\\').pop() : '（压缩包，未安装）'}
+                {game.launchArgs && game.launchArgs.length > 0 && (
+                  <span className="drawer-args" title={game.launchArgs.join(' ')}>
+                    带参数启动
+                  </span>
+                )}
+                {game.kind === 'installed' && onChooseExe && (
+                  <button type="button" className="linkish" onClick={onChooseExe}>
+                    更换
+                  </button>
+                )}
+              </dd>
               <dt>体积</dt>
               <dd>{formatBytes(game.sizeBytes)}</dd>
               <dt>安装/修改</dt>

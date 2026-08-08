@@ -6,14 +6,50 @@ import { formatDuration, parseDuration } from '../shared/types.ts'
 
 export const MAX_DEPTH = 4
 
+/**
+ * Whether `child` is `parent` itself or lives inside it.
+ *
+ * Compared case-insensitively and with a trailing separator, so `H:\games2` does not
+ * count as being inside `H:\games` — a prefix test alone gets that wrong.
+ */
+export function isUnder(child: string, parent: string): boolean {
+  const a = path.resolve(child).toLowerCase()
+  const b = path.resolve(parent).toLowerCase()
+  return a === b || a.startsWith(b.endsWith(path.sep) ? b : b + path.sep)
+}
+
 /** Archives smaller than this are game assets (mods, save packs), not installers. */
 export const ARCHIVE_MIN_BYTES = 200 * 1024 * 1024
 
-const EXE_BLACKLIST: RegExp[] = [
+/**
+ * What an executable in a game folder actually is.
+ *
+ * A folder like 穢翼のユースティア ships twelve of them — engine, two uninstallers, a
+ * Chinese patch, a NoDVD build, four locale emulators and a couple of tools — and the
+ * filenames alone tell the user nothing. Naming each one is what lets the picker
+ * explain itself instead of presenting twelve identical rows.
+ */
+export type ExeKind = 'main' | 'launcher' | 'locale' | 'patch' | 'uninstall' | 'tool' | 'sub'
+
+const EXE_UNINSTALL: RegExp[] = [/^unins/i, /^uninstall/i, /^卸载/]
+
+/** Patches that are never the way in, so they stay out of the ranking entirely. */
+const EXE_PATCH_STRICT: RegExp[] = [/^补丁/, /^patch/i, /^更新/, /^update/i, /^汉化/]
+
+/**
+ * Named like a patch, but still allowed to compete: a NoDVD build is occasionally the
+ * executable a game is genuinely started from.
+ *
+ * The `chs`/`cht` rule insists on a build number after the marker, because that is what
+ * separates the two things it would otherwise conflate: `BGI_CHS_130321.exe` is a dated
+ * translation patch, while `nine_haruiro_CHS.exe` is the Chinese build of the game
+ * itself — the executable the user actually plays. Matching the bare suffix demoted the
+ * latter across the library.
+ */
+const EXE_PATCH_LOOSE: RegExp[] = [/nodvd/i, /crack/i, /(^|[_\-\s])(chs|cht)[_\-]?\d{4,}/i]
+
+const EXE_TOOL_STRICT: RegExp[] = [
   /^unitycrashhandler/i,
-  /^unins/i,
-  /^uninstall/i,
-  /^卸载/,
   /^vcredist/i,
   /^dxsetup$/i,
   /^dxwebsetup$/i,
@@ -29,13 +65,33 @@ const EXE_BLACKLIST: RegExp[] = [
   /^ffmpeg$/i,
   /^python\w*$/i,
   /^node$/i,
-  /^补丁/,
-  /^patch/i,
-  /^更新/,
-  /^update/i,
-  /^汉化/,
   /^密码/
 ]
+
+/**
+ * Labelled as a tool without being excluded — the name is suggestive, not conclusive.
+ *
+ * `ESUforEustia` / `ISESUforEustia` look like locale emulators and are not: their
+ * version resources read 環境設定ツール and 初期画面設定ツール, company BURIKO — they are
+ * the engine's own settings utilities, shipped next to the game.
+ */
+const EXE_TOOL_LOOSE: RegExp[] = [/viewer$/i, /^i?s?esu(for|[_\-\s]|$)/i]
+
+/**
+ * Locale emulators. Japanese games on a Chinese system are routinely started through
+ * one of these rather than directly, so they are worth naming — and worth demoting,
+ * since a 1 MB wrapper otherwise competes with the engine on size alone.
+ */
+const EXE_LOCALE: RegExp[] = [
+  /^ntlea/i,
+  /^localeemulator/i,
+  /^leproc/i,
+  /^alpharomdie/i,
+  /^apploc/i,
+  /转区/
+]
+
+const EXE_BLACKLIST: RegExp[] = [...EXE_UNINSTALL, ...EXE_PATCH_STRICT, ...EXE_TOOL_STRICT]
 
 /** Demoted rather than excluded — used only when nothing better exists in the folder. */
 const EXE_WEAK: RegExp[] = [/^nw$/i, /launcher$/i, /^launcher/i, /^start$/i, /^游戏启动/]
@@ -46,6 +102,96 @@ export function isBlacklistedExe(basename: string): boolean {
 
 function isWeakExe(basename: string): boolean {
   return EXE_WEAK.some((re) => re.test(basename))
+}
+
+function isLocaleExe(basename: string): boolean {
+  return EXE_LOCALE.some((re) => re.test(basename))
+}
+
+const KIND_LABELS: Record<ExeKind, string> = {
+  main: '主程序候选',
+  launcher: '启动器',
+  locale: '区域模拟器',
+  patch: '补丁',
+  uninstall: '卸载程序',
+  tool: '工具',
+  sub: '子目录'
+}
+
+export function exeKindLabel(kind: ExeKind): string {
+  return KIND_LABELS[kind]
+}
+
+/**
+ * What an executable says about itself, from its VS_VERSIONINFO resource.
+ *
+ * Filenames lie; descriptions rarely do. `ESUforEustia.exe` reads like a locale-emulator
+ * wrapper and is in fact the engine's own 「環境設定ツール」 by BURIKO, and
+ * `穢翼のユースティア NoDVD.EXE` declares itself 「Update for Windows95」 by a different
+ * company altogether.
+ */
+export interface ExeVersionInfo {
+  description?: string
+  product?: string
+  company?: string
+  originalName?: string
+}
+
+/** Everything the scanner and the picker want to know about an exe, read in one pass. */
+export interface ExeMeta {
+  /** Largest embedded icon dimension, 0 when it has none. */
+  maxIconSize: number
+  version: ExeVersionInfo | null
+}
+
+/**
+ * Self-descriptions that settle what an executable is for.
+ *
+ * Japanese, Chinese and English forms all appear, often in the same folder. Matched
+ * against FileDescription / ProductName / OriginalFilename — written by whoever built
+ * the thing, rather than by whoever repacked it.
+ */
+const VERSION_HINTS: [RegExp, ExeKind][] = [
+  [/uninstall|アンインストール|卸载|反安装/i, 'uninstall'],
+  [/\b(update|patch)\b|補丁|补丁|汉化|crack|nodvd/i, 'patch'],
+  [
+    /設定|设定|设置|環境設定|初期画面|\bconfig(uration)?\b|\bsettings?\b|\bsetup\b|viewer|\butility\b|ツール/i,
+    'tool'
+  ],
+  [/\blocale\b|applocale|转区|轉區/i, 'locale']
+]
+
+/**
+ * What the executable's own version resource says it is, or null when it says nothing
+ * useful — which includes the common case of there being no resource at all.
+ *
+ * This only ever rules candidates *out*. The real main program frequently has no
+ * readable version info: resedit declines some valid PE layouts outright, and the BGI
+ * engine binary in 穢翼のユースティア is one of them. Treating "no description" as a mark
+ * against a file would eliminate exactly the executable we are looking for.
+ */
+export function exeKindFromVersion(version: ExeVersionInfo | null | undefined): ExeKind | null {
+  if (!version) return null
+  // The company name is left out on purpose: it identifies who built the file, which is
+  // not the same question, and matching keywords in it produces nonsense.
+  const said = [version.description, version.product, version.originalName]
+    .filter(Boolean)
+    .join(' ')
+  if (!said) return null
+  for (const [pattern, kind] of VERSION_HINTS) {
+    if (pattern.test(said)) return kind
+  }
+  return null
+}
+
+/** What an executable looks like, judged by name alone. */
+export function exeKindOf(basename: string): ExeKind {
+  if (EXE_UNINSTALL.some((re) => re.test(basename))) return 'uninstall'
+  if ([...EXE_PATCH_STRICT, ...EXE_PATCH_LOOSE].some((re) => re.test(basename))) return 'patch'
+  if ([...EXE_TOOL_STRICT, ...EXE_TOOL_LOOSE].some((re) => re.test(basename))) return 'tool'
+  if (isLocaleExe(basename)) return 'locale'
+  if (isWeakExe(basename)) return 'launcher'
+  return 'main'
 }
 
 /** Strip decorations so "9-nine-雪色雪花雪余痕(樱空) Ver1.1" and its folder still match. */
@@ -104,22 +250,39 @@ export interface ExeCandidate {
   score: number
 }
 
-/** Optional hook so scoring can consult embedded icon size; skipped in the CLI harness. */
-export type IconSizeProbe = (exePath: string) => number
+export interface ExeVerdict extends ExeCandidate {
+  kind: ExeKind
+  /** Why it scored what it did, in words — this is what the picker shows the user. */
+  reasons: string[]
+  /** Whether it is allowed to compete for the main slot at all. */
+  rankable: boolean
+  /** What the file says about itself, when it says anything. */
+  version?: ExeVersionInfo
+}
 
 /**
- * Rank every plausible main program in a folder, best first.
- * Engine layout signals (Unity `_Data`, RPG Maker `www`, Ren'Py `renpy`) beat name matching,
- * because folder names are frequently unrelated to the executable.
- *
- * Blacklisted names (uninstallers, redistributables, patches) are dropped outright.
- * "Weak" names — launcher, start, nw — are only offered when nothing else qualifies.
+ * Optional hook so scoring can consult what is inside the executable — its icon size
+ * and its version resource. Skipped in the CLI harness, which has no PE parser.
  */
-export function rankExes(
+export type ExeMetaProbe = (exePath: string) => ExeMeta
+
+/**
+ * Judge every executable in a folder: what it is, how likely it is to be the main
+ * program, and why.
+ *
+ * Engine layout signals (Unity `_Data`, RPG Maker `www`, Ren'Py `renpy`) beat name
+ * matching, because folder names are frequently unrelated to the executable.
+ *
+ * Nothing is dropped here — uninstallers and redistributables come back labelled rather
+ * than silently missing, since the picker has to account for every file the user can
+ * see in Explorer. `rankExes` is the filtered view of this, and scanning uses that, so
+ * both answer to one set of rules.
+ */
+export function classifyExes(
   dir: string,
   entries: DirEntry[],
-  probeIconSize?: IconSizeProbe
-): ExeCandidate[] {
+  probeMeta?: ExeMetaProbe
+): ExeVerdict[] {
   const dirName = path.basename(dir)
   const exes = entries.filter((e) => !e.isDir && /\.exe$/i.test(e.name))
   if (exes.length === 0) return []
@@ -131,50 +294,152 @@ export function rankExes(
   const hasRenpy = dirNames.has('renpy')
   const maxSize = Math.max(...exes.map((e) => e.size), 1)
 
-  const strong: ExeCandidate[] = []
-  const weak: ExeCandidate[] = []
-
+  const out: ExeVerdict[] = []
   for (const exe of exes) {
     const base = exe.name.replace(/\.exe$/i, '')
-    if (isBlacklistedExe(base)) continue
-
+    const reasons: string[] = []
     let score = 0
-    if (dirNames.has(`${base.toLowerCase()}_data`)) score += 100
-    if (fuzzyMatch(base, dirName)) score += 50
-    if (hasXp3) score += 20
-    if (hasRpgMaker && /^game$/i.test(base)) score += 40
-    if (hasRenpy) score += 20
+
+    if (dirNames.has(`${base.toLowerCase()}_data`)) {
+      score += 100
+      reasons.push(`有同名的 ${base}_Data 目录`)
+    }
+    if (fuzzyMatch(base, dirName)) {
+      score += 50
+      reasons.push('文件名与游戏文件夹同名')
+    }
+    if (hasXp3) {
+      score += 20
+      reasons.push('目录里有 .xp3 引擎资源')
+    }
+    if (hasRpgMaker && /^game$/i.test(base)) {
+      score += 40
+      reasons.push('RPG Maker 的主程序名')
+    }
+    if (hasRenpy) {
+      score += 20
+      reasons.push('Ren’Py 引擎目录')
+    }
+    if (exe.size === maxSize && exes.length > 1) reasons.push('目录里体积最大的 exe')
     score += Math.round((exe.size / maxSize) * 10)
 
-    if (probeIconSize) {
-      const px = probeIconSize(path.join(dir, exe.name))
-      if (px >= 256) score += 30
-      else if (px >= 128) score += 15
-      else if (px >= 64) score += 5
+    const fullPath = path.join(dir, exe.name)
+    const meta = probeMeta?.(fullPath)
+    if (meta) {
+      const px = meta.maxIconSize
+      if (px >= 256) {
+        score += 30
+        reasons.push(`自带 ${px}px 图标`)
+      } else if (px >= 128) {
+        score += 15
+        reasons.push(`自带 ${px}px 图标`)
+      } else if (px >= 64) {
+        score += 5
+        reasons.push(`自带 ${px}px 图标`)
+      } else if (px === 0) {
+        reasons.push('没有内嵌图标')
+      }
     }
 
-    const cand: ExeCandidate = {
-      name: exe.name,
-      fullPath: path.join(dir, exe.name),
-      size: exe.size,
-      score
+    // What the file says about itself outranks what its name suggests, but only when it
+    // says something: a missing version resource is not evidence of anything, and the
+    // engine binary we are hunting for is often the one that has none.
+    const said = exeKindFromVersion(meta?.version)
+    const named = exeKindOf(base)
+    const kind = said ?? named
+    if (meta?.version?.description) {
+      reasons.push(`自述：${meta.version.description}`)
+    } else if (meta?.version?.product) {
+      reasons.push(`自述产品：${meta.version.product}`)
     }
-    if (isWeakExe(base)) weak.push(cand)
-    else strong.push(cand)
+    if (said && said !== named && said !== 'main') {
+      reasons.push(`按自述判定为${KIND_LABELS[said]}`)
+    }
+
+    out.push({
+      name: exe.name,
+      fullPath,
+      size: exe.size,
+      score,
+      kind,
+      reasons,
+      rankable: !isBlacklistedExe(base),
+      version: meta?.version ?? undefined
+    })
+  }
+  return out
+}
+
+/**
+ * Rank every plausible main program in a folder, best first — the filtered view of
+ * `classifyExes` that scanning uses.
+ *
+ * Blacklisted names (uninstallers, redistributables, patches) are dropped outright.
+ * Everything the classifier judged to be something other than the game — a launcher, a
+ * locale emulator, a settings tool it recognised from the file's own description — is
+ * demoted, and only offered when nothing else qualifies. That last part is what stops a
+ * folder of nothing but tools from coming back empty.
+ */
+export function rankExes(
+  dir: string,
+  entries: DirEntry[],
+  probeMeta?: ExeMetaProbe
+): ExeCandidate[] {
+  const strong: ExeVerdict[] = []
+  const weak: ExeVerdict[] = []
+  for (const verdict of classifyExes(dir, entries, probeMeta)) {
+    if (!verdict.rankable) continue
+    if (verdict.kind === 'main') strong.push(verdict)
+    else weak.push(verdict)
   }
 
   const pool = strong.length > 0 ? strong : weak
   pool.sort((a, b) => b.score - a.score || b.size - a.size)
-  return pool
+  return pool.map(({ name, fullPath, size, score }) => ({ name, fullPath, size, score }))
 }
 
 /** The single best candidate, which is what scanning cares about. */
 export function pickMainExe(
   dir: string,
   entries: DirEntry[],
-  probeIconSize?: IconSizeProbe
+  probeMeta?: ExeMetaProbe
 ): ExeCandidate | null {
-  return rankExes(dir, entries, probeIconSize)[0] ?? null
+  return rankExes(dir, entries, probeMeta)[0] ?? null
+}
+
+/** Folders below a game that hold copies rather than the game itself. */
+const SUB_NOISE = /^(node_modules|\.git|__pycache__|temp|tmp|cache)$/i
+
+/**
+ * Executables below the game folder, for the picker to offer as a last resort.
+ *
+ * These never compete for the main slot — a `backup\BGI.exe` outranking the real one on
+ * size would be a bad joke — but they have to be visible, because occasionally the game
+ * really does live one level down.
+ */
+export function collectSubExes(
+  dir: string,
+  maxDepth = 2,
+  cap = 60
+): { rel: string; fullPath: string; size: number }[] {
+  const out: { rel: string; fullPath: string; size: number }[] = []
+  const walk = (current: string, depth: number): void => {
+    if (depth > maxDepth || out.length >= cap) return
+    for (const entry of readDirSafe(current)) {
+      if (out.length >= cap) return
+      const full = path.join(current, entry.name)
+      if (entry.isDir) {
+        if (!SUB_NOISE.test(entry.name)) walk(full, depth + 1)
+      } else if (/\.exe$/i.test(entry.name)) {
+        out.push({ rel: path.relative(dir, full), fullPath: full, size: entry.size })
+      }
+    }
+  }
+  // Start one level in: the folder's own executables are `classifyExes`'s job.
+  for (const entry of readDirSafe(dir)) {
+    if (entry.isDir && !SUB_NOISE.test(entry.name)) walk(path.join(dir, entry.name), 1)
+  }
+  return out
 }
 
 /** Engines that legitimately ship tiny payloads — their presence vouches for a folder. */
@@ -317,6 +582,10 @@ export interface SidecarSession {
 /** Every field is optional: a key missing from the file leaves the database value alone. */
 export interface SidecarData {
   name?: string
+  /** File name of the chosen main program, relative to the game folder. */
+  exe?: string
+  /** Arguments it is started with — how a locale-emulator entry is recorded. */
+  launchArgs?: string[]
   wishlist?: boolean
   playing?: boolean
   played?: boolean
@@ -345,6 +614,41 @@ const STATUS_LABELS: [keyof SidecarData, string][] = [
 
 function stars(rating: number): string {
   return '★'.repeat(rating) + '☆'.repeat(5 - rating)
+}
+
+/** Quote only what needs it, so a hand-editable file stays readable. */
+function quoteArg(arg: string): string {
+  return /[\s"]/.test(arg) ? `"${arg.replace(/"/g, '')}"` : arg
+}
+
+/**
+ * Split an argument line the way Windows does: quotes group, whitespace separates.
+ * Shared with the shortcut reader in the main process, so a line typed into the sidecar
+ * and a line taken from a .lnk are broken up identically.
+ */
+export function splitArgs(line: string): string[] {
+  const args: string[] = []
+  let current = ''
+  let quoted = false
+  let started = false
+
+  for (const ch of line) {
+    if (ch === '"') {
+      quoted = !quoted
+      started = true
+      continue
+    }
+    if (!quoted && /\s/.test(ch)) {
+      if (started) args.push(current)
+      current = ''
+      started = false
+      continue
+    }
+    current += ch
+    started = true
+  }
+  if (started) args.push(current)
+  return args
 }
 
 function formatStamp(ms: number): string {
@@ -385,6 +689,14 @@ export function renderSidecar(data: SidecarData): string {
   )
   lines.push(`- 评级: ${data.tier ?? '未评级'}`)
   lines.push(`- 标签: ${data.tags && data.tags.length > 0 ? data.tags.join(', ') : '无'}`)
+  // Only written once the user has picked one by hand. A line stating the scanner's own
+  // guess would read as a decision they made, and would come back as one on re-import.
+  if (data.exe) {
+    lines.push(`- 主程序: ${data.exe}`)
+    if (data.launchArgs && data.launchArgs.length > 0) {
+      lines.push(`- 启动参数: ${data.launchArgs.map(quoteArg).join(' ')}`)
+    }
+  }
 
   lines.push('', '## 统计', '')
   lines.push(`- 总时长: ${formatDuration(data.playtimeMs ?? 0)}`)
@@ -445,6 +757,12 @@ export function parseSidecar(text: string): SidecarData {
 
   const tags = field('标签')
   if (tags !== null) data.tags = tags === '无' ? [] : splitList(tags)
+
+  const exe = field('主程序')
+  if (exe) data.exe = exe.replace(/^["']|["']$/g, '')
+
+  const args = field('启动参数')
+  if (args !== null) data.launchArgs = splitArgs(args)
 
   const playtime = field('总时长')
   if (playtime !== null) {
@@ -586,14 +904,14 @@ const VOLUME_RE = /^(.*?)(?:\.7z\.\d{3}|\.part\d+\.rar|\.z\d{2}|\.\d{3})$/i
 const ARCHIVE_RE = /\.(7z|zip|rar)$/i
 
 /** `X.7z.001` and `X.part2.rar` both collapse to `X` so split sets become one entry. */
-function archiveBaseName(fileName: string): string | null {
+export function archiveBaseName(fileName: string): string | null {
   const vol = VOLUME_RE.exec(fileName)
   if (vol) return vol[1].replace(/\.7z$/i, '')
   if (ARCHIVE_RE.test(fileName)) return fileName.replace(ARCHIVE_RE, '')
   return null
 }
 
-function isArchiveFile(fileName: string): boolean {
+export function isArchiveFile(fileName: string): boolean {
   return archiveBaseName(fileName) !== null
 }
 
@@ -610,7 +928,7 @@ function isArchiveFile(fileName: string): boolean {
  */
 export function walkRoot(
   root: string,
-  probeIconSize?: IconSizeProbe,
+  probeMeta?: ExeMetaProbe,
   readNames = true
 ): WalkResult {
   const games: FoundGame[] = []
@@ -636,7 +954,7 @@ export function walkRoot(
       archiveParts.set(key, rec)
     }
 
-    const main = pickMainExe(dir, entries, probeIconSize)
+    const main = pickMainExe(dir, entries, probeMeta)
     if (main) {
       const reason = rejectReason(dir, entries, main)
       if (reason) {

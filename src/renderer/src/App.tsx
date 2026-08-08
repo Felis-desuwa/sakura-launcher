@@ -1,16 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ImportPreview } from '../../preload/index'
-import type { DiskInfo, Game, Group, Settings, SortKey, TabKey } from '../../shared/types'
-import { DEFAULT_SETTINGS, normalizeStatus } from '../../shared/types'
+import type {
+  DiskInfo,
+  ExeChoices,
+  Game,
+  Group,
+  PendingDownload,
+  Settings,
+  SortKey,
+  TabKey
+} from '../../shared/types'
+import { DEFAULT_SETTINGS, normalizeStatus, TAB_META } from '../../shared/types'
 import BulkUninstallDialog from './components/BulkUninstallDialog'
 import ConfirmDialog from './components/ConfirmDialog'
 import DetailDrawer from './components/DetailDrawer'
+import ExeChooserDialog from './components/ExeChooserDialog'
 import FileBrowser from './components/FileBrowser'
 import ImportDialog from './components/ImportDialog'
 import PromptDialog from './components/PromptDialog'
 import PetalCanvas from './components/PetalCanvas'
+import DownloadDialog from './components/DownloadDialog'
 import TopBar, { type PageKey } from './components/TopBar'
 import UninstallRitual from './components/UninstallRitual'
+import { dragHasFiles, pathsFromDrop } from './lib/fileDrop'
 import { formatBytes } from './lib/format'
 import DesktopPage from './pages/DesktopPage'
 import DiskPage from './pages/DiskPage'
@@ -50,9 +62,19 @@ export default function App(): React.JSX.Element {
   const [renaming, setRenaming] = useState<Game | null>(null)
   const [tagging, setTagging] = useState<Game | null>(null)
   const [removing, setRemoving] = useState<Game[]>([])
+  /** Scan folder awaiting confirmation to be dropped, with its games. */
+  const [removingRoot, setRemovingRoot] = useState<string | null>(null)
+  const [clearingIgnored, setClearingIgnored] = useState(false)
+  /** Game whose executable is being chosen, together with what was found in its folder. */
+  const [choosingExe, setChoosingExe] = useState<{ game: Game; data: ExeChoices } | null>(null)
   const [importing, setImporting] = useState<ImportPreview | null>(null)
   const [leftover, setLeftover] = useState<{ game: Game; bytes: number } | null>(null)
   const [extractProgress, setExtractProgress] = useState<Record<string, number>>({})
+  const [downloads, setDownloads] = useState<PendingDownload[]>([])
+  const [downloadOpen, setDownloadOpen] = useState(false)
+  const [fileOver, setFileOver] = useState(false)
+  /** Nested dragenter/dragleave pairs, so crossing a child does not clear the overlay. */
+  const dragDepth = useRef(0)
 
   const toastSeq = useRef(0)
 
@@ -86,9 +108,10 @@ export default function App(): React.JSX.Element {
       setLoaded(true)
       window.sakura.diskInfo().then(setDisks)
       window.sakura.activeSessions().then(setPlaying)
-      // Quiet startup scan: it picks up newly installed games, but does not reconcile
-      // the sidecar files. That costs a disk round-trip per game and belongs behind
-      // the scan button, not between launching the app and seeing the library.
+      // Quiet startup refresh: brings existing entries up to date (names, folders that
+      // moved away) without reconciling the sidecar files. That costs a disk round-trip
+      // per game and belongs behind a button, not between launching the app and seeing
+      // the library. Taking in games that were not there before is never automatic.
       if (snap.settings.roots.length > 0) void runScan(false, false)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -107,7 +130,7 @@ export default function App(): React.JSX.Element {
         delete next[id]
         return next
       })
-      toast(ok ? '解压完成，已重新扫描' : `解压失败：${error ?? '未知错误'}`, !ok)
+      toast(ok ? '解压完成，已加入游戏库' : `解压失败：${error ?? '未知错误'}`, !ok)
     })
     const offDb = window.sakura.onDbChanged(() => void refresh())
     const offPlaytime = window.sakura.onPlaytime(({ id, playtimeMs, playing: running }) => {
@@ -133,7 +156,7 @@ export default function App(): React.JSX.Element {
         setGames(outcome.games)
         if (announce) {
           const installed = outcome.games.filter((g) => g.kind === 'installed').length
-          const notes: string[] = [`扫描完成，找到 ${installed} 个游戏`]
+          const notes: string[] = [`已刷新，库里共 ${installed} 个游戏`]
           if (outcome.sidecars && outcome.sidecars.imported > 0) {
             notes.push(`${outcome.sidecars.imported} 个说明文件被手动改过，已读回`)
           }
@@ -173,23 +196,94 @@ export default function App(): React.JSX.Element {
    * Adding a folder goes through a preview first. Vetting what comes in is much less
    * work than picking non-games back out of the library afterwards.
    */
+  const previewInto = useCallback(
+    async (folder: string): Promise<void> => {
+      setScanning(true)
+      try {
+        const preview = await window.sakura.previewFolder(folder)
+        const total = preview.games.length + preview.rejected.length + preview.archives.length
+        if (total === 0) {
+          if (settings.roots.includes(folder)) toast('这个文件夹里没有可以新增的内容')
+          else toast('这个文件夹里没有找到可以添加的内容')
+          return
+        }
+        setImporting(preview)
+      } finally {
+        setScanning(false)
+      }
+    },
+    [settings.roots, toast]
+  )
+
   const addFolder = useCallback(async (): Promise<void> => {
     const folder = await window.sakura.pickFolder()
     if (!folder) return
-    setScanning(true)
-    try {
-      const preview = await window.sakura.previewFolder(folder)
-      const total = preview.games.length + preview.rejected.length + preview.archives.length
-      if (total === 0) {
-        if (settings.roots.includes(folder)) toast('该文件夹已在扫描列表中，没有新内容')
-        else toast('这个文件夹里没有找到可以添加的内容')
+    await previewInto(folder)
+  }, [previewInto])
+
+  useEffect(() => {
+    void window.sakura.listDownloads().then(setDownloads)
+    // The main process owns download state — it keeps running while this window is
+    // closed — so the renderer only ever mirrors what it is told.
+    return window.sakura.onDownloads((list) => {
+      setDownloads(list)
+      // A finished import means new tiles; pull them in without waiting for a scan.
+      if (list.some((d) => d.status === 'done')) void refresh()
+    })
+  }, [refresh])
+
+  /**
+   * Files dragged in from Explorer. The tab they land on is the classification: drop
+   * something on 在玩 and it is imported already marked as such, which is the whole
+   * point of aiming at a particular tab rather than at the window.
+   */
+  const importDropped = useCallback(
+    async (paths: string[], intoTab: TabKey): Promise<void> => {
+      const patch: Partial<Game> =
+        intoTab === 'wishlist'
+          ? { wishlist: true }
+          : intoTab === 'playing'
+            ? { playing: true }
+            : intoTab === 'played'
+              ? { played: true }
+              : {}
+
+      const added: string[] = []
+      const failed: string[] = []
+      for (const filePath of paths) {
+        const result = await window.sakura.importPath(filePath, patch)
+        if (result.ok && result.game) added.push(result.game.name)
+        else failed.push(result.error ?? `${filePath} 加入失败`)
+      }
+
+      if (added.length > 0) await refresh()
+
+      const suffix = intoTab === 'all' ? '' : `，已标记为「${TAB_META[intoTab].label}」`
+      if (added.length === 0) {
+        // Nothing landed, so this is a failure however it is worded — most often the
+        // same game dragged in twice.
+        toast(failed.length === 1 ? failed[0] : `${failed.length} 个都没能加入：${failed[0]}`, true)
         return
       }
-      setImporting(preview)
-    } finally {
-      setScanning(false)
-    }
-  }, [settings.roots, toast])
+
+      const headline =
+        added.length === 1 ? `已加入《${added[0]}》${suffix}` : `已加入 ${added.length} 个游戏${suffix}`
+      toast(failed.length === 0 ? headline : `${headline}；${failed.length} 个未加入：${failed[0]}`)
+    },
+    [refresh, toast]
+  )
+
+  const chooseExe = useCallback(
+    async (game: Game): Promise<void> => {
+      const data = await window.sakura.exeCandidates(game.id)
+      if (!data || data.choices.length === 0) {
+        toast('这个文件夹里没有找到可执行文件', true)
+        return
+      }
+      setChoosingExe({ game, data })
+    },
+    [toast]
+  )
 
   const addGame = useCallback(async (): Promise<void> => {
     const game = await window.sakura.pickExe()
@@ -243,8 +337,69 @@ export default function App(): React.JSX.Element {
   const needsOnboarding = loaded && settings.roots.length === 0 && games.length === 0
 
   return (
-    <div className="app">
+    <div
+      className="app"
+      /*
+       * The whole window takes dropped files, not just the grid. Aiming at a tab is how
+       * the drop is classified, but a drop that lands on the top bar or in the margin is
+       * still plainly meant for the library, and refusing it teaches nothing.
+       *
+       * dragenter is cancelled as well as dragover: an element that cancels only the
+       * latter is not a valid drop target, and Chromium then discards the drop without a
+       * word — which is exactly what "nothing happens" looks like.
+       */
+      onDragEnter={(e) => {
+        if (!dragHasFiles(e)) return
+        e.preventDefault()
+        dragDepth.current += 1
+        setFileOver(true)
+      }}
+      onDragOver={(e) => {
+        if (!dragHasFiles(e)) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+      }}
+      onDragLeave={(e) => {
+        if (!dragHasFiles(e)) return
+        // Crossing between children fires leave-then-enter; only the outermost leave
+        // means the drag has actually left the window.
+        dragDepth.current = Math.max(0, dragDepth.current - 1)
+        if (dragDepth.current === 0) setFileOver(false)
+      }}
+      onDrop={(e) => {
+        if (!dragHasFiles(e)) return
+        e.preventDefault()
+        dragDepth.current = 0
+        setFileOver(false)
+        const { paths, unreadable } = pathsFromDrop(e)
+        if (paths.length === 0) {
+          toast(
+            unreadable > 0
+              ? `读不到拖入文件的路径（${unreadable} 个），请改用「添加游戏」按钮`
+              : '没有拖入任何文件',
+            true
+          )
+          return
+        }
+        void importDropped(paths, page === 'desktop' ? tab : 'all')
+      }}
+    >
       <PetalCanvas enabled={settings.petals} themeKey={settings.theme} />
+
+      {fileOver && (
+        <div className="file-drop-overlay">
+          <div className="file-drop-card">
+            <span className="file-drop-icon">❀</span>
+            <b>松手加入游戏库</b>
+            <span>
+              {page === 'desktop' && tab !== 'all'
+                ? `加入并标记为「${TAB_META[tab].label}」`
+                : '直接加入「全部」'}
+            </span>
+            <em>支持 .exe 与桌面快捷方式</em>
+          </div>
+        </div>
+      )}
 
       <TopBar
         page={page}
@@ -256,6 +411,7 @@ export default function App(): React.JSX.Element {
         onTab={setTab}
         onSearch={setSearch}
         onRescan={() => void runScan()}
+        onDownload={() => setDownloadOpen(true)}
         sortKey={settings.sortKey}
         onSortChange={(key) => updateSettings({ sortKey: key })}
       />
@@ -277,6 +433,9 @@ export default function App(): React.JSX.Element {
               <button type="button" className="btn ghost" onClick={() => void addGame()}>
                 或者手动添加单个游戏
               </button>
+              <p style={{ marginTop: 4, fontSize: 12.5, opacity: 0.8 }}>
+                也可以直接把游戏的 exe 或桌面快捷方式拖进这个窗口。
+              </p>
             </div>
           </div>
         ) : page === 'desktop' ? (
@@ -290,6 +449,9 @@ export default function App(): React.JSX.Element {
             selectedIds={selectedIds}
             playingIds={playing}
             extractProgress={extractProgress}
+            downloads={downloads}
+            onCancelDownload={(id) => void window.sakura.cancelDownload(id)}
+            onClearDownloads={() => void window.sakura.clearFinishedDownloads()}
             onSelectionChange={setSelectedIds}
             onLaunch={(g) => void launch(g)}
             onPatch={patchGame}
@@ -304,6 +466,7 @@ export default function App(): React.JSX.Element {
               const updated = await window.sakura.clearCover(id)
               if (updated) setGames((cur) => cur.map((g) => (g.id === id ? updated : g)))
             }}
+            onChooseExe={(game) => void chooseExe(game)}
             onBrowse={(game) =>
               setBrowsing({
                 // Archive entries point at a volume file, so browse its containing folder.
@@ -352,7 +515,8 @@ export default function App(): React.JSX.Element {
           <SettingsPage
             settings={settings}
             onChange={updateSettings}
-            onRescan={() => void runScan()}
+            onRescanFolder={(folder) => void previewInto(folder)}
+            onRemoveRoot={(folder) => setRemovingRoot(folder)}
             onAddFolder={() => void addFolder()}
             onBrowsePath={(dir) => setBrowsing({ dir, title: dir.split('\\').pop() || dir })}
             onUnignore={async (dir) => {
@@ -361,6 +525,11 @@ export default function App(): React.JSX.Element {
               await refresh()
               toast('已恢复该条目，重新扫描完成')
             }}
+            onForgetIgnored={async (dir) => {
+              setSettings(await window.sakura.clearIgnored([dir]))
+              toast('已从名单里清除，下次重新扫描该文件夹时会重新问你')
+            }}
+            onClearIgnored={() => setClearingIgnored(true)}
           />
         )}
 
@@ -370,6 +539,7 @@ export default function App(): React.JSX.Element {
             allGames={games}
             disks={disks}
             playing={playing.includes(selected.id)}
+            onChooseExe={() => void chooseExe(selected)}
             onClose={() => setSelectedIds([])}
           />
         )}
@@ -487,6 +657,137 @@ export default function App(): React.JSX.Element {
             if (failed > 0) toast(`${failed} 个条目移除失败`, true)
             else if (targets.length === 1) toast(`已移除《${targets[0].name}》，磁盘上的文件未改动`)
             else toast(`已移除 ${targets.length} 个条目，磁盘上的文件未改动`)
+          }}
+        />
+      )}
+
+      {choosingExe && (
+        <ExeChooserDialog
+          game={choosingExe.game}
+          data={choosingExe.data}
+          onClose={() => setChoosingExe(null)}
+          onApply={async (exePath, args) => {
+            const target = choosingExe.game
+            const result = await window.sakura.setExe(target.id, exePath, args)
+            if (!result.ok || !result.game) {
+              toast(result.error ?? '设置失败', true)
+              return
+            }
+            const updated = result.game
+            setGames((cur) => cur.map((g) => (g.id === updated.id ? updated : g)))
+            // Keep the dialog open on the refreshed data: after a combination launch the
+            // obvious next move is to try it, and closing would hide the row to try.
+            const data = await window.sakura.exeCandidates(updated.id)
+            setChoosingExe(data ? { game: updated, data } : null)
+            const name = exePath.split('\\').pop()
+            toast(
+              args.length > 0
+                ? `主程序已设为 ${name}，并带上参数启动`
+                : `主程序已设为 ${name}`
+            )
+          }}
+        />
+      )}
+
+      {clearingIgnored && (
+        <ConfirmDialog
+          title={`清除全部 ${settings.ignoredDirs.length} 条移除记录？`}
+          confirmLabel="全部清除"
+          body={
+            <>
+              这些路径会不再被扫描跳过，但<b>不会立刻回到库里</b> ——
+              下次对它们所在的文件夹点「重新扫描并添加」时，会重新出现在勾选列表里。
+              <br />
+              <br />
+              磁盘上的文件不受影响，它们原来的封面、评分与游玩记录也仍然留着，
+              重新加回来时会一并恢复。
+            </>
+          }
+          onCancel={() => setClearingIgnored(false)}
+          onConfirm={async () => {
+            const count = settings.ignoredDirs.length
+            setClearingIgnored(false)
+            setSettings(await window.sakura.clearIgnored())
+            toast(`已清除 ${count} 条移除记录`)
+          }}
+        />
+      )}
+
+      {removingRoot !== null && (
+        <ConfirmDialog
+          title={`不再扫描这个文件夹？`}
+          confirmLabel="移除文件夹"
+          body={(() => {
+            const prefix = removingRoot.toLowerCase()
+            const affected = games.filter(
+              (g) => g.dir.toLowerCase() === prefix || g.dir.toLowerCase().startsWith(prefix + '\\')
+            )
+            return (
+              <>
+                <code>{removingRoot}</code> 会从扫描列表里去掉，
+                {affected.length > 0 ? (
+                  <>
+                    库里来自它的 <b>{affected.length}</b> 个条目也会一起消失 ——
+                    否则它们会一直留在主页上，而这个文件夹早已不在列表里了。
+                  </>
+                ) : (
+                  '库里目前没有来自它的条目。'
+                )}
+                <br />
+                <br />
+                <b>磁盘上的文件不会被改动。</b>
+                {affected.length > 0 && (
+                  <>
+                    每个游戏的评分、评级、标签和游玩时长会先写进它自己文件夹里的
+                    <code>sakura-launcher.md</code>，之后重新加回这个文件夹就能一并恢复。
+                  </>
+                )}
+              </>
+            )
+          })()}
+          onCancel={() => setRemovingRoot(null)}
+          onConfirm={async () => {
+            const folder = removingRoot
+            setRemovingRoot(null)
+            const result = await window.sakura.removeRoot(folder)
+            setGames(result.games)
+            setSettings(result.settings)
+            setSelectedIds([])
+            toast(
+              result.removed > 0
+                ? `已移除该文件夹及其 ${result.removed} 个条目，磁盘文件未改动`
+                : '已从扫描列表移除该文件夹'
+            )
+            window.sakura.diskInfo().then(setDisks)
+          }}
+        />
+      )}
+
+      {downloadOpen && (
+        <DownloadDialog
+          settings={settings}
+          onOpenSettings={() => {
+            setDownloadOpen(false)
+            setPage('settings')
+          }}
+          onClose={() => setDownloadOpen(false)}
+          onStart={async (urls, dir) => {
+            const errors: string[] = []
+            for (const url of urls) {
+              const result = await window.sakura.startDownload(url, dir)
+              if (!result.ok) errors.push(result.error ?? url)
+            }
+            if (errors.length === urls.length) {
+              toast(errors[0], true)
+              return
+            }
+            setDownloadOpen(false)
+            const ok = urls.length - errors.length
+            toast(
+              errors.length > 0
+                ? `已开始 ${ok} 条，${errors.length} 条失败：${errors[0]}`
+                : `已交给下载器，共 ${ok} 条。下载完成后会自动解压并加入库`
+            )
           }}
         />
       )}

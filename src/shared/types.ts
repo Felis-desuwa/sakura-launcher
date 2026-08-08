@@ -49,6 +49,22 @@ export interface Game {
   dir: string
   /** Main executable. Empty for archive entries. */
   exe: string
+  /**
+   * Arguments the executable needs, taken from a dropped shortcut.
+   *
+   * A launcher shortcut is very often the *only* thing that starts the game —
+   * `steam.exe` on its own just opens Steam, and a stub launcher with no arguments
+   * frequently exits at once, which looks exactly like "it started and nothing
+   * happened". Dropping the arguments would silently break those entries.
+   */
+  launchArgs?: string[]
+  /** Working directory from the shortcut, when it differs from the exe's folder. */
+  launchCwd?: string
+  /**
+   * The user picked this executable themselves, so rescans must leave it alone —
+   * the same protection `renamed` gives a hand-typed title.
+   */
+  exePinned?: boolean
   kind: GameKind
   sizeBytes: number | null
   /** Absolute path to a cached PNG, or null while pending / when falling back to placeholder. */
@@ -181,6 +197,32 @@ export function parseDuration(text: string): number | null {
   return (Number(hours?.[1] ?? 0) * 60 + Number(minutes?.[1] ?? 0)) * 60_000
 }
 
+/** One row in the "which executable actually starts this game" picker. */
+export interface ExeChoice {
+  /** Path relative to the game folder — `BGI.exe`, or `backup\BGI.exe`. */
+  rel: string
+  fullPath: string
+  sizeBytes: number
+  kind: 'main' | 'launcher' | 'locale' | 'patch' | 'uninstall' | 'tool' | 'sub'
+  label: string
+  /** Why the scanner scored it the way it did, in words. */
+  reasons: string[]
+  /** Allowed to compete for the main slot. */
+  rankable: boolean
+  /** This is the game's current main program. */
+  current: boolean
+}
+
+export interface ExeChoices {
+  dir: string
+  /** The executable in use, relative to the folder. */
+  current: string | null
+  currentArgs: string[]
+  /** True once the user has chosen by hand, so scans stop overruling it. */
+  pinned: boolean
+  choices: ExeChoice[]
+}
+
 export interface Group {
   id: string
   name: string
@@ -212,6 +254,81 @@ export const SORT_META: Record<SortKey, string> = {
   playtime: '游玩时长'
 }
 
+/**
+ * Which program fetches a link.
+ *
+ * Only aria2 can actually tell us it finished — we spawn it and read its exit code.
+ * The rest hand the job to a program that outlives the call, so completion has to be
+ * inferred by watching the destination folder. See `downloader.ts`.
+ */
+export type DownloaderKey = 'idm' | 'aria2' | 'system' | 'custom'
+
+export const DOWNLOADERS: {
+  key: DownloaderKey
+  label: string
+  note: string
+  /** Whether it reports its own progress and completion. */
+  reports: boolean
+  /** Whether we can tell it where to save. */
+  controlsDir: boolean
+}[] = [
+  {
+    key: 'idm',
+    label: 'Internet Download Manager',
+    note: '自动探测安装路径。IDM 不回报进度，完成靠监视下载目录判定。',
+    reports: false,
+    controlsDir: true
+  },
+  {
+    key: 'aria2',
+    label: 'aria2c',
+    note: '唯一能给出真实进度和确切完成信号的选项，需要自备 aria2c.exe。',
+    reports: true,
+    controlsDir: true
+  },
+  {
+    key: 'system',
+    label: '系统默认 / 浏览器',
+    note: '交给系统打开链接。兼容性最好，但保存位置由浏览器决定，未必是这里选的目录。',
+    reports: false,
+    controlsDir: false
+  },
+  {
+    key: 'custom',
+    label: '自定义命令行',
+    note: '自己填可执行文件与参数模板，占位符 {url} {dir} {name}。',
+    reports: false,
+    controlsDir: true
+  }
+]
+
+/** Links we are willing to hand to an external program. */
+export const ALLOWED_URL_PROTOCOLS = ['http:', 'https:', 'ftp:']
+
+export type DownloadStatus = 'downloading' | 'extracting' | 'importing' | 'done' | 'failed'
+
+/**
+ * A download the launcher is seeing through to the library.
+ *
+ * Stored in the database rather than held in memory: these run for hours, and closing
+ * the app in the middle should not lose the extract-and-import half of the job.
+ */
+export interface PendingDownload {
+  id: string
+  url: string
+  dir: string
+  downloader: DownloaderKey
+  /** Files already in `dir` when this started — they are not what we are waiting for. */
+  baseline: string[]
+  startedAt: number
+  status: DownloadStatus
+  /** Only set by a downloader that reports its own progress. */
+  percent: number | null
+  message?: string
+  /** The files this download produced, once the watcher has settled on them. */
+  volumes?: string[]
+}
+
 export interface Settings {
   /** Scan roots. Starts empty — no path is ever pre-seeded. */
   roots: string[]
@@ -233,6 +350,16 @@ export interface Settings {
   groupingPrompted: string[]
   /** How often to check whether a launched game is still running. */
   playtimePollSeconds: number
+
+  /** Where downloads land. `null` means "follow the first scan root". */
+  downloadDir: string | null
+  downloader: DownloaderKey
+  /** Auto-detected for IDM; must be given for aria2 and custom. */
+  downloaderPath: string | null
+  /** Custom downloader only: argument template, one argument per whitespace run. */
+  downloaderArgs: string
+  /** Send the archive to the recycle bin once it has been extracted. */
+  trashArchiveAfterExtract: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -246,16 +373,67 @@ export const DEFAULT_SETTINGS: Settings = {
   ignoredDirs: [],
   onboarded: false,
   groupingPrompted: [],
-  playtimePollSeconds: 15
+  playtimePollSeconds: 15,
+  downloadDir: null,
+  downloader: 'idm',
+  downloaderPath: null,
+  downloaderArgs: '{url} -o {dir}',
+  trashArchiveAfterExtract: false
 }
 
 export const POLL_CHOICES = [15, 30, 60]
+
+/** The folder downloads go to: an explicit choice, else the first library folder. */
+export function downloadDirFor(settings: Settings): string | null {
+  return settings.downloadDir ?? settings.roots[0] ?? null
+}
 
 export interface Database {
   version: number
   games: Game[]
   groups: Group[]
   settings: Settings
+  downloads: PendingDownload[]
+  /**
+   * Records of tiles the user removed, kept so adding the same folder back restores
+   * what they had recorded on it — cover, rating, tier, tags, playtime, tile position.
+   * Removing is meant to be undoable; re-adding by hand should not quietly cost more
+   * than removing did.
+   */
+  removed: Game[]
+}
+
+/** How many removal records to keep. Past this the oldest fall off. */
+export const MAX_REMOVED = 300
+
+/**
+ * Everything on a game that came from the user rather than from disk.
+ * Used to carry a record across a remove-and-re-add without dragging along stale
+ * scan results (exe path, icon, folder fingerprint), which are re-derived instead.
+ */
+export function userFieldsOf(game: Game): Partial<Game> {
+  return {
+    name: game.name,
+    renamed: game.renamed,
+    exePinned: game.exePinned,
+    launchArgs: game.launchArgs,
+    launchCwd: game.launchCwd,
+    coverPath: game.coverPath,
+    groupId: game.groupId,
+    order: game.order,
+    wishlist: game.wishlist,
+    playing: game.playing,
+    played: game.played,
+    tier: game.tier,
+    tierOrder: game.tierOrder,
+    rating: game.rating,
+    tags: game.tags,
+    lastLaunchedAt: game.lastLaunchedAt,
+    launchCount: game.launchCount,
+    playtimeMs: game.playtimeMs,
+    sessions: game.sessions,
+    sidecarSyncedAt: game.sidecarSyncedAt
+  }
 }
 
 /** One slice of the size-composition donut. */

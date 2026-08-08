@@ -1,6 +1,6 @@
 {
   "name": "sakura-launcher",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "A local game library manager for offline single-player games",
   "main": "./out/main/index.js",
   "author": "",
@@ -14,7 +14,9 @@
     "dist": "electron-vite build && electron-builder --win --dir",
     "dist:portable": "electron-vite build && electron-builder --win portable",
     "scan-test": "node scripts/scan-test.mts",
-    "sidecar-test": "node scripts/sidecar-test.mts"
+    "sidecar-test": "node scripts/sidecar-test.mts",
+    "downloader-test": "node scripts/downloader-test.mts",
+    "exe-pick-test": "node scripts/exe-pick-test.mts"
   },
   "dependencies": {
     "resedit": "^3.0.2"

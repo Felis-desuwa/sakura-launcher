@@ -1,9 +1,12 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   Breakdown,
   DiskInfo,
+  DownloaderKey,
+  ExeChoices,
   Game,
   Group,
+  PendingDownload,
   RedundantArchive,
   Settings
 } from '../shared/types'
@@ -97,6 +100,34 @@ const api = {
   removeTile: (id: string): Promise<{ ok: boolean; name?: string; error?: string }> =>
     ipcRenderer.invoke('game:remove', id),
   unignore: (dir: string): Promise<Settings> => ipcRenderer.invoke('library:unignore', dir),
+  /** Forget removal records. Omit `dirs` to clear the whole list. */
+  clearIgnored: (dirs?: string[]): Promise<Settings> =>
+    ipcRenderer.invoke('library:clearIgnored', dirs),
+  /** Drop a scan folder together with every game that came from it. */
+  removeRoot: (
+    folder: string
+  ): Promise<{ removed: number; games: Game[]; settings: Settings }> =>
+    ipcRenderer.invoke('library:removeRoot', folder),
+  /** Every executable in the game folder, named and explained. */
+  exeCandidates: (id: string): Promise<ExeChoices | null> =>
+    ipcRenderer.invoke('game:exeCandidates', id),
+  setExe: (
+    id: string,
+    exePath: string,
+    args?: string[]
+  ): Promise<{ ok: boolean; game?: Game; error?: string }> =>
+    ipcRenderer.invoke('game:setExe', id, exePath, args ?? []),
+  /** Run a candidate once without adopting it or recording a play session. */
+  tryExe: (
+    id: string,
+    exePath: string,
+    args?: string[]
+  ): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('game:tryExe', id, exePath, args ?? []),
+  /** Whether anything is running out of the game folder. `null` if the query failed. */
+  probeRunning: (id: string): Promise<boolean | null> =>
+    ipcRenderer.invoke('game:probeRunning', id),
+
   reveal: (id: string): Promise<boolean> => ipcRenderer.invoke('game:reveal', id),
   breakdown: (dir: string): Promise<Breakdown | null> => ipcRenderer.invoke('game:breakdown', dir),
   setCover: (id: string): Promise<Game | undefined | null> => ipcRenderer.invoke('game:setCover', id),
@@ -127,8 +158,35 @@ const api = {
   runExe: (exePath: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('fs:runExe', exePath),
 
+  startDownload: (
+    url: string,
+    dir?: string
+  ): Promise<{ ok: boolean; id?: string; error?: string }> =>
+    ipcRenderer.invoke('download:start', url, dir),
+  listDownloads: (): Promise<PendingDownload[]> => ipcRenderer.invoke('download:list'),
+  cancelDownload: (id: string): Promise<boolean> => ipcRenderer.invoke('download:cancel', id),
+  clearFinishedDownloads: (): Promise<boolean> => ipcRenderer.invoke('download:clearFinished'),
+  detectDownloader: (key: DownloaderKey): Promise<string | null> =>
+    ipcRenderer.invoke('download:detect', key),
+  onDownloads: (cb: (list: PendingDownload[]) => void): (() => void) => {
+    const handler = (_e: unknown, list: PendingDownload[]): void => cb(list)
+    ipcRenderer.on('download:changed', handler)
+    return () => ipcRenderer.off('download:changed', handler)
+  },
+
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:pickFolder'),
+  pickDownloadDir: (): Promise<string | null> => ipcRenderer.invoke('dialog:pickDownloadDir'),
   pickExe: (): Promise<Game | null> => ipcRenderer.invoke('dialog:pickExe'),
+  importPath: (
+    filePath: string,
+    patch?: Partial<Game>
+  ): Promise<{ ok: boolean; game?: Game; alreadyKnown?: boolean; error?: string }> =>
+    ipcRenderer.invoke('game:importPath', filePath, patch ?? {}),
+  /**
+   * The path behind a dropped File. Electron removed `File.path` in v32, so this is the
+   * only way the renderer can learn where a dropped file actually lives.
+   */
+  pathForFile: (file: File): string => webUtils.getPathForFile(file),
   pickExePath: (): Promise<string | null> => ipcRenderer.invoke('dialog:pickExePath'),
   openPath: (target: string): Promise<boolean> => ipcRenderer.invoke('shell:openPath', target),
 

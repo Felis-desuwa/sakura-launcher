@@ -21,6 +21,7 @@ interface Props {
   onTab: (tab: TabKey) => void
   onSearch: (value: string) => void
   onRescan: () => void
+  onDownload: () => void
   onSortChange: (key: SortKey) => void
 }
 
@@ -35,6 +36,7 @@ export default function TopBar({
   onTab,
   onSearch,
   onRescan,
+  onDownload,
   onSortChange
 }: Props): React.JSX.Element {
   return (
@@ -95,8 +97,22 @@ export default function TopBar({
         </>
       )}
 
-      <button type="button" className="btn ghost" onClick={onRescan} disabled={scanning}>
-        {scanning ? '扫描中…' : '扫描'}
+      {page === 'desktop' && (
+        <button type="button" className="btn primary" onClick={onDownload}>
+          下载新游戏
+        </button>
+      )}
+
+      {/* Sync only. Taking in games that were not there before is a separate, deliberate
+          act with a preview attached — 设置 → 重新扫描并添加。 */}
+      <button
+        type="button"
+        className="btn ghost"
+        onClick={onRescan}
+        disabled={scanning}
+        title="重新读取已有条目：名称、体积、说明文件与是否还在原处。要收录新游戏请到「设置 → 扫描文件夹 → 重新扫描并添加」"
+      >
+        {scanning ? '刷新中…' : '刷新'}
       </button>
 
       <nav className="pagebtns">

@@ -103,6 +103,19 @@ function insideDir(exePath: string, dir: string): boolean {
   return exePath.startsWith(prefix)
 }
 
+/**
+ * Whether anything is running out of this folder right now.
+ *
+ * Exposed for the executable picker: after trying one, this is what turns "I clicked it
+ * and I have no idea whether that did anything" into an answer. Returns null when the
+ * process query itself failed, which must not be read as "nothing is running".
+ */
+export async function runningInDir(dir: string): Promise<boolean | null> {
+  const paths = await runningPaths()
+  if (paths === null) return null
+  return paths.some((p) => insideDir(p, dir))
+}
+
 /** Move elapsed time into the stored total without ending the session. */
 function bank(session: Session, until: number): void {
   const elapsed = until - session.startedAt
