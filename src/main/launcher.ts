@@ -1,21 +1,81 @@
 import { shell } from 'electron'
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import * as db from './db'
 import { beginSession } from './playtime'
+
+export interface LaunchResult {
+  ok: boolean
+  error?: string
+}
+
+/**
+ * How long to wait for the operating system to reject a program before calling it
+ * started. The `error` event lands as soon as CreateProcess fails, so this only has to
+ * outlast the syscall — long enough to be reliable, short enough not to be felt.
+ */
+const SPAWN_GRACE_MS = 300
+
+/** Turn the errno into something worth reading. */
+function describeSpawnError(err: NodeJS.ErrnoException): string {
+  if (err.code === 'EACCES' || err.code === 'EPERM') {
+    return '系统拒绝运行这个程序 —— 多半需要管理员权限，或者被安全软件拦下了'
+  }
+  if (err.code === 'ENOENT') return '找不到这个程序'
+  if (err.code === 'UNKNOWN') return '这个程序无法直接启动（可能不是有效的可执行文件）'
+  return err.message
+}
+
+/**
+ * Start a program detached, and give its immediate failures a chance to surface.
+ *
+ * `spawn` does not throw for EACCES, EPERM or a malformed binary — it reports them
+ * through an `error` event some moments later. Returning as soon as the call comes back
+ * therefore claims success for programs that never ran, which is exactly how a game can
+ * announce 「正在启动」, light up the 游玩中 badge, and do nothing whatsoever. Waiting out
+ * that event costs a third of a second and turns silence into a reason.
+ */
+export function spawnDetached(exe: string, args: string[], cwd: string): Promise<LaunchResult> {
+  return new Promise((resolve) => {
+    let child: ChildProcess
+    try {
+      child = spawn(exe, args, { cwd, detached: true, stdio: 'ignore' })
+    } catch (err) {
+      resolve({ ok: false, error: err instanceof Error ? err.message : String(err) })
+      return
+    }
+
+    let settled = false
+    const finish = (result: LaunchResult): void => {
+      if (settled) return
+      settled = true
+      resolve(result)
+    }
+
+    child.once('error', (err: NodeJS.ErrnoException) => {
+      finish({ ok: false, error: describeSpawnError(err) })
+    })
+    setTimeout(() => {
+      // Only now: until the grace period is up this process object is what carries the
+      // failure, and a detached child that started fine outlives us either way.
+      child.unref()
+      finish({ ok: true })
+    }, SPAWN_GRACE_MS)
+  })
+}
 
 /**
  * Launch a game detached, with the working directory set to the game folder.
  * Many doujin engines resolve their assets relative to cwd, so launching from
  * anywhere else silently breaks them.
  *
- * Arguments recorded from a dropped shortcut are passed through. Without them a
- * launcher-based entry starts the launcher and stops there — `steam.exe` with no
- * `-applaunch` just brings Steam to the front, which reads as "it said it started
- * and nothing happened".
+ * Arguments recorded from a dropped shortcut or chosen in the executable picker are
+ * passed through. Without them a launcher-based entry starts the launcher and stops
+ * there — `steam.exe` with no `-applaunch` just brings Steam to the front, which reads
+ * as "it said it started and nothing happened".
  */
-export function launchGame(id: string): { ok: boolean; error?: string } {
+export async function launchGame(id: string): Promise<LaunchResult> {
   const game = db.findGame(id)
   if (!game) return { ok: false, error: '找不到该游戏' }
   if (!game.exe) return { ok: false, error: '该条目没有可执行文件' }
@@ -24,16 +84,8 @@ export function launchGame(id: string): { ok: boolean; error?: string } {
   const cwd =
     game.launchCwd && fs.existsSync(game.launchCwd) ? game.launchCwd : path.dirname(game.exe)
 
-  try {
-    const child = spawn(game.exe, game.launchArgs ?? [], {
-      cwd,
-      detached: true,
-      stdio: 'ignore'
-    })
-    child.unref()
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) }
-  }
+  const result = await spawnDetached(game.exe, game.launchArgs ?? [], cwd)
+  if (!result.ok) return result
 
   // Opens the play session, which is what bumps lastLaunchedAt and launchCount —
   // and closes it again once the game is gone, recording how long it ran.
@@ -41,11 +93,54 @@ export function launchGame(id: string): { ok: boolean; error?: string } {
   return { ok: true }
 }
 
+/**
+ * Wrap a path the way explorer.exe expects to read it.
+ *
+ * Explorer parses its own command line, so the quotes have to be part of the argument
+ * and the child spawned verbatim. A trailing backslash would escape the closing quote,
+ * and only a drive root ever ends in one — those have no spaces, so they need no quotes.
+ */
+function explorerArg(target: string): string {
+  const clean = target.length > 3 && target.endsWith('\\') ? target.slice(0, -1) : target
+  return /\s/.test(clean) ? `"${clean}"` : clean
+}
+
+/**
+ * Show a path in Windows Explorer.
+ *
+ * A folder used to be handed to `shell.openPath`, which runs the "open" verb on it —
+ * that is whatever program the machine has registered for folders, so on a machine with
+ * a third-party file manager installed it was never Explorer at all. Naming explorer.exe
+ * is the only way to mean the window the user is picturing. Files go through
+ * `showItemInFolder`, which calls the shell API directly and lands on the file selected.
+ */
 export function revealInExplorer(target: string): void {
   if (!fs.existsSync(target)) return
-  if (fs.statSync(target).isDirectory()) {
-    shell.openPath(target)
-  } else {
-    shell.showItemInFolder(target)
+
+  let isDir: boolean
+  try {
+    isDir = fs.statSync(target).isDirectory()
+  } catch {
+    return
+  }
+
+  if (!isDir || process.platform !== 'win32') {
+    if (isDir) void shell.openPath(target)
+    else shell.showItemInFolder(target)
+    return
+  }
+
+  try {
+    const child = spawn('explorer.exe', [explorerArg(target)], {
+      detached: true,
+      stdio: 'ignore',
+      windowsVerbatimArguments: true
+    })
+    // Explorer exits with a non-zero code even when it opened the window, so only an
+    // outright failure to start it is worth reacting to.
+    child.once('error', () => void shell.openPath(target))
+    child.unref()
+  } catch {
+    void shell.openPath(target)
   }
 }

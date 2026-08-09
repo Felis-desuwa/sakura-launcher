@@ -15,7 +15,6 @@ import BulkUninstallDialog from './components/BulkUninstallDialog'
 import ConfirmDialog from './components/ConfirmDialog'
 import DetailDrawer from './components/DetailDrawer'
 import ExeChooserDialog from './components/ExeChooserDialog'
-import FileBrowser from './components/FileBrowser'
 import ImportDialog from './components/ImportDialog'
 import PromptDialog from './components/PromptDialog'
 import PetalCanvas from './components/PetalCanvas'
@@ -58,7 +57,6 @@ export default function App(): React.JSX.Element {
   const [toasts, setToasts] = useState<Toast[]>([])
   const [uninstallTargets, setUninstallTargets] = useState<Game[]>([])
   const [groupPrompt, setGroupPrompt] = useState<GroupPrompt | null>(null)
-  const [browsing, setBrowsing] = useState<{ dir: string; title: string } | null>(null)
   const [renaming, setRenaming] = useState<Game | null>(null)
   const [tagging, setTagging] = useState<Game | null>(null)
   const [removing, setRemoving] = useState<Game[]>([])
@@ -106,6 +104,12 @@ export default function App(): React.JSX.Element {
       setSettings(snap.settings)
       setTab(snap.settings.defaultTab)
       setLoaded(true)
+      // The shelf is about to paint, so the splash has done its job. Sent after the
+      // state is set rather than after the scan below: the library being *there* is
+      // what the user is waiting for, not it being fully up to date.
+      // Two frames deep: the first one is where React commits the shelf, the second is
+      // after it has actually been painted.
+      requestAnimationFrame(() => requestAnimationFrame(() => window.sakura.ready()))
       window.sakura.diskInfo().then(setDisks)
       window.sakura.activeSessions().then(setPlaying)
       // Quiet startup refresh: brings existing entries up to date (names, folders that
@@ -295,7 +299,7 @@ export default function App(): React.JSX.Element {
   const launch = useCallback(
     async (game: Game): Promise<void> => {
       if (game.kind === 'archive') {
-        toast('这是未安装的压缩包，请先右键解压安装', true)
+        toast('这是未安装的压缩包 —— 右键选择「一键解压」先装上', true)
         return
       }
       const result = await window.sakura.launch(game.id)
@@ -467,14 +471,10 @@ export default function App(): React.JSX.Element {
               if (updated) setGames((cur) => cur.map((g) => (g.id === id ? updated : g)))
             }}
             onChooseExe={(game) => void chooseExe(game)}
-            onBrowse={(game) =>
-              setBrowsing({
-                // Archive entries point at a volume file, so browse its containing folder.
-                dir:
-                  game.kind === 'archive' ? game.dir.replace(/\\[^\\]+$/, '') : game.dir,
-                title: game.name
-              })
-            }
+            // Straight to Explorer. A game entry points at its main executable and an
+            // archive at a volume file, and either way this opens the folder holding it
+            // with the file already selected.
+            onBrowse={(game) => void window.sakura.reveal(game.id)}
             onExtract={(game) => void window.sakura.extract(game.id)}
             onGroupsChange={(next) => {
               setGroups(next)
@@ -518,7 +518,7 @@ export default function App(): React.JSX.Element {
             onRescanFolder={(folder) => void previewInto(folder)}
             onRemoveRoot={(folder) => setRemovingRoot(folder)}
             onAddFolder={() => void addFolder()}
-            onBrowsePath={(dir) => setBrowsing({ dir, title: dir.split('\\').pop() || dir })}
+            onBrowsePath={(dir) => void window.sakura.openPath(dir)}
             onUnignore={async (dir) => {
               const next = await window.sakura.unignore(dir)
               setSettings(next)
@@ -841,15 +841,6 @@ export default function App(): React.JSX.Element {
             toast(cleanup.ok ? '残留文件已移入回收站' : cleanup.error ?? '清理失败', !cleanup.ok)
             await refresh()
           }}
-        />
-      )}
-
-      {browsing && (
-        <FileBrowser
-          rootDir={browsing.dir}
-          title={browsing.title}
-          onClose={() => setBrowsing(null)}
-          onToast={toast}
         />
       )}
 

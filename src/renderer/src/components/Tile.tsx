@@ -1,5 +1,5 @@
 import type { Game } from '../../../shared/types'
-import { formatDurationShort, TIER_META } from '../../../shared/types'
+import { formatDurationShort } from '../../../shared/types'
 import { formatBytes } from '../lib/format'
 import Artwork from './Artwork'
 
@@ -68,12 +68,6 @@ export default function Tile({
       title={game.name}
     >
       <Artwork game={game} />
-
-      {game.tier && (
-        <span className="tile-tier" style={{ background: TIER_META[game.tier].color }}>
-          {TIER_META[game.tier].label}
-        </span>
-      )}
 
       <span className="tile-flags">
         {game.wishlist && (

@@ -40,7 +40,8 @@ export default function ExeChooserDialog({
   onClose
 }: Props): React.JSX.Element {
   const [trials, setTrials] = useState<Record<string, Trial>>({})
-  const [openTools, setOpenTools] = useState(false)
+  /** Which folded sections have been opened, by section key. */
+  const [opened, setOpened] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   const [wrapper, setWrapper] = useState('')
   const [payload, setPayload] = useState('')
@@ -214,7 +215,7 @@ export default function ExeChooserDialog({
 
         <div className="import-list">
           {sections.map((section) => {
-            const collapsed = section.folded && !openTools
+            const collapsed = section.folded && !opened.has(section.key)
             return (
               <div className="import-section" key={section.key}>
                 <div className="import-section-head">
@@ -227,7 +228,7 @@ export default function ExeChooserDialog({
                   <button
                     type="button"
                     className="btn ghost small"
-                    onClick={() => setOpenTools(true)}
+                    onClick={() => setOpened((cur) => new Set(cur).add(section.key))}
                   >
                     展开这 {section.items.length} 项
                   </button>

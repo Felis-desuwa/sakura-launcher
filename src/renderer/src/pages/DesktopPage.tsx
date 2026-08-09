@@ -5,10 +5,9 @@ import type {
   Group,
   PendingDownload,
   SortKey,
-  TabKey,
-  Tier
+  TabKey
 } from '../../../shared/types'
-import { ARCHIVE_GROUP_ID, SORT_META, TIERS, TIER_META } from '../../../shared/types'
+import { ARCHIVE_GROUP_ID, SORT_META } from '../../../shared/types'
 import Artwork from '../components/Artwork'
 import ContextMenu, { type MenuItem } from '../components/ContextMenu'
 import FolderWindow from '../components/FolderWindow'
@@ -177,8 +176,6 @@ export default function DesktopPage(props: Props): React.JSX.Element {
   }, [groups, visible, useGroups, sortKey])
 
   const launchBlocked = tab === 'wishlist'
-  /** Star ratings are a verdict on a game you have played, so they live in that tab. */
-  const canRate = tab === 'played'
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -284,10 +281,16 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     onLaunch(game)
   }
 
+  /**
+   * Star ratings, available wherever a tile is.
+   *
+   * This is the personal score and it is the only ranking the right-click menu carries.
+   * Tiers are a separate system with a page of its own, where the comparison between
+   * games is what the ordering means — mixing the two into one menu made them read as
+   * two names for the same thing, and gating stars behind the 玩过 tab meant the score
+   * could not be given at the moment anyone actually wanted to give it.
+   */
   const ratingSubmenu = (targets: Game[]): MenuItem => {
-    if (!canRate) {
-      return { label: '评分（仅「玩过」标签页可用）', disabled: true }
-    }
     const current = targets.length === 1 ? targets[0].rating : null
     return {
       label: '评分',
@@ -306,22 +309,6 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     }
   }
 
-  const tierSubmenu = (targets: Game[]): MenuItem => {
-    const current = targets.length === 1 ? targets[0].tier : null
-    return {
-      label: '评价为',
-      submenu: [
-        ...TIERS.map((t: Tier) => ({
-          label: TIER_META[t].label,
-          checked: current === t,
-          onClick: () => targets.forEach((g) => onPatch(g.id, { tier: t }))
-        })),
-        { type: 'separator' as const },
-        { label: '清除评级', onClick: () => targets.forEach((g) => onPatch(g.id, { tier: null })) }
-      ]
-    }
-  }
-
   /** Put every target into a brand-new group. */
   const groupTargets = (targets: Game[], name: string): void => {
     const id = `g-${Date.now().toString(36)}`
@@ -331,21 +318,30 @@ export default function DesktopPage(props: Props): React.JSX.Element {
   }
 
   const gameMenu = (game: Game): MenuItem[] => {
-    const items: MenuItem[] = [
-      { label: '想玩', checked: game.wishlist, onClick: () => onPatch(game.id, { wishlist: !game.wishlist }) },
-      { label: '在玩', checked: game.playing, onClick: () => onPatch(game.id, { playing: !game.playing }) },
-      { label: '玩过', checked: game.played, onClick: () => onPatch(game.id, { played: !game.played }) },
-      { type: 'separator' }
-    ]
+    const items: MenuItem[] = []
 
-    // Archives are not installed yet, so there is nothing to rate.
-    if (game.kind === 'installed') {
-      items.push(tierSubmenu([game]), ratingSubmenu([game]), { type: 'separator' })
+    // An archive has exactly one thing worth doing to it, so that goes at the top where
+    // a menu is read from rather than buried among entries that only matter once the
+    // game is actually installed.
+    if (game.kind === 'archive') {
+      items.push({ label: '一键解压', onClick: () => props.onExtract(game) }, { type: 'separator' })
     }
 
-    if (game.kind === 'archive') {
-      items.push({ label: '解压安装', onClick: () => props.onExtract(game) })
-    } else {
+    // 想玩 / 在玩 / 玩过 describe a relationship with a game that can be played. An
+    // archive is a file waiting to be unpacked, so none of the three can be true of it
+    // yet — and rating it would be judging something nobody has seen.
+    if (game.kind === 'installed') {
+      items.push(
+        { label: '想玩', checked: game.wishlist, onClick: () => onPatch(game.id, { wishlist: !game.wishlist }) },
+        { label: '在玩', checked: game.playing, onClick: () => onPatch(game.id, { playing: !game.playing }) },
+        { label: '玩过', checked: game.played, onClick: () => onPatch(game.id, { played: !game.played }) },
+        { type: 'separator' },
+        ratingSubmenu([game]),
+        { type: 'separator' }
+      )
+    }
+
+    if (game.kind !== 'archive') {
       items.push(
         { label: '打开游戏', onClick: () => onLaunch(game) },
         { label: '更换主程序…', onClick: () => props.onChooseExe(game) }
@@ -390,17 +386,30 @@ export default function DesktopPage(props: Props): React.JSX.Element {
    */
   const bulkMenu = (targets: Game[]): MenuItem[] => {
     const installed = targets.filter((g) => g.kind === 'installed')
+    const archives = targets.filter((g) => g.kind === 'archive')
     const items: MenuItem[] = [
       { label: `已选 ${targets.length} 个`, disabled: true },
-      { type: 'separator' },
-      { label: '标记为想玩', onClick: () => targets.forEach((g) => onPatch(g.id, { wishlist: true })) },
-      { label: '标记为在玩', onClick: () => targets.forEach((g) => onPatch(g.id, { playing: true })) },
-      { label: '标记为玩过', onClick: () => targets.forEach((g) => onPatch(g.id, { played: true })) },
       { type: 'separator' }
     ]
 
+    if (archives.length > 0) {
+      items.push(
+        { label: `一键解压这 ${archives.length} 个`, onClick: () => archives.forEach(props.onExtract) },
+        { type: 'separator' }
+      )
+    }
+
+    // Status and score only ever apply to the installed part of the selection; the
+    // archives in it are not games yet.
     if (installed.length > 0) {
-      items.push(tierSubmenu(installed), ratingSubmenu(installed), { type: 'separator' })
+      items.push(
+        { label: '标记为想玩', onClick: () => installed.forEach((g) => onPatch(g.id, { wishlist: true })) },
+        { label: '标记为在玩', onClick: () => installed.forEach((g) => onPatch(g.id, { playing: true })) },
+        { label: '标记为玩过', onClick: () => installed.forEach((g) => onPatch(g.id, { played: true })) },
+        { type: 'separator' },
+        ratingSubmenu(installed),
+        { type: 'separator' }
+      )
     }
 
     if (useGroups) {

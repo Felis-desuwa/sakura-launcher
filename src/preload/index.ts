@@ -128,6 +128,13 @@ const api = {
   probeRunning: (id: string): Promise<boolean | null> =>
     ipcRenderer.invoke('game:probeRunning', id),
 
+  /**
+   * Tell the main process the library is on screen, which is what dismisses the splash.
+   * Fire-and-forget: nothing is waiting on a reply, and a reply that never came would
+   * only be another way to keep the window hidden.
+   */
+  ready: (): void => ipcRenderer.send('app:ready'),
+
   reveal: (id: string): Promise<boolean> => ipcRenderer.invoke('game:reveal', id),
   breakdown: (dir: string): Promise<Breakdown | null> => ipcRenderer.invoke('game:breakdown', dir),
   setCover: (id: string): Promise<Game | undefined | null> => ipcRenderer.invoke('game:setCover', id),

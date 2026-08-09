@@ -1,5 +1,4 @@
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from 'electron'
-import { spawn } from 'node:child_process'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -27,7 +26,7 @@ import {
   startDownload
 } from './downloader'
 import { resolveArtwork } from './icon'
-import { launchGame, revealInExplorer } from './launcher'
+import { launchGame, revealInExplorer, spawnDetached } from './launcher'
 import { probeExeMeta } from './pe-icon'
 import { onPlaytimeChange, playingIds, runningInDir, shutdownPlaytime } from './playtime'
 import {
@@ -49,6 +48,7 @@ import {
   type AddGameExtras
 } from './scanner'
 import { syncAll, toSidecar as sidecarFrom, writeGameSidecar } from './sidecar-sync'
+import { closeSplash, showSplash, splashStage } from './splash'
 import { performUninstall, planUninstall, trashLeftovers } from './uninstaller'
 import { computeBreakdown, computeSize, shutdown as shutdownWorkers } from './worker-pool'
 
@@ -78,7 +78,39 @@ function devWindowIcon(): string | undefined {
   return fs.existsSync(candidate) ? candidate : undefined
 }
 
+/**
+ * How long the splash may hold the window back waiting for the renderer to say it has
+ * the library. A renderer that crashed or hung must never leave the user with nothing
+ * but a splash, so this is the point where the window goes up regardless.
+ */
+const LIBRARY_WAIT_MS = 6000
+
+/** The window has painted its first frame. */
+let painted = false
+/** The renderer has the library in hand — or waited long enough to stop mattering. */
+let libraryReady = false
+let revealed = false
+
+/** Hand the desktop over from the splash to the real window, once and once only. */
+function revealMainWindow(): void {
+  if (revealed || !painted || !libraryReady || !mainWindow) return
+  revealed = true
+  closeSplash()
+  mainWindow.show()
+  void maybeCapture()
+}
+
+function markLibraryReady(): void {
+  libraryReady = true
+  revealMainWindow()
+}
+
 function createWindow(): void {
+  // A window recreated after the last one closed goes through the same handshake.
+  painted = false
+  libraryReady = false
+  revealed = false
+
   mainWindow = new BrowserWindow({
     icon: devWindowIcon(),
     width: 1400,
@@ -98,8 +130,12 @@ function createWindow(): void {
   })
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow?.show()
-    void maybeCapture()
+    painted = true
+    // The window has drawn, but the library has not arrived in it yet. Staying behind
+    // the splash for another moment is what turns startup into one transition instead
+    // of an empty shelf that fills in while the user watches.
+    if (!libraryReady) setTimeout(markLibraryReady, LIBRARY_WAIT_MS)
+    revealMainWindow()
   })
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -489,24 +525,13 @@ function registerIpc(): void {
    * Run one candidate without adopting it. Deliberately not a play session: trying four
    * executables in a row should not add four launches to the game's history.
    */
-  ipcMain.handle('game:tryExe', (_e, id: string, exePath: string, args: string[] = []) => {
+  ipcMain.handle('game:tryExe', async (_e, id: string, exePath: string, args: string[] = []) => {
     const game = db.findGame(id)
     if (!game) return { ok: false, error: '找不到该游戏' }
     const target = path.resolve(exePath)
     if (!isUnder(target, game.dir)) return { ok: false, error: '只能试运行游戏文件夹里的程序' }
     if (!fs.existsSync(target)) return { ok: false, error: '这个文件已经不在了' }
-
-    try {
-      const child = spawn(target, args, {
-        cwd: path.dirname(target),
-        detached: true,
-        stdio: 'ignore'
-      })
-      child.unref()
-      return { ok: true }
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) }
-    }
+    return spawnDetached(target, args, path.dirname(target))
   })
 
   /** Whether anything is running out of the game folder at this moment. */
@@ -531,21 +556,11 @@ function registerIpc(): void {
   }))
 
   /** Run an executable the user picked inside the in-app folder browser. */
-  ipcMain.handle('fs:runExe', (_e, exePath: string) => {
+  ipcMain.handle('fs:runExe', async (_e, exePath: string) => {
     if (!/\.(exe|bat|cmd)$/i.test(exePath) || !fs.existsSync(exePath)) {
       return { ok: false, error: '不是可执行文件' }
     }
-    try {
-      const child = spawn(exePath, [], {
-        cwd: path.dirname(exePath),
-        detached: true,
-        stdio: 'ignore'
-      })
-      child.unref()
-      return { ok: true }
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) }
-    }
+    return spawnDetached(exePath, [], path.dirname(exePath))
   })
 
   ipcMain.handle('game:setCover', async (_e, id: string) => {
@@ -735,16 +750,26 @@ function registerIpc(): void {
     })
     return res.canceled ? null : res.filePaths[0]
   })
+
+  // The renderer has rendered the library. Nothing depends on the payload — the message
+  // arriving is the whole signal, and it is what retires the splash.
+  ipcMain.on('app:ready', markLibraryReady)
 }
 
 app.whenReady().then(() => {
+  // First, before any of the work below: everything that runs ahead of this is time the
+  // user spends wondering whether the double-click registered at all.
+  showSplash()
+
   db.initPaths()
   registerAssetProtocol()
   registerIpc()
+  splashStage('正在读取游戏库…')
   onPlaytimeChange((payload) => mainWindow?.webContents.send('playtime:changed', payload))
   // The list is short enough that pushing it whole beats tracking what changed.
   onDownloadsChanged(() => mainWindow?.webContents.send('download:changed', db.getDownloads()))
   createWindow()
+  splashStage('正在布置书架…')
   // Downloads outlive the app: one still running belongs to another process, so pick
   // the watch back up rather than starting the job over.
   resumeDownloads()

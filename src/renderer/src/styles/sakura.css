@@ -706,17 +706,7 @@ body.tiles-dragging .tile.drop-target:hover {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
 }
 
-.tile-tier {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  padding: 2px 7px;
-  border-radius: 7px;
-  font-size: 10.5px;
-  font-weight: 700;
-  color: var(--panel);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
-}
+/* The star rating lives in the label row (.tile-stars); the corners carry status only. */
 
 /* ---------- group tile: drawn as a folder ---------- */
 
@@ -940,7 +930,13 @@ body.tiles-dragging .tile.drop-target:hover {
 
 .menu {
   position: fixed;
-  z-index: 60;
+  /*
+   * Above .modal-backdrop (70), because the group window is one of those: a menu
+   * raised on a tile inside an open group used to be painted underneath it, so the
+   * right-click simply appeared to do nothing. Dialogs are rendered outside .app-body
+   * and so live in a higher stacking context entirely — this cannot cover them.
+   */
+  z-index: 78;
   min-width: 190px;
   padding: 6px;
   border-radius: 12px;
@@ -1007,7 +1003,10 @@ body.tiles-dragging .tile.drop-target:hover {
   top: 0;
   right: 0;
   bottom: 0;
-  z-index: 6;
+  /* Clears the group window (a .modal-backdrop at 70) for the same reason the context
+     menu does: selecting a tile inside an open group has to show its details, not
+     slide them in behind the window they were selected from. */
+  z-index: 75;
   width: 380px;
   background: var(--glass-strong);
   backdrop-filter: blur(22px);
