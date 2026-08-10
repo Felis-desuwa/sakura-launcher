@@ -2,10 +2,15 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Game } from '../../../shared/types'
 import type { UninstallPlan, UninstallResult } from '../../../preload/index'
 import { formatBytes, formatDate } from '../lib/format'
+import { matchesFlower, randomFlower, type Flower } from '../lib/flowers'
+import { buildMirror } from '../lib/shatter'
 import Artwork from './Artwork'
 
 const HOLD_MS = 2500
-const PETAL_COUNT = 14
+/** Few enough to be petals rather than confetti. */
+const PETAL_COUNT = 10
+/** How much of the hold goes to cracking before the first piece may come away. */
+const CRACK_PHASE = 0.26
 
 interface Props {
   game: Game
@@ -19,10 +24,23 @@ const METHOD_TEXT: Record<UninstallPlan['method'], string> = {
   trash: '将把整个文件夹移入回收站（可从回收站恢复）'
 }
 
-/** Type this many leading characters of the name to move past step 2. */
-function requiredPrefix(name: string): string {
-  const chars = [...name]
-  return chars.length <= 4 ? name : chars.slice(0, 4).join('')
+/** Five petals in a ring — what the drawn flower looks like, before it comes apart. */
+function Blossom({ flower }: { flower: Flower }): React.JSX.Element {
+  return (
+    <span className="blossom-mark" aria-hidden="true">
+      {[0, 72, 144, 216, 288].map((deg) => (
+        <span
+          key={deg}
+          style={{
+            background: `linear-gradient(165deg, ${flower.petal[0]}, ${flower.petal[1]})`,
+            borderRadius: flower.shape,
+            transform: `rotate(${deg}deg) translateY(-11px)`
+          }}
+        />
+      ))}
+      <em />
+    </span>
+  )
 }
 
 export default function UninstallRitual({ game, onCancel, onDone }: Props): React.JSX.Element {
@@ -36,7 +54,11 @@ export default function UninstallRitual({ game, onCancel, onDone }: Props): Reac
   const holdStart = useRef<number | null>(null)
   const rafId = useRef<number | null>(null)
 
-  const target = useMemo(() => requiredPrefix(game.name), [game.name])
+  // Drawn once per ritual: the same flower has to be on offer in step 2 and falling in
+  // step 3, and stepping back and forth must not reroll it into an easier one.
+  const flower = useMemo(randomFlower, [])
+  const mirror = useMemo(() => buildMirror(CRACK_PHASE), [])
+  const ok = matchesFlower(typed, flower.en)
 
   useEffect(() => {
     window.sakura.planUninstall(game.id).then(setPlan)
@@ -55,7 +77,8 @@ export default function UninstallRitual({ game, onCancel, onDone }: Props): Reac
     holdStart.current = null
     if (rafId.current !== null) cancelAnimationFrame(rafId.current)
     rafId.current = null
-    // Releasing early aborts and restores — nothing is destroyed until the ring closes.
+    // Releasing early aborts and restores — nothing is destroyed until the ring closes,
+    // and the shards snap back together to say so.
     setProgress(0)
   }
 
@@ -91,17 +114,39 @@ export default function UninstallRitual({ game, onCancel, onDone }: Props): Reac
     }
   }, [])
 
+  // Drawn rather than computed from the index. Strides coprime with the range spread
+  // values *evenly*, which is the one thing scattered petals must not be — an even
+  // spread reads as a pattern however the numbers were arrived at.
   const petals = useMemo(
     () =>
-      Array.from({ length: PETAL_COUNT }, (_, i) => ({
-        left: 6 + (i * 83) % 100,
-        delay: i / PETAL_COUNT,
-        drift: ((i * 37) % 40) - 20
+      Array.from({ length: PETAL_COUNT }, () => ({
+        left: 26 + Math.random() * 48,
+        delay: CRACK_PHASE * 0.7 + Math.random() * 0.44,
+        drift: (Math.random() - 0.5) * 76,
+        spin: 150 + Math.random() * 330,
+        top: 18 + Math.random() * 54,
+        fall: 185 + Math.random() * 95,
+        scale: 0.72 + Math.random() * 0.56
       })),
     []
   )
 
   const circumference = 2 * Math.PI * 66
+
+  /*
+   * The crack overlay is painted on the frame, not on the pieces, so it cannot follow
+   * them anywhere — left up, it hangs in the air over the gaps like a drawing of a
+   * break that already happened. It therefore lives exactly as long as the surface is
+   * whole: it spreads while nothing has moved, and is gone within a couple of frames of
+   * the first piece letting go. From that moment the seams are drawn by the fragments
+   * themselves (see `.breaking .shard`), which do travel with them.
+   */
+  const crackOpacity =
+    progress < CRACK_PHASE
+      ? progress / CRACK_PHASE
+      : Math.max(0, 1 - (progress - CRACK_PHASE) / 0.06)
+  // A shudder while it is still holding together, gone once it is not.
+  const tremble = progress > 0 && progress < CRACK_PHASE ? Math.sin(progress * 260) * progress * 8 : 0
 
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && !busy && onCancel()}>
@@ -144,20 +189,31 @@ export default function UninstallRitual({ game, onCancel, onDone }: Props): Reac
         {step === 2 && (
           <>
             <div className="step">第二步 · 手抄花名</div>
-            <h2>请输入「{target}」以确认</h2>
-            <p style={{ fontSize: 13, color: 'var(--ink-soft)', margin: '8px 0 16px', lineHeight: 1.6 }}>
-              输入游戏名的前几个字符，确认你要删的正是这一个。
+            <h2>抄下这个名字</h2>
+            <div className="flower-card">
+              <Blossom flower={flower} />
+              <div>
+                <div className="flower-en">{flower.en}</div>
+                <div className="flower-cn">
+                  {flower.name} · <i>{flower.latin}</i>
+                </div>
+                <div className="flower-meaning">花语 · {flower.meaning}</div>
+              </div>
+            </div>
+            <p className="ritual-target">
+              即将卸载《{game.name}》
             </p>
             <input
               className={`field${shake ? ' shake' : ''}`}
               value={typed}
               autoFocus
               spellCheck={false}
-              placeholder={target}
+              autoComplete="off"
+              placeholder="在这里抄一遍花名"
               onChange={(e) => setTyped(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key !== 'Enter') return
-                if (typed.trim() === target) setStep(3)
+                if (ok) setStep(3)
                 else {
                   setShake(true)
                   setTimeout(() => setShake(false), 400)
@@ -168,12 +224,7 @@ export default function UninstallRitual({ game, onCancel, onDone }: Props): Reac
               <button type="button" className="btn ghost" onClick={onCancel}>
                 取消
               </button>
-              <button
-                type="button"
-                className="btn primary"
-                disabled={typed.trim() !== target}
-                onClick={() => setStep(3)}
-              >
+              <button type="button" className="btn primary" disabled={!ok} onClick={() => setStep(3)}>
                 继续
               </button>
             </div>
@@ -182,39 +233,77 @@ export default function UninstallRitual({ game, onCancel, onDone }: Props): Reac
 
         {step === 3 && (
           <>
-            <div className="step">第三步 · 长按落樱</div>
-            <h2>按住不放，直到花瓣落尽</h2>
+            <div className="step">第三步 · 长按碎落</div>
+            <h2>按住不放，直到它碎尽</h2>
             <p style={{ fontSize: 13, color: 'var(--ink-soft)', margin: '8px 0 4px', lineHeight: 1.6 }}>
-              中途松手即中止，一切照旧。
+              中途松手即中止，碎片会合回去，一切照旧。
             </p>
 
-            <div className="petal-preview" style={{ marginTop: 16 }}>
-              <Artwork game={game} />
+            <div className="shatter-stage">
               <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  background: '#fff',
-                  opacity: progress * 0.55,
-                  pointerEvents: 'none'
-                }}
-              />
-              {petals.map((p, i) =>
-                progress > p.delay ? (
+                // No piece can move before the crack phase is over, so the tile keeps its
+                // rounded corners for as long as it is still whole — it squares up only
+                // under cover of the first fragments coming away.
+                className={`shatter-frame${progress >= CRACK_PHASE ? ' breaking' : ''}`}
+                style={{ transform: `translateX(${tremble}px)` }}
+              >
+                {mirror.fragments.map((piece, i) => {
+                  const t = progress <= piece.start ? 0 : (progress - piece.start) / (1 - piece.start)
+                  // Two motions, because a piece of glass does two things: it is pushed
+                  // off the surface — mostly linear, so the seams open the moment it
+                  // lets go — and then it falls, which accelerates.
+                  const slide = 0.3 * t + 0.7 * t * t
+                  const drop = t * t
+                  return (
+                    <span
+                      key={i}
+                      className="shard"
+                      style={{
+                        clipPath: piece.clip,
+                        transform: `translate(${piece.dx * piece.dist * slide}px, ${
+                          piece.dy * piece.dist * 0.75 * slide + piece.fall * drop
+                        }px) rotate(${piece.rot * slide}deg)`,
+                        opacity: 1 - drop * 0.95
+                      }}
+                    >
+                      <Artwork game={game} />
+                    </span>
+                  )
+                })}
+
+                <svg className="crack" viewBox="0 0 100 100" style={{ opacity: crackOpacity }}>
+                  {mirror.cracks.map((points, i) => (
+                    <polyline key={i} points={points} />
+                  ))}
+                </svg>
+
+                <div
+                  className="shatter-bloom"
+                  style={{ opacity: Math.max(0, progress - 0.72) * 1.6 }}
+                />
+              </div>
+
+              {petals.map((p, i) => {
+                if (progress <= p.delay) return null
+                const t = progress - p.delay
+                return (
                   <span
                     key={i}
-                    className="falling-petal"
+                    className="ritual-petal"
                     style={{
                       left: `${p.left}%`,
-                      top: 0,
-                      transform: `translate(${p.drift * (progress - p.delay)}px, ${
-                        (progress - p.delay) * 190
-                      }px) rotate(${(progress - p.delay) * 420}deg)`,
-                      opacity: Math.max(0, 1 - (progress - p.delay) * 1.5)
+                      width: flower.size[0],
+                      height: flower.size[1],
+                      borderRadius: flower.shape,
+                      background: `linear-gradient(165deg, ${flower.petal[0]}, ${flower.petal[1]})`,
+                      transform: `translate(${p.drift * t}px, ${p.top + t * p.fall}px) rotate(${
+                        t * p.spin
+                      }deg) scale(${p.scale})`,
+                      opacity: Math.max(0, 1 - t * 1.35)
                     }}
                   />
-                ) : null
-              )}
+                )
+              })}
             </div>
 
             <div className="hold-wrap">
@@ -227,23 +316,13 @@ export default function UninstallRitual({ game, onCancel, onDone }: Props): Reac
                 onPointerCancel={stopHold}
               >
                 <svg width={150} height={150}>
-                  <circle cx={75} cy={75} r={66} fill="rgba(255,255,255,0.7)" />
+                  <circle className="hold-plate" cx={75} cy={75} r={66} />
+                  <circle className="hold-track" cx={75} cy={75} r={66} />
                   <circle
+                    className="hold-fill"
                     cx={75}
                     cy={75}
                     r={66}
-                    fill="none"
-                    stroke="rgba(231,84,128,0.18)"
-                    strokeWidth={8}
-                  />
-                  <circle
-                    cx={75}
-                    cy={75}
-                    r={66}
-                    fill="none"
-                    stroke="#e75480"
-                    strokeWidth={8}
-                    strokeLinecap="round"
                     strokeDasharray={circumference}
                     strokeDashoffset={circumference * (1 - progress)}
                     transform="rotate(-90 75 75)"
@@ -251,9 +330,11 @@ export default function UninstallRitual({ game, onCancel, onDone }: Props): Reac
                 </svg>
                 <span className="hold-label">
                   {busy ? '正在卸载…' : progress > 0 ? '继续按住' : '按住 2.5 秒'}
-                  <small>{plan ? METHOD_TEXT[plan.method] : ''}</small>
                 </span>
               </button>
+              {/* Outside the ring: at 150px across, this line wrapped onto itself over
+                  the moving stroke and could not be read at the one moment it matters. */}
+              <p className="hold-method">{plan ? METHOD_TEXT[plan.method] : '检测中…'}</p>
             </div>
 
             <div className="modal-actions">

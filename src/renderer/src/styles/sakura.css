@@ -1524,10 +1524,19 @@ input[type='range'] {
   padding: 11px 14px;
   border-radius: 11px;
   border: 1.5px solid color-mix(in srgb, var(--accent) 28%, transparent);
-  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  /* Opaque, not a tint of the panel: over a blurred backdrop the typed text was
+     competing with whatever happened to be behind the dialog. */
+  background: var(--panel);
+  /* An input does not inherit `color`, so without this the text was the user agent's
+     own black — on the dark themes that is black on a dark plum field. */
+  color: var(--ink);
   font-size: 15px;
   outline: none;
   font-family: inherit;
+}
+
+.field::placeholder {
+  color: color-mix(in srgb, var(--ink-soft) 70%, transparent);
 }
 
 .field:focus {
@@ -1588,6 +1597,35 @@ input[type='range'] {
   display: grid;
   place-items: center;
   margin: 20px 0 6px;
+  /* Above the falling debris: the one control that must stay readable is the one the
+     breaking tile drops past. */
+  position: relative;
+  z-index: 2;
+}
+
+.hold-plate {
+  fill: color-mix(in srgb, var(--panel) 94%, transparent);
+}
+
+.hold-track {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 20%, transparent);
+  stroke-width: 8;
+}
+
+.hold-fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 8;
+  stroke-linecap: round;
+}
+
+.hold-method {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  text-align: center;
 }
 
 .hold-btn {
@@ -1609,17 +1647,11 @@ input[type='range'] {
   display: grid;
   place-items: center;
   align-content: center;
-  gap: 3px;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
+  letter-spacing: 0.04em;
   color: var(--accent);
   pointer-events: none;
-}
-
-.hold-label small {
-  font-size: 10.5px;
-  font-weight: 500;
-  color: var(--ink-soft);
 }
 
 .petal-preview {
@@ -1642,13 +1674,173 @@ input[type='range'] {
   transition: filter 0.2s, opacity 0.2s;
 }
 
-.falling-petal {
+/* ---------- the uninstall ritual: the drawn flower, and the tile coming apart ---------- */
+
+.flower-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 62%, transparent);
+  border: 1px solid var(--glass-border);
+}
+
+.flower-en {
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  /* Not selectable on purpose: the step is called 手抄, and a name that can be dragged
+     into the box below is no slower to get past than no name at all. */
+  user-select: none;
+}
+
+.flower-cn {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  user-select: none;
+}
+
+.flower-meaning {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--accent);
+  user-select: none;
+}
+
+.ritual-target {
+  margin: 14px 0 12px;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+/* Five petals in a ring, drawn from the flower's own colours. */
+.blossom-mark {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 48px;
+  height: 48px;
+}
+
+.blossom-mark span {
   position: absolute;
-  width: 10px;
-  height: 10px;
-  border-radius: 10px 0 10px 0;
-  background: var(--brand);
+  left: 50%;
+  top: 50%;
+  width: 15px;
+  height: 19px;
+  margin: -9.5px 0 0 -7.5px;
+  /* The inset ring is for the white flowers — magnolia and jasmine had no edge at all
+     against a pale card. */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+
+.blossom-mark em {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  background: #ffd98a;
+}
+
+.shatter-stage {
+  position: relative;
+  height: 232px;
+  margin-top: 16px;
+  /* Debris dissolves as it leaves rather than crossing the controls below. Without this
+     the falling pieces drifted over the hold button and its label. */
+  mask-image: linear-gradient(to bottom, #000 74%, transparent 98%);
+}
+
+.shatter-frame {
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  width: 150px;
+  height: 150px;
+  margin-left: -75px;
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+/*
+ * Rounded and clipped while it is still whole; the moment it starts to come apart the
+ * pieces have to be able to leave the box, and a corner squaring up under a spreading
+ * crack is not something anyone sees.
+ */
+.shatter-frame:not(.breaking) {
+  overflow: hidden;
+}
+
+/* The plate's own shadow has to go with it, or a crisp rectangle stays behind under
+   pieces that have already left the rectangle. */
+.shatter-frame.breaking {
+  box-shadow: none;
+}
+
+.shard {
+  position: absolute;
+  inset: 0;
+  /* Every shard shows the same picture through a different hole, so the fragments still
+     line up as one image until they are moved apart. */
+  will-change: transform, opacity;
+}
+
+/*
+ * Once the break has started, each fragment draws its own edges.
+ *
+ * The bright rim is what the crack overlay used to be: two neighbours still sitting in
+ * place put their rims side by side and the seam reads exactly as a crack did — except
+ * that this one is part of the piece, so it leaves when the piece leaves. The dark
+ * shadow underneath is what tells a fragment of glass from a slice of a picture.
+ */
+.shatter-frame.breaking .shard {
+  filter: drop-shadow(0 0 0.6px rgba(255, 255, 255, 0.85))
+    drop-shadow(0 2px 3px rgba(0, 0, 0, 0.22));
+}
+
+.crack {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
+}
+
+.crack polyline {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.92);
+  stroke-width: 0.9;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.5));
+}
+
+/* The light that comes through once there is more gap than tile. */
+.shatter-bloom {
+  position: absolute;
+  inset: -14%;
+  pointer-events: none;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--panel) 80%, transparent) 0%,
+    transparent 68%
+  );
+}
+
+.ritual-petal {
+  position: absolute;
+  top: 0;
+  pointer-events: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  will-change: transform, opacity;
 }
 
 /* toast */
