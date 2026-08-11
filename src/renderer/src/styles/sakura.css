@@ -1674,6 +1674,168 @@ input[type='range'] {
   transition: filter 0.2s, opacity 0.2s;
 }
 
+/* ---------- sharing ---------- */
+
+.share-lede {
+  margin: 10px 0 14px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-soft);
+}
+
+.share-sub {
+  margin-left: 10px;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--ink-soft);
+}
+
+.share-game {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.share-game:last-child {
+  border-bottom: 0;
+}
+
+.share-game-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.share-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.share-ext {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.share-sections {
+  margin-top: 10px;
+  padding-left: 4px;
+}
+
+.share-row {
+  display: grid;
+  grid-template-columns: auto minmax(90px, 1fr) 2fr auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 5px 6px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.share-row:hover {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.share-rel {
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.share-why {
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.share-why.error {
+  color: #c62828;
+}
+
+.share-warn {
+  color: #c05621;
+}
+
+.share-size {
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.share-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.share-empty {
+  margin: 8px 0;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.share-options {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--glass-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.share-options > label {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.share-options > label > em {
+  grid-column: 2 / -1;
+  font-size: 11.5px;
+  font-style: normal;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.share-options label.share-check {
+  grid-template-columns: auto 1fr;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.share-estimate {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.share-blocked {
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, #c62828 12%, transparent);
+  color: #a01c1c;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.share-result {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) 2fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 4px;
+  font-size: 12.5px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.share-note {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+
 /* ---------- the uninstall ritual: the drawn flower, and the tile coming apart ---------- */
 
 .flower-card {
@@ -2623,4 +2785,170 @@ select.field {
   font-style: normal;
   color: var(--ink-soft);
   opacity: 0.75;
+}
+
+/* launch diagnosis */
+
+/* Bottom-left on purpose: toasts own the bottom-right, and this card outlives them —
+   it waits to be acknowledged rather than fading on a timer. */
+.trouble-card {
+  position: fixed;
+  left: 22px;
+  bottom: 22px;
+  z-index: 92;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 440px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid color-mix(in srgb, #c62828 35%, transparent);
+  box-shadow: var(--shadow-lg);
+  animation: toast-in 0.2s ease;
+}
+
+.trouble-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.trouble-text b {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.trouble-text span {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+
+.diag-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border-left: 3px solid transparent;
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+}
+
+.diag-row + .diag-row {
+  margin-top: 8px;
+}
+
+.diag-row.blocker {
+  border-left-color: #c62828;
+}
+.diag-row.likely {
+  border-left-color: #d98324;
+}
+.diag-row.note {
+  border-left-color: var(--ink-soft);
+}
+
+.diag-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.diag-head b {
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.diag-chip {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.diag-chip.blocker {
+  background: #c62828;
+}
+.diag-chip.likely {
+  background: #d98324;
+}
+.diag-chip.note {
+  background: var(--ink-soft);
+}
+
+.diag-detail {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--ink);
+}
+
+.diag-why {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  word-break: break-all;
+}
+
+/* A log tail is the game's own words. It gets a scroll box rather than being trimmed,
+   because the useful line is as often the first as the last. */
+.diag-log {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--overlay) 8%, transparent);
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.diag-clean {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+}
+
+.diag-clean b {
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.diag-clean p {
+  margin: 6px 0 8px;
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--ink);
+}
+
+.diag-clean ul {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 11.5px;
+  line-height: 1.85;
+  color: var(--ink-soft);
+}
+
+.diag-empty {
+  padding: 18px 4px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.diag-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--ink-soft) 22%, transparent);
+  font-size: 11.5px;
+  color: var(--ink-soft);
 }

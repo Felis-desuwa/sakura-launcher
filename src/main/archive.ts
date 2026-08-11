@@ -37,7 +37,9 @@ export function extractArchive(
 
   fs.mkdirSync(destDir, { recursive: true })
 
-  const child = spawn(exe, ['x', firstVolume, `-o${destDir}`, '-y', '-bsp1'], {
+  // `-sccUTF-8`: 7z otherwise writes its messages in the OEM codepage, so a failure
+  // reaches the user as mojibake at the one moment the text has to be readable.
+  const child = spawn(exe, ['x', firstVolume, `-o${destDir}`, '-y', '-bsp1', '-sccUTF-8'], {
     windowsHide: true
   })
 

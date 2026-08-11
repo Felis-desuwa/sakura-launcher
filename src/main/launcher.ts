@@ -1,8 +1,9 @@
 import { shell } from 'electron'
-import { spawn, type ChildProcess } from 'node:child_process'
+import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import * as db from './db'
+import { watchLaunch } from './launch-watch'
 import { beginSession } from './playtime'
 
 export interface LaunchResult {
@@ -90,7 +91,56 @@ export async function launchGame(id: string): Promise<LaunchResult> {
   // Opens the play session, which is what bumps lastLaunchedAt and launchCount —
   // and closes it again once the game is gone, recording how long it ran.
   beginSession(game)
+  // CreateProcess succeeding only means the file was accepted, not that a game appeared.
+  // A missing runtime, a refused elevation and a launcher stub that exits all look exactly
+  // like this from here, and all three used to end in silence.
+  if (db.getSettings().diagnoseOnLaunch) watchLaunch(game)
   return { ok: true }
+}
+
+/**
+ * Launch through the shell's `runas` verb, which is the only way to get the UAC prompt.
+ *
+ * `spawn` cannot elevate — it inherits our token, so an executable whose manifest demands
+ * administrator rights is refused before it starts. PowerShell's `Start-Process -Verb
+ * RunAs` asks the shell to do it properly. The user can still decline the prompt, and
+ * declining is reported as such rather than as a failure.
+ */
+export async function launchElevated(id: string): Promise<LaunchResult> {
+  const game = db.findGame(id)
+  if (!game) return { ok: false, error: '找不到该游戏' }
+  if (!game.exe || !fs.existsSync(game.exe)) return { ok: false, error: '主程序不存在' }
+
+  const cwd =
+    game.launchCwd && fs.existsSync(game.launchCwd) ? game.launchCwd : path.dirname(game.exe)
+  const args = game.launchArgs ?? []
+
+  // Single-quoted PowerShell strings with doubled quotes: the only escaping that holds up
+  // for the paths these games live in, which are full of spaces and brackets.
+  const ps = (s: string): string => `'${s.replace(/'/g, "''")}'`
+  const command =
+    `Start-Process -FilePath ${ps(game.exe)} -WorkingDirectory ${ps(cwd)} -Verb RunAs` +
+    (args.length > 0 ? ` -ArgumentList ${args.map(ps).join(',')}` : '')
+
+  return new Promise((resolve) => {
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', command],
+      { windowsHide: true, timeout: 120_000 },
+      (err, _stdout, stderr) => {
+        if (!err) {
+          beginSession(game)
+          return resolve({ ok: true })
+        }
+        // Declining the UAC prompt is a choice, not a fault, and reads as one.
+        const text = String(stderr || err.message)
+        if (/canceled|cancelled|拒绝|操作已取消/i.test(text)) {
+          return resolve({ ok: false, error: '你取消了管理员授权' })
+        }
+        resolve({ ok: false, error: text.trim() || '以管理员身份启动失败' })
+      }
+    )
+  })
 }
 
 /**

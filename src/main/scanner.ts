@@ -7,6 +7,7 @@ import * as db from './db'
 import { resolveArtwork } from './icon'
 import { probeExeMeta } from './pe-icon'
 import {
+  detectEngineAt,
   displayNameFor,
   findExtractedDir,
   isUnder,
@@ -153,6 +154,7 @@ export function rescan(options: RescanOptions = {}): ScanOutcome {
         launchArgs: pinned ? prev?.launchArgs : undefined,
         launchCwd: pinned ? prev?.launchCwd : undefined,
         kind: 'installed',
+        engine: detectEngineAt(found.dir, exe),
         // Keep the cached size; the worker recomputes it in the background.
         sizeBytes: prev?.sizeBytes ?? null,
         iconPath: art.iconPath,
@@ -426,6 +428,7 @@ export function addGameByExe(exePath: string, extras: AddGameExtras = {}): Game 
     launchArgs: extras.launchArgs,
     launchCwd: extras.launchCwd,
     kind: 'installed',
+    engine: detectEngineAt(dir, exePath),
     sizeBytes: null,
     iconPath: art.iconPath ?? extras.iconPath ?? null,
     coverPath: art.coverPath,

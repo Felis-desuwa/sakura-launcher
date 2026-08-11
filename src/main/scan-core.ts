@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 // Extension spelled out: the harnesses in scripts/ import this file straight into node,
 // where nothing fills the extension in for them.
-import { formatDuration, parseDuration } from '../shared/types.ts'
+import { formatDuration, parseDuration, type EngineId } from '../shared/types.ts'
 
 export const MAX_DEPTH = 4
 
@@ -440,6 +440,79 @@ export function collectSubExes(
     if (entry.isDir && !SUB_NOISE.test(entry.name)) walk(path.join(dir, entry.name), 1)
   }
   return out
+}
+
+/**
+ * Which engine built this folder, as far as the layout gives it away.
+ *
+ * Deliberately **not** the same function as `hasEngineSignature` below, and deliberately
+ * not implemented in terms of it. The two answer different questions and have opposite
+ * failure costs:
+ *
+ * - `hasEngineSignature` decides whether a folder counts as a game at all. Widening it
+ *   changes what lands in someone's library, so it has to stay exactly as conservative
+ *   as it was.
+ * - `detectEngine` only informs the launch diagnosis. It recognises a much broader set —
+ *   BGI, Siglus, Majiro and the rest never vouched for a folder and still must not — and
+ *   a wrong guess here costs one unhelpful hint, not a wrong library.
+ *
+ * Folding them together would mean every engine added for diagnosis silently redefined
+ * what a game is. So they share nothing but the directory listing.
+ *
+ * Order matters: the most specific layout wins, because engines nest (a Ren'Py game is
+ * also a folder full of Python, an RPG Maker MV game is also NW.js).
+ */
+export function detectEngine(entries: DirEntry[], exeBase: string): EngineId | null {
+  const dirs = new Set(entries.filter((e) => e.isDir).map((e) => e.name.toLowerCase()))
+  const files = new Set(entries.filter((e) => !e.isDir).map((e) => e.name.toLowerCase()))
+  const names = [...files]
+  const ext = (suffix: string): boolean => names.some((n) => n.endsWith(suffix))
+
+  // Unity names its payload after the executable, which is as specific as a signature gets.
+  if (dirs.has(`${exeBase.toLowerCase()}_data`)) return 'unity'
+  if (files.has('unityplayer.dll') || files.has('gameassembly.dll')) return 'unity'
+  if (dirs.has('monobleedingedge')) return 'unity'
+
+  if (dirs.has('renpy') || ext('.rpa')) return 'renpy'
+  if (ext('.xp3') || files.has('krkr.exe') || files.has('krkrz.exe') || ext('.tjs')) {
+    return 'kirikiri'
+  }
+
+  // Ethornell keeps its script table in a file named exactly this, next to the .arc data.
+  if (files.has('bgi.gdb') || files.has('bgi.exe') || files.has('sysgrp.arc')) return 'bgi'
+  if (files.has('siglusengine.exe') || files.has('gameexe.dat')) return 'siglus'
+  if (ext('.mjo') || files.has('majiro.exe')) return 'majiro'
+  // `0.txt` is also an NScripter script, but it is far too ordinary a filename to key on.
+  if (files.has('nscript.dat') || files.has('arc.nsa')) return 'nscripter'
+  if (ext('.pfs') || files.has('root.pfs')) return 'artemis'
+
+  if (dirs.has('tyrano')) return 'tyrano'
+  if (dirs.has('engine') || names.some((n) => n.startsWith('manifest_ufsfiles'))) {
+    return 'unreal'
+  }
+
+  // RPG Maker: `www` is MV, the packed archives are XP through VX Ace.
+  if (dirs.has('www') || ext('.rgssad') || ext('.rgss2a') || ext('.rgss3a')) return 'rpgmaker'
+  if (ext('.wolf') || files.has('guruguru.dll') || files.has('gurugurusmf4.dll')) return 'wolf'
+  if (dirs.has('data') && dirs.has('graphics') && dirs.has('audio')) return 'rpgmaker'
+
+  // Last, because half the engines above ship on top of it.
+  if (files.has('package.json') && dirs.has('node_modules')) return 'nwjs'
+  if (files.has('nw.dll') || files.has('nw.pak')) return 'nwjs'
+
+  return null
+}
+
+/**
+ * `detectEngine` for callers holding a path rather than a listing.
+ *
+ * One extra directory read per game. Everything that calls this is already walking the
+ * disk, and the diagnosis calls it again rather than trusting a stored value, so a
+ * library recorded before engines existed still reports one.
+ */
+export function detectEngineAt(dir: string, exePath: string): EngineId | null {
+  const base = path.basename(exePath || '').replace(/\.exe$/i, '')
+  return detectEngine(readDirSafe(dir), base)
 }
 
 /** Engines that legitimately ship tiny payloads — their presence vouches for a folder. */

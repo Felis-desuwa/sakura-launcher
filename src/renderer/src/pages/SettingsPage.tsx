@@ -250,6 +250,23 @@ export default function SettingsPage({
             ))}
           </select>
         </div>
+
+        <div className="settings-row">
+          <label htmlFor="diagnose">
+            启动没反应时提示
+            <span className="settings-hint">
+              双击之后十几秒都没有进程跑起来，就在角落里给一张卡片，点开能看到具体原因 ——
+              缺哪个运行库、是不是要管理员权限、是不是主程序选错了。关掉之后
+              仍然可以随时右键「启动诊断…」。
+            </span>
+          </label>
+          <button
+            id="diagnose"
+            type="button"
+            className={`switch${settings.diagnoseOnLaunch ? ' on' : ''}`}
+            onClick={() => onChange({ diagnoseOnLaunch: !settings.diagnoseOnLaunch })}
+          />
+        </div>
       </div>
 
       <div className="card" style={{ maxWidth: 760 }}>

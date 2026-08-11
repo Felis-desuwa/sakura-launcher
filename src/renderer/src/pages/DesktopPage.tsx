@@ -41,7 +41,10 @@ interface Props {
   onBrowse: (game: Game) => void
   /** Open the picker for which executable actually starts this game. */
   onChooseExe: (game: Game) => void
+  onDiagnose: (game: Game) => void
   onExtract: (game: Game) => void
+  /** Pack these up to send to someone. Never writes to the game folders. */
+  onShare: (games: Game[]) => void
   onGroupsChange: (groups: Group[]) => void
   onReorder: (ids: string[]) => void
   onAddGame: () => void
@@ -344,7 +347,14 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     if (game.kind !== 'archive') {
       items.push(
         { label: '打开游戏', onClick: () => onLaunch(game) },
-        { label: '更换主程序…', onClick: () => props.onChooseExe(game) }
+        { label: '更换主程序…', onClick: () => props.onChooseExe(game) },
+        // Sits next to the executable picker on purpose: they are the two answers to
+        // the same question, and the picker is where a diagnosis usually sends you.
+        {
+          label: '启动诊断…',
+          disabled: game.missing,
+          onClick: () => props.onDiagnose(game)
+        }
       )
     }
     items.push(
@@ -354,6 +364,15 @@ export default function DesktopPage(props: Props): React.JSX.Element {
       { label: '重命名…', onClick: () => props.onRename(game) },
       { label: '编辑标签…', onClick: () => props.onEditTags(game) }
     )
+
+    // Archives are already a file you can send; a missing folder has nothing to pack.
+    if (game.kind !== 'archive') {
+      items.push({
+        label: '分享…',
+        disabled: game.missing,
+        onClick: () => props.onShare([game])
+      })
+    }
 
     if (useGroups) {
       const targets = groups.filter((g) => g.id !== game.groupId && g.id !== ARCHIVE_GROUP_ID)
@@ -408,6 +427,15 @@ export default function DesktopPage(props: Props): React.JSX.Element {
         { label: '标记为玩过', onClick: () => installed.forEach((g) => onPatch(g.id, { played: true })) },
         { type: 'separator' },
         ratingSubmenu(installed),
+        { type: 'separator' }
+      )
+    }
+
+    // One archive per game, so the count is worth saying out loud.
+    const shareable = installed.filter((g) => !g.missing)
+    if (shareable.length > 0) {
+      items.push(
+        { label: `分享这 ${shareable.length} 个…`, onClick: () => props.onShare(shareable) },
         { type: 'separator' }
       )
     }

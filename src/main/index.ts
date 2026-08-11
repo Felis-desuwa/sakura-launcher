@@ -10,7 +10,11 @@ import type {
   ExeChoices,
   Game,
   Group,
-  Settings
+  Settings,
+  ShareCandidate,
+  ShareJob,
+  ShareOptions,
+  SharePlan
 } from '../shared/types'
 import { ARCHIVE_GROUP_ID, normalizeStatus } from '../shared/types'
 import { defaultDestFor, extractArchive, find7z } from './archive'
@@ -26,7 +30,9 @@ import {
   startDownload
 } from './downloader'
 import { resolveArtwork } from './icon'
-import { launchGame, revealInExplorer, spawnDetached } from './launcher'
+import { diagnoseGame } from './diagnose'
+import { cancelWatch, onLaunchTrouble } from './launch-watch'
+import { launchElevated, launchGame, revealInExplorer, spawnDetached } from './launcher'
 import { probeExeMeta } from './pe-icon'
 import { onPlaytimeChange, playingIds, runningInDir, shutdownPlaytime } from './playtime'
 import {
@@ -47,6 +53,8 @@ import {
   rescan,
   type AddGameExtras
 } from './scanner'
+import { startShare, type ShareHandle } from './share'
+import { sanitizeArchiveName, scanPersonalData } from './share-rules'
 import { syncAll, toSidecar as sidecarFrom, writeGameSidecar } from './sidecar-sync'
 import { closeSplash, showSplash, splashStage } from './splash'
 import { performUninstall, planUninstall, trashLeftovers } from './uninstaller'
@@ -68,6 +76,8 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 let mainWindow: BrowserWindow | null = null
+/** The share queue in flight, if any. One at a time — see `startShare`. */
+let shareHandle: ShareHandle | null = null
 
 /**
  * Window icon for development runs. In a packaged build Windows takes the icon from
@@ -282,6 +292,23 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('game:launch', (_e, id: string) => launchGame(id))
+  ipcMain.handle('game:launchElevated', (_e, id: string) => launchElevated(id))
+
+  /**
+   * Why nothing happened. `since` is the moment of the launch that failed, which is what
+   * separates the log the game just wrote from the one it wrote two years ago.
+   */
+  ipcMain.handle('game:diagnose', async (_e, id: string, since?: number) => {
+    const game = db.findGame(id)
+    if (!game) return null
+    return diagnoseGame(game, since)
+  })
+
+  /** The user dismissed the "it did not start" card — stop watching this launch. */
+  ipcMain.handle('game:cancelWatch', (_e, id: string) => {
+    cancelWatch(id)
+    return true
+  })
 
   ipcMain.handle('game:update', (_e, id: string, patch: Partial<Game>) => {
     const game = db.findGame(id)
@@ -598,6 +625,114 @@ function registerIpc(): void {
   ipcMain.handle('disk:redundant', () => redundantArchives())
   ipcMain.handle('disk:trashArchives', (_e, volumes: string[]) => trashArchives(volumes))
 
+  /* ---------- sharing ---------- */
+
+  /**
+   * Work out what a shared copy of each game would contain. Read-only: nothing is
+   * written and nothing is decided until the user comes back with `share:start`.
+   */
+  ipcMain.handle('share:plan', (_e, ids: string[]): SharePlan[] =>
+    ids.map((id) => {
+      const game = db.findGame(id)
+      if (!game) {
+        return {
+          gameId: id,
+          gameName: '（已不在库中）',
+          dir: '',
+          suggestedName: '',
+          suggestedDir: '',
+          sizeBytes: 0,
+          candidates: [],
+          blocked: '这个条目已经不在库里了'
+        }
+      }
+      const base = {
+        gameId: game.id,
+        gameName: game.name,
+        dir: game.dir,
+        suggestedName: sanitizeArchiveName(game.name) || path.basename(game.dir),
+        // The parent, never the game folder itself: an archive written inside the folder
+        // it is packing is an archive trying to contain itself.
+        suggestedDir: path.dirname(game.dir),
+        sizeBytes: game.sizeBytes ?? 0,
+        candidates: [] as ShareCandidate[]
+      }
+      if (game.kind === 'archive') {
+        return { ...base, blocked: '这本来就是一个压缩包，直接发给对方即可' }
+      }
+      if (game.missing || !fs.existsSync(game.dir)) {
+        return { ...base, blocked: '找不到这个游戏的文件夹' }
+      }
+      return { ...base, candidates: scanPersonalData(game.dir) }
+    })
+  )
+
+  ipcMain.handle(
+    'share:start',
+    (_e, jobs: ShareJob[], options: ShareOptions): { ok: boolean; error?: string } => {
+      if (shareHandle) return { ok: false, error: '已经有一个分享在进行中' }
+
+      const resolved: { job: ShareJob; gameDir: string }[] = []
+      for (const job of jobs) {
+        const game = db.findGame(job.gameId)
+        if (!game || game.kind === 'archive' || !fs.existsSync(game.dir)) continue
+        // Anything outside the game folder is not ours to leave out of the archive, and
+        // a path that wandered would silently drop files the user never saw listed.
+        const exclude = job.exclude.filter((p) => isUnder(p, game.dir))
+        // An archive landing inside the folder being packed has to skip itself.
+        const out = path.join(job.outDir, job.name)
+        if (isUnder(out, game.dir)) exclude.push(out)
+        resolved.push({ job: { ...job, exclude }, gameDir: game.dir })
+      }
+      if (resolved.length === 0) return { ok: false, error: '没有可以分享的条目' }
+
+      shareHandle = startShare(
+        resolved,
+        options,
+        (progress) => mainWindow?.webContents.send('share:progress', progress),
+        (results) => {
+          shareHandle = null
+          mainWindow?.webContents.send('share:done', results)
+        }
+      )
+      return { ok: true }
+    }
+  )
+
+  ipcMain.handle('share:cancel', () => {
+    shareHandle?.cancel()
+    return true
+  })
+
+  /**
+   * Pick something to exclude, from inside one game folder.
+   *
+   * The result is rejected unless it actually sits under that folder: an exclusion
+   * pointing somewhere else would be silently ignored by 7z later, and the user would
+   * have no way to tell that the line they added was doing nothing.
+   */
+  ipcMain.handle(
+    'dialog:pickInside',
+    async (_e, dir: string, kind: 'file' | 'dir'): Promise<string | null> => {
+      if (!mainWindow) return null
+      const res = await dialog.showOpenDialog(mainWindow, {
+        title: kind === 'dir' ? '选择要排除的文件夹' : '选择要排除的文件',
+        defaultPath: dir,
+        properties: [kind === 'dir' ? 'openDirectory' : 'openFile']
+      })
+      const picked = res.canceled ? null : res.filePaths[0]
+      if (!picked) return null
+      return isUnder(picked, dir) ? picked : null
+    }
+  )
+
+  /** Free space on the volume an archive would be written to. */
+  ipcMain.handle('share:freeSpace', (_e, dir: string): number | null => {
+    const letter = dir.slice(0, 1).toUpperCase()
+    const disk = diskInfo().find((d) => d.drive.toUpperCase().startsWith(letter))
+    return disk ? disk.freeBytes : null
+  })
+
   ipcMain.handle('archive:has7z', () => find7z() !== null)
   ipcMain.handle('archive:extract', (_e, id: string) => {
     const game = db.findGame(id)
@@ -766,6 +901,16 @@ app.whenReady().then(() => {
   registerIpc()
   splashStage('正在读取游戏库…')
   onPlaytimeChange((payload) => mainWindow?.webContents.send('playtime:changed', payload))
+  // Only the fact that something went wrong is pushed. Running the diagnosis costs a PE
+  // parse and a registry read, and it belongs behind the user deciding they want it.
+  onLaunchTrouble(({ game, trouble, startedAt }) =>
+    mainWindow?.webContents.send('launch:trouble', {
+      id: game.id,
+      name: game.name,
+      trouble,
+      startedAt
+    })
+  )
   // The list is short enough that pushing it whole beats tracking what changed.
   onDownloadsChanged(() => mainWindow?.webContents.send('download:changed', db.getDownloads()))
   createWindow()

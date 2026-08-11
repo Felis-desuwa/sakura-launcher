@@ -66,6 +66,12 @@ export interface Game {
    */
   exePinned?: boolean
   kind: GameKind
+  /**
+   * Which engine the folder was built on, when the layout says so plainly.
+   * Re-derived on every scan and refresh — it describes the folder, not the user's
+   * choices, so it is never carried across a remove-and-re-add.
+   */
+  engine?: EngineId | null
   sizeBytes: number | null
   /** Absolute path to a cached PNG, or null while pending / when falling back to placeholder. */
   iconPath: string | null
@@ -223,6 +229,47 @@ export interface ExeChoices {
   choices: ExeChoice[]
 }
 
+/* ---------- which engine a game was built on ---------- */
+
+/**
+ * Engines worth telling apart.
+ *
+ * Not trivia. The engine is what says where a crash log lands, whether the title comes
+ * from the era that assumed a Japanese system codepage, and which executable in a folder
+ * of twelve is the one that starts the game. Everything the launch diagnosis knows that
+ * a generic tool cannot know, it knows through this.
+ */
+export type EngineId =
+  | 'kirikiri'
+  | 'bgi'
+  | 'siglus'
+  | 'majiro'
+  | 'nscripter'
+  | 'artemis'
+  | 'renpy'
+  | 'rpgmaker'
+  | 'wolf'
+  | 'unity'
+  | 'unreal'
+  | 'tyrano'
+  | 'nwjs'
+
+export const ENGINE_META: Record<EngineId, { label: string; note: string }> = {
+  kirikiri: { label: 'KiriKiri', note: '吉里吉里 / KAG，资源打包在 .xp3 里' },
+  bgi: { label: 'BGI / Ethornell', note: 'BURIKO General Interpreter，本体是根目录的 .arc' },
+  siglus: { label: 'SiglusEngine', note: 'Key / VisualArt’s 系' },
+  majiro: { label: 'Majiro', note: '' },
+  nscripter: { label: 'NScripter', note: '' },
+  artemis: { label: 'Artemis', note: '资源打包在 .pfs 里' },
+  renpy: { label: 'Ren’Py', note: 'Python 写的，日志在游戏目录里' },
+  rpgmaker: { label: 'RPG Maker', note: '' },
+  wolf: { label: 'Wolf RPG Editor', note: '' },
+  unity: { label: 'Unity', note: '日志写在 %LOCALAPPDATA%Low 下' },
+  unreal: { label: 'Unreal Engine', note: '' },
+  tyrano: { label: 'TyranoScript', note: '' },
+  nwjs: { label: 'NW.js', note: 'Chromium 套壳' }
+}
+
 export interface Group {
   id: string
   name: string
@@ -350,6 +397,13 @@ export interface Settings {
   groupingPrompted: string[]
   /** How often to check whether a launched game is still running. */
   playtimePollSeconds: number
+  /**
+   * Look after a launch and say something when no process ever appears.
+   *
+   * On by default. A diagnosis nobody knows to ask for is a diagnosis nobody gets, and
+   * the moment it is worth having is the moment the screen stayed blank.
+   */
+  diagnoseOnLaunch: boolean
 
   /** Where downloads land. `null` means "follow the first scan root". */
   downloadDir: string | null
@@ -374,6 +428,7 @@ export const DEFAULT_SETTINGS: Settings = {
   onboarded: false,
   groupingPrompted: [],
   playtimePollSeconds: 15,
+  diagnoseOnLaunch: true,
   downloadDir: null,
   downloader: 'idm',
   downloaderPath: null,
@@ -405,6 +460,161 @@ export interface Database {
 
 /** How many removal records to keep. Past this the oldest fall off. */
 export const MAX_REMOVED = 300
+
+/* ---------- why nothing happened when you double-clicked ---------- */
+
+export type DiagnosisCode =
+  | 'exe-missing'
+  | 'bad-arch'
+  | 'missing-runtime'
+  | 'missing-dll'
+  | 'delay-missing'
+  | 'needs-admin'
+  | 'wrong-exe'
+  | 'needs-locale'
+  | 'crash-log'
+  | 'error-dialog'
+
+/**
+ * How much weight to give a finding.
+ *
+ * `blocker` means the game provably cannot start as things stand. `likely` is a real
+ * suspicion with evidence behind it. `note` is worth knowing and probably not the cause.
+ * The distinction exists so a long list still leads with the answer.
+ */
+export type DiagnosisSeverity = 'blocker' | 'likely' | 'note'
+
+/** Something the dialog can offer to do about a finding. */
+export type DiagnosisAction = 'pickExe' | 'runAsAdmin' | 'openLog' | 'revealDir'
+
+export interface DiagnosisCheck {
+  code: DiagnosisCode
+  severity: DiagnosisSeverity
+  title: string
+  detail: string
+  /** Why we concluded this — same idea as `ExeChoice.reasons`, and the same voice. */
+  reasons: string[]
+  action?: DiagnosisAction
+  /** What the action operates on: a log file, a folder. */
+  actionPath?: string
+  /** Verbatim text worth showing as-is — the tail of a crash log. */
+  excerpt?: string
+}
+
+export interface Diagnosis {
+  gameId: string
+  exe: string
+  engine: EngineId | null
+  /** Null when the file could not be parsed as an executable at all. */
+  arch: string | null
+  /**
+   * Everything that was examined, in the user's words.
+   *
+   * Carried even when `checks` is empty, because "we found nothing" is only worth
+   * anything alongside "here is what we looked at".
+   */
+  checked: string[]
+  checks: DiagnosisCheck[]
+}
+
+/**
+ * Why the launch watcher woke up.
+ *
+ * `dialog` is its own case rather than a flavour of the others because the process is
+ * still very much alive — the game is sitting on a message box, which looks like success
+ * to anything counting processes.
+ */
+export type LaunchTrouble = 'noshow' | 'earlyexit' | 'dialog'
+
+/* ---------- sharing a game ---------- */
+
+/** Which pile a candidate lands in, which is also what decides its default state. */
+export type ShareCategory = 'launcher' | 'save' | 'noise' | 'config'
+
+export const SHARE_CATEGORY_META: Record<
+  ShareCategory,
+  { title: string; hint: string }
+> = {
+  launcher: {
+    title: '启动器写的文件',
+    hint: '游玩时长、评分、标签和每一次游玩记录都在里面'
+  },
+  save: { title: '存档', hint: '你的进度。留在包里就是把通关记录一起发出去' },
+  noise: { title: '日志 · 截图 · 临时文件', hint: '跑出来的杂物，对方并不需要' },
+  config: {
+    title: '设置文件（默认不排除）',
+    hint: '可能存了你的用户名或窗口位置，但也可能是游戏启动必需的 —— 拿不准就别动'
+  }
+}
+
+/** One thing that could be kept out of a shared copy. */
+export interface ShareCandidate {
+  /** Absolute path. */
+  path: string
+  /** Path relative to the game folder, which is what the user reads. */
+  rel: string
+  isDir: boolean
+  sizeBytes: number
+  category: ShareCategory
+  /** Why it was proposed, in the user's words. */
+  reason: string
+  /** Whether it starts ticked. */
+  checked: boolean
+  /** Set when the size alone is grounds for suspicion. */
+  oversized?: boolean
+}
+
+export type ShareFormat = '7z' | 'zip'
+
+export const SHARE_FORMATS: { key: ShareFormat; label: string; note: string }[] = [
+  { key: '7z', label: '7z', note: '压缩率最好，可连文件名一起加密。对方需要 7-Zip' },
+  { key: 'zip', label: 'zip', note: '到处都能打开。加密用 AES-256，但文件名是明文' }
+]
+
+/** One game's proposal: what it would be called and what would be left out. */
+export interface SharePlan {
+  gameId: string
+  gameName: string
+  /** The folder being packed. */
+  dir: string
+  /** Default archive name, already stripped of characters Windows rejects. */
+  suggestedName: string
+  /** Default output folder — the game folder's parent. */
+  suggestedDir: string
+  sizeBytes: number
+  candidates: ShareCandidate[]
+  /** Set when the entry cannot be shared at all, with the reason. */
+  blocked?: string
+}
+
+/** What the user settled on for one game. */
+export interface ShareJob {
+  gameId: string
+  /** Archive name without extension. */
+  name: string
+  outDir: string
+  /** Absolute paths to keep out of the archive. */
+  exclude: string[]
+}
+
+export interface ShareOptions {
+  format: ShareFormat
+  /** Empty string means no encryption. */
+  password: string
+  /** 7z only: encrypt the file list as well as the contents. */
+  encryptNames: boolean
+  overwrite: boolean
+}
+
+export interface ShareResult {
+  gameId: string
+  ok: boolean
+  /** The archive that was written. */
+  file?: string
+  error?: string
+  /** Set when the user stopped the queue before this one ran. */
+  skipped?: boolean
+}
 
 /**
  * Everything on a game that came from the user rather than from disk.

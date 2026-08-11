@@ -1,15 +1,30 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   Breakdown,
+  Diagnosis,
   DiskInfo,
   DownloaderKey,
   ExeChoices,
   Game,
   Group,
+  LaunchTrouble,
   PendingDownload,
   RedundantArchive,
-  Settings
+  Settings,
+  ShareJob,
+  ShareOptions,
+  SharePlan,
+  ShareResult
 } from '../shared/types'
+
+/** A launch that produced no game, pushed the moment the watcher gives up on it. */
+export interface LaunchTroubleEvent {
+  id: string
+  name: string
+  trouble: LaunchTrouble
+  /** When the launch was made — the diagnosis needs it to date any crash log. */
+  startedAt: number
+}
 
 export interface ListedEntry {
   name: string
@@ -86,6 +101,12 @@ const api = {
 
   launch: (id: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('game:launch', id),
+  launchElevated: (id: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('game:launchElevated', id),
+  diagnose: (id: string, since?: number): Promise<Diagnosis | null> =>
+    ipcRenderer.invoke('game:diagnose', id, since),
+  cancelLaunchWatch: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke('game:cancelWatch', id),
   updateGame: (id: string, patch: Partial<Game>): Promise<Game | undefined> =>
     ipcRenderer.invoke('game:update', id, patch),
   reorder: (ids: string[]): Promise<boolean> => ipcRenderer.invoke('game:reorder', ids),
@@ -157,6 +178,35 @@ const api = {
   has7z: (): Promise<boolean> => ipcRenderer.invoke('archive:has7z'),
   extract: (id: string): Promise<{ ok: boolean; dest?: string; error?: string }> =>
     ipcRenderer.invoke('archive:extract', id),
+
+  /** What a shared copy of each game would leave out. Reads the folders; writes nothing. */
+  sharePlan: (ids: string[]): Promise<SharePlan[]> => ipcRenderer.invoke('share:plan', ids),
+  shareStart: (
+    jobs: ShareJob[],
+    options: ShareOptions
+  ): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('share:start', jobs, options),
+  shareCancel: (): Promise<boolean> => ipcRenderer.invoke('share:cancel'),
+  shareFreeSpace: (dir: string): Promise<number | null> =>
+    ipcRenderer.invoke('share:freeSpace', dir),
+  /** Pick a file or folder to exclude; returns null unless it sits inside `dir`. */
+  pickInside: (dir: string, kind: 'file' | 'dir'): Promise<string | null> =>
+    ipcRenderer.invoke('dialog:pickInside', dir, kind),
+  onShareProgress: (
+    cb: (payload: { gameId: string; percent: number; index: number; total: number }) => void
+  ): (() => void) => {
+    const handler = (
+      _e: unknown,
+      payload: { gameId: string; percent: number; index: number; total: number }
+    ): void => cb(payload)
+    ipcRenderer.on('share:progress', handler)
+    return () => ipcRenderer.off('share:progress', handler)
+  },
+  onShareDone: (cb: (results: ShareResult[]) => void): (() => void) => {
+    const handler = (_e: unknown, results: ShareResult[]): void => cb(results)
+    ipcRenderer.on('share:done', handler)
+    return () => ipcRenderer.off('share:done', handler)
+  },
 
   listDir: (
     dir: string
@@ -232,6 +282,12 @@ const api = {
     const handler = (_e: unknown, payload: PlaytimeUpdate): void => cb(payload)
     ipcRenderer.on('playtime:changed', handler)
     return () => ipcRenderer.off('playtime:changed', handler)
+  },
+
+  onLaunchTrouble: (cb: (payload: LaunchTroubleEvent) => void): (() => void) => {
+    const handler = (_e: unknown, payload: LaunchTroubleEvent): void => cb(payload)
+    ipcRenderer.on('launch:trouble', handler)
+    return () => ipcRenderer.off('launch:trouble', handler)
   }
 }
 

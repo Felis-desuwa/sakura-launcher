@@ -11,8 +11,25 @@ files:
 win:
   icon: build/icon.ico
   target:
+    - target: nsis
+      arch: [x64]
     - target: portable
       arch: [x64]
-  artifactName: ${productName}-${version}-portable.${ext}
 portable:
   artifactName: ${productName}-${version}-portable.${ext}
+nsis:
+  artifactName: ${productName}-${version}-setup.${ext}
+  # Ask where to install. A game launcher is exactly the program people want off the
+  # system drive, next to the library it is going to scan.
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  # Per-user, so installing never raises a UAC prompt.
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Sakura Launcher
+  # The library lives in %APPDATA%\sakura-launcher — ratings, playtime, tile order, the
+  # record of every game that was ever removed. Uninstalling the program must not take
+  # that with it: the whole application is built on not deleting things the user did not
+  # ask to have deleted, and an uninstaller is not the place to make an exception.
+  deleteAppDataOnUninstall: false

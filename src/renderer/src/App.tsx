@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ImportPreview } from '../../preload/index'
+import type { ImportPreview, LaunchTroubleEvent } from '../../preload/index'
 import type {
   DiskInfo,
   ExeChoices,
   Game,
   Group,
+  LaunchTrouble,
   PendingDownload,
   Settings,
+  SharePlan,
   SortKey,
   TabKey
 } from '../../shared/types'
@@ -14,9 +16,11 @@ import { DEFAULT_SETTINGS, normalizeStatus, TAB_META } from '../../shared/types'
 import BulkUninstallDialog from './components/BulkUninstallDialog'
 import ConfirmDialog from './components/ConfirmDialog'
 import DetailDrawer from './components/DetailDrawer'
+import DiagnoseDialog from './components/DiagnoseDialog'
 import ExeChooserDialog from './components/ExeChooserDialog'
 import ImportDialog from './components/ImportDialog'
 import PromptDialog from './components/PromptDialog'
+import ShareDialog from './components/ShareDialog'
 import PetalCanvas from './components/PetalCanvas'
 import DownloadDialog from './components/DownloadDialog'
 import TopBar, { type PageKey } from './components/TopBar'
@@ -65,6 +69,22 @@ export default function App(): React.JSX.Element {
   const [clearingIgnored, setClearingIgnored] = useState(false)
   /** Game whose executable is being chosen, together with what was found in its folder. */
   const [choosingExe, setChoosingExe] = useState<{ game: Game; data: ExeChoices } | null>(null)
+  /** Game being examined for why it would not start. */
+  const [diagnosing, setDiagnosing] = useState<{
+    game: Game
+    since?: number
+    trouble?: LaunchTrouble
+  } | null>(null)
+  /**
+   * A launch that produced nothing, waiting to be acknowledged.
+   *
+   * Held as a dismissible card rather than opened as a dialog: the game may simply be
+   * slow, and stealing the screen from someone who is watching a splash would be worse
+   * than the silence this replaces.
+   */
+  const [trouble, setTrouble] = useState<LaunchTroubleEvent | null>(null)
+  /** Games being packed up to send, with what the scan proposes leaving out. */
+  const [sharing, setSharing] = useState<SharePlan[] | null>(null)
   const [importing, setImporting] = useState<ImportPreview | null>(null)
   const [leftover, setLeftover] = useState<{ game: Game; bytes: number } | null>(null)
   const [extractProgress, setExtractProgress] = useState<Record<string, number>>({})
@@ -136,6 +156,7 @@ export default function App(): React.JSX.Element {
       })
       toast(ok ? '解压完成，已加入游戏库' : `解压失败：${error ?? '未知错误'}`, !ok)
     })
+    const offTrouble = window.sakura.onLaunchTrouble((payload) => setTrouble(payload))
     const offDb = window.sakura.onDbChanged(() => void refresh())
     const offPlaytime = window.sakura.onPlaytime(({ id, playtimeMs, playing: running }) => {
       setGames((cur) => cur.map((g) => (g.id === id ? { ...g, playtimeMs } : g)))
@@ -149,8 +170,15 @@ export default function App(): React.JSX.Element {
       offDone()
       offDb()
       offPlaytime()
+      offTrouble()
     }
   }, [refresh, toast])
+
+  // A game that turns up late clears its own alarm — the card is about silence, and
+  // there is no longer any.
+  useEffect(() => {
+    if (trouble && playing.includes(trouble.id)) setTrouble(null)
+  }, [playing, trouble])
 
   const runScan = useCallback(
     async (announce = true, sync = true): Promise<void> => {
@@ -285,6 +313,34 @@ export default function App(): React.JSX.Element {
         return
       }
       setChoosingExe({ game, data })
+    },
+    [toast]
+  )
+
+  const diagnose = useCallback(
+    (game: Game, since?: number, trouble?: LaunchTrouble): void => {
+      setTrouble(null)
+      setDiagnosing({ game, since, trouble })
+    },
+    []
+  )
+
+  /**
+   * Open the share dialog for a selection.
+   *
+   * The plan is fetched before the dialog opens because it involves walking every game
+   * folder — a dialog that appears and then fills itself in reads as slower than one
+   * that takes a moment and arrives complete.
+   */
+  const share = useCallback(
+    async (list: Game[]): Promise<void> => {
+      if (!(await window.sakura.has7z())) {
+        toast('分享需要 7-Zip，请先安装', true)
+        return
+      }
+      const plans = await window.sakura.sharePlan(list.map((g) => g.id))
+      if (plans.length === 0) return
+      setSharing(plans)
     },
     [toast]
   )
@@ -471,11 +527,13 @@ export default function App(): React.JSX.Element {
               if (updated) setGames((cur) => cur.map((g) => (g.id === id ? updated : g)))
             }}
             onChooseExe={(game) => void chooseExe(game)}
+            onDiagnose={(game) => diagnose(game)}
             // Straight to Explorer. A game entry points at its main executable and an
             // archive at a volume file, and either way this opens the folder holding it
             // with the file already selected.
             onBrowse={(game) => void window.sakura.reveal(game.id)}
             onExtract={(game) => void window.sakura.extract(game.id)}
+            onShare={(list) => void share(list)}
             onGroupsChange={(next) => {
               setGroups(next)
               void window.sakura.setGroups(next)
@@ -661,11 +719,70 @@ export default function App(): React.JSX.Element {
         />
       )}
 
+      {trouble && (
+        <div className={`trouble-card ${trouble.trouble}`}>
+          <div className="trouble-text">
+            <b>
+              {trouble.trouble === 'dialog'
+                ? `《${trouble.name}》停在一个报错窗口上`
+                : `《${trouble.name}》好像没起来`}
+            </b>
+            <span>
+              {trouble.trouble === 'earlyexit'
+                ? '进程出现过，几秒之内就没了'
+                : trouble.trouble === 'dialog'
+                  ? '引擎弹了报错框，这次不计入游玩时长'
+                  : '启动之后一直没有检测到进程'}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="btn primary small"
+            onClick={() => {
+              const game = games.find((g) => g.id === trouble.id)
+              if (game) diagnose(game, trouble.startedAt, trouble.trouble)
+            }}
+          >
+            查看诊断
+          </button>
+          <button
+            type="button"
+            className="btn ghost small"
+            onClick={() => {
+              void window.sakura.cancelLaunchWatch(trouble.id)
+              setTrouble(null)
+            }}
+          >
+            知道了
+          </button>
+        </div>
+      )}
+
+      {diagnosing && (
+        <DiagnoseDialog
+          game={diagnosing.game}
+          since={diagnosing.since}
+          trouble={diagnosing.trouble}
+          toast={toast}
+          onClose={() => setDiagnosing(null)}
+          onPickExe={() => {
+            const target = diagnosing.game
+            setDiagnosing(null)
+            void chooseExe(target)
+          }}
+        />
+      )}
+
       {choosingExe && (
         <ExeChooserDialog
           game={choosingExe.game}
           data={choosingExe.data}
           onClose={() => setChoosingExe(null)}
+          onDiagnose={() => {
+            const target = choosingExe.game
+            setChoosingExe(null)
+            diagnose(target)
+          }}
           onApply={async (exePath, args) => {
             const target = choosingExe.game
             const result = await window.sakura.setExe(target.id, exePath, args)
@@ -687,6 +804,10 @@ export default function App(): React.JSX.Element {
             )
           }}
         />
+      )}
+
+      {sharing && (
+        <ShareDialog plans={sharing} onClose={() => setSharing(null)} onToast={toast} />
       )}
 
       {clearingIgnored && (

@@ -218,6 +218,33 @@ export function beginSession(game: Game): void {
   startTimer()
 }
 
+/**
+ * Throw away a session that turned out not to be gameplay.
+ *
+ * Watching the folder rather than the process is what makes this tracker survive
+ * launcher hand-offs and self-restarts, but it buys that with one blind spot: a game
+ * sitting on a modal error box is a live process in the game folder, and every minute
+ * the box goes unnoticed was being recorded as time played. An error message is not
+ * playing a game.
+ *
+ * Nothing is written back beyond undoing what this session banked. `lastLaunchedAt` and
+ * `launchCount` stay as they are — the launch did happen, it just did not become a game.
+ *
+ * Known trade-off: if the player dismisses the box and the game then runs after all,
+ * that run goes untimed until they launch it again. That is the right way round. Time
+ * that was never played is a number the user cannot spot and cannot correct, while a
+ * missing session is visible and one relaunch away.
+ */
+export function voidSession(id: string): void {
+  const session = active.get(id)
+  if (!session) return
+  session.game.playtimeMs = Math.max(0, session.game.playtimeMs - session.banked)
+  active.delete(id)
+  if (active.size === 0) stopTimer()
+  db.saveNow()
+  emit(session.game, false)
+}
+
 export function isPlaying(id: string): boolean {
   return active.has(id)
 }

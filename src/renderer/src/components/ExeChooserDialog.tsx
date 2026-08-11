@@ -6,6 +6,7 @@ interface Props {
   game: Game
   data: ExeChoices
   onApply: (exePath: string, args: string[]) => Promise<void>
+  onDiagnose: () => void
   onClose: () => void
 }
 
@@ -37,6 +38,7 @@ export default function ExeChooserDialog({
   game,
   data,
   onApply,
+  onDiagnose,
   onClose
 }: Props): React.JSX.Element {
   const [trials, setTrials] = useState<Record<string, Trial>>({})
@@ -177,6 +179,13 @@ export default function ExeChooserDialog({
         {trialNote(trials[choice.fullPath])}
       </div>
       <div className="exe-actions">
+        {/* A trial that came up empty is the exact moment the question changes from
+            "which one?" to "why not?" — so that is where the diagnosis is offered. */}
+        {(trials[choice.fullPath] === 'dead' || trials[choice.fullPath] === 'failed') && (
+          <button type="button" className="btn ghost small" onClick={onDiagnose}>
+            查一下为什么
+          </button>
+        )}
         <button
           type="button"
           className="btn ghost small"
