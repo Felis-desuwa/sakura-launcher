@@ -35,6 +35,7 @@ npm run downloader-test  # downloader detection, command lines, completion
 npm run diagnose-test    # launch diagnosis: runtime mapping, mojibake, engine detection, PE parsing
 npm run tag-test         # genre-tag matching: title cleaning, which catalogue tags survive
 npm run cover-test       # cover art: which picture, whether it is adult, what is not an image
+npm run save-test        # locating saves: name matching, engine roots, the download's own save
 npm run share-test       # share exclusion rules
 npm run share-e2e        # calls a real 7-Zip; asserts the source folder is unchanged afterwards
 ```
@@ -76,8 +77,8 @@ Always pass `--user-data-dir`; without it this writes to the user's actual
 
 ### The pure-module convention
 
-`scan-core.ts`, `share-rules.ts`, `download-core.ts`, `diagnose-rules.ts`, `pe-imports.ts`,
-`tag-rules.ts`, `tag-bangumi.ts`, `cover-rules.ts` **must not import electron**. The `.mts` harnesses load them directly under node, which is what makes the
+`scan-core.ts`, `share-rules.ts`, `save-rules.ts`, `download-core.ts`, `diagnose-rules.ts`,
+`pe-imports.ts`, `tag-rules.ts`, `tag-bangumi.ts`, `cover-rules.ts` **must not import electron**. The `.mts` harnesses load them directly under node, which is what makes the
 logic testable without a window. They also spell out `.ts` in their relative imports (`from
 './i18n.ts'`) because node has no bundler to fill the extension in — `allowImportingTsExtensions`
 is on in `tsconfig.node.json` for exactly this. If you add an import to one of these files, keep
@@ -177,6 +178,18 @@ These come from user decisions and are load-bearing. Violating one is a bug even
   Uninstall is the only thing that deletes, and it goes through the three-step ritual.
 - **Sharing never modifies the source folder.** Personal data is left out of the archive, not
   removed from disk. `share-e2e` asserts this and that assertion is the reason the harness exists.
+- **The save backup copies out and never puts anything back.** There is no restore, on purpose:
+  restoring overwrites a save in place, which is the only operation here that can destroy
+  something unrecoverable — worse than uninstalling, which at least goes through the recycle
+  bin. Adding one means adding a ritual for it. Until then the backup writes `sakura-backup.md`
+  recording each item's origin, and that file is the only route back, so it gets a BOM like the
+  sidecar does.
+- **`Game.addedAt` is stamped only on a genuinely new entry.** It is the baseline that separates
+  the user's own save from the completed one that shipped inside the download, and those are
+  indistinguishable by name, extension and location. `prev?.addedAt ?? Date.now()` looks
+  equivalent to what `scanner.ts` does and is a bug: it would back-date every existing entry to
+  today and declare every real save to be somebody else's. An entry without a baseline keeps
+  none, and the dialog says so out loud.
 - **Diagnosis is read-only** and does not go over the network. It names the missing runtime; it does
   not fetch it.
 - **No hardcoded personal paths anywhere.** Scan roots start empty (`DEFAULT_SETTINGS.roots: []`),

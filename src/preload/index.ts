@@ -11,6 +11,9 @@ import type {
   PendingDownload,
   RedundantArchive,
   Settings,
+  SaveBackupJob,
+  SaveBackupResult,
+  SavePlan,
   ShareJob,
   ShareOptions,
   SharePlan,
@@ -308,6 +311,52 @@ const api = {
     const handler = (_e: unknown, results: ShareResult[]): void => cb(results)
     ipcRenderer.on('share:done', handler)
     return () => ipcRenderer.off('share:done', handler)
+  },
+
+  /**
+   * Where each game's saves appear to be, and how sure we are.
+   *
+   * Reads the game folder and the handful of places Windows lets a game write; writes
+   * nothing anywhere. Slower than most calls here — it walks AppData once — so the caller
+   * should expect to wait rather than call it on a hover.
+   */
+  savePlan: (ids: string[]): Promise<SavePlan[]> => ipcRenderer.invoke('saves:plan', ids),
+  /**
+   * Copy the ticked saves out to `destRoot`.
+   *
+   * Copies only: nothing under a game folder is written, moved or deleted, and there is
+   * no counterpart that puts anything back. The main process re-derives the plan rather
+   * than trusting the paths in `jobs`, so a path this side invented is not copied.
+   */
+  startSaveBackup: (
+    jobs: SaveBackupJob[],
+    destRoot: string
+  ): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('saves:start', jobs, destRoot),
+  cancelSaveBackup: (): Promise<boolean> => ipcRenderer.invoke('saves:cancel'),
+  /** The folder backups go to: the user's choice, else the one under Documents. */
+  backupDir: (): Promise<string> => ipcRenderer.invoke('saves:dir'),
+  pickBackupDir: (): Promise<string | null> => ipcRenderer.invoke('dialog:pickBackupDir'),
+  /**
+   * Point at a save the search did not find. Anywhere on disk, deliberately — the whole
+   * reason this exists is that saves are routinely nowhere near the game.
+   */
+  pickSaveSource: (gameId: string, kind: 'file' | 'dir'): Promise<string | null> =>
+    ipcRenderer.invoke('dialog:pickSaveSource', gameId, kind),
+  onSaveBackupProgress: (
+    cb: (payload: { gameId: string; percent: number; index: number; total: number }) => void
+  ): (() => void) => {
+    const handler = (
+      _e: unknown,
+      payload: { gameId: string; percent: number; index: number; total: number }
+    ): void => cb(payload)
+    ipcRenderer.on('saves:progress', handler)
+    return () => ipcRenderer.off('saves:progress', handler)
+  },
+  onSaveBackupDone: (cb: (results: SaveBackupResult[]) => void): (() => void) => {
+    const handler = (_e: unknown, results: SaveBackupResult[]): void => cb(results)
+    ipcRenderer.on('saves:done', handler)
+    return () => ipcRenderer.off('saves:done', handler)
   },
 
   listDir: (

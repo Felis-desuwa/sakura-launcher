@@ -897,6 +897,14 @@ export const MESSAGES = {
     zh: '关闭时压缩包保留在库里的「待安装」分组，磁盘页可以随时批量清理。',
     en: 'With this off, archives stay in the Not installed group and can be cleared in bulk from the Disk page whenever you like.'
   },
+  'settings.backupSection': { zh: '存档备份', en: 'Save backups' },
+  'settings.backupDir': { zh: '备份到', en: 'Back saves up to' },
+  'settings.backupDirHint': {
+    zh: '右键游戏「备份存档…」时把找到的存档复制到这里，每次一个带时间的新文件夹，不覆盖上一次。不指定时用「文档\\Sakura Launcher Saves」。别选在游戏库里面 —— 那样删游戏会连备份一起删掉。',
+    en: 'Where “Back up saves…” copies what it finds — a new timestamped folder each time, never overwriting the last. Defaults to Documents\\Sakura Launcher Saves. Do not put it inside the library: deleting a game would take the backup with it.'
+  },
+  'settings.backupDirDefault': { zh: '（默认位置）', en: ' (the default)' },
+  'settings.openBackupDir': { zh: '打开', en: 'Open' },
   'settings.externalSection': { zh: '外部程序', en: 'External programs' },
   'settings.geekNotSet': {
     zh: '未指定（没有自带卸载程序的游戏将直接移入回收站）',
@@ -1046,6 +1054,9 @@ export const MESSAGES = {
   'pick.executables': { zh: '可执行文件', en: 'Executables' },
   'pick.anyExe': { zh: '选择可执行文件', en: 'Choose an executable' },
   'pick.downloadDir': { zh: '选择下载目录', en: 'Choose a download folder' },
+  'pick.backupDir': { zh: '选择存档备份目录', en: 'Choose where saves are backed up' },
+  'pick.saveDir': { zh: '选择存档所在的文件夹', en: 'Choose the folder the saves are in' },
+  'pick.saveFile': { zh: '选择存档文件', en: 'Choose a save file' },
   'splash.preparing': { zh: '正在准备…', en: 'Getting ready…' },
   'splash.loading': { zh: '正在读取游戏库…', en: 'Reading the library…' },
   'splash.arranging': { zh: '正在布置书架…', en: 'Arranging the shelf…' },
@@ -1273,6 +1284,123 @@ export const MESSAGES = {
   },
   'shareWhy.saveDir': { zh: '存档目录', en: 'A save folder' },
   'shareWhy.noiseDir': { zh: '日志、崩溃转储或截图目录', en: 'A folder of logs, crash dumps or screenshots' },
+
+  /* ---- where a save can live ---- */
+  'saveRoot.game': { zh: '游戏文件夹内', en: 'Inside the game folder' },
+  'saveRoot.appdata': { zh: '%APPDATA%（漫游）', en: '%APPDATA% (Roaming)' },
+  'saveRoot.localappdata': { zh: '%LOCALAPPDATA%（本地）', en: '%LOCALAPPDATA% (Local)' },
+  'saveRoot.locallow': { zh: 'AppData\\LocalLow', en: 'AppData\\LocalLow' },
+  'saveRoot.documents': { zh: '文档', en: 'Documents' },
+  'saveRoot.savedgames': { zh: 'Saved Games', en: 'Saved Games' },
+  'saveRoot.systemdrive': { zh: '系统盘根目录', en: 'The root of the system drive' },
+
+  /* ---- why something looks like this game's save ---- */
+  'whySave.engineRoot': {
+    zh: '{engine} 通常把存档写在这里 · {root} · 目录名与游戏对得上',
+    en: '{engine} usually writes its saves here · {root} · the folder is named after the game'
+  },
+  'whySave.nameMatch': {
+    zh: '{root} 下有个目录名与游戏对得上 —— 这个引擎不常写这里，请自行确认',
+    en: 'A folder under {root} is named after this game — not where this engine usually writes, so check it'
+  },
+  'whySave.genericAtRoot': {
+    zh: '系统盘根目录下名为「{name}」的目录，看不出属于哪个游戏 —— 请自行确认',
+    en: 'A folder called “{name}” at the root of the system drive — nothing says which game it belongs to'
+  },
+  'whySave.addedByHand': { zh: '你自己指定的位置', en: 'A location you named yourself' },
+
+  /* ---- backing the saves up ---- */
+  'menu.backupSaves': { zh: '备份存档…', en: 'Back up saves…' },
+  'menu.backupSavesN': { zh: '备份存档（{n} 个）', en: 'Back up saves ({n})' },
+  'saves.step': { zh: '存档', en: 'Saves' },
+  'saves.title': { zh: '备份存档', en: 'Back up saves' },
+  'saves.titleN': { zh: '备份 {n} 个游戏的存档', en: 'Back up saves for {n} games' },
+  'saves.lede': {
+    zh: '只往备份目录里复制，游戏文件夹一个字节都不会改。找到的位置都列在下面，勾选要备份的；找漏了就自己添加。',
+    en: 'Files are only ever copied out — nothing in the game folder is written to. Tick what to keep; add anything the search missed.'
+  },
+  'saves.noRestore': {
+    zh: '没有「还原」按钮，这是故意的：还原要覆盖你现在的存档，是这个程序里唯一能弄丢东西的操作。每次备份都会写一份 sakura-backup.md，记着每样东西原本在哪，要放回去请自己复制。',
+    en: 'There is deliberately no restore button: putting a save back overwrites the one you have now, which is the only thing in this program that can lose data. Every backup carries a sakura-backup.md recording where each item came from; copying it back is yours to do.'
+  },
+  'saves.baselineNote': {
+    zh: '《{name}》是在启动器记录加入时间之前就在库里的，所以分不出哪些存档是随下载附带的 —— 下面的判断只能靠位置。',
+    en: '{name} was in the library before the launcher started recording when a game was added, so a bundled save cannot be told from a played one here — only the location is evidence.'
+  },
+  'saves.prepacked': { zh: '加入库之前就没再写过，多半是随下载附带的存档', en: 'Untouched since before you added the game — almost certainly a save that came with the download' },
+  'saves.oversized': { zh: '大得不像存档，可能是游戏本体', en: 'Too large to be a save — this may be the game itself' },
+  'saves.empty': { zh: '空的', en: 'empty' },
+  'saves.weakHead': { zh: '不确定的（{n}）', en: 'Not certain ({n})' },
+  'saves.weakHint': {
+    zh: '按名字找到的，可能不是这个游戏的。请自行确认后再勾',
+    en: 'Found by name — it may belong to something else. Check before ticking'
+  },
+  'saves.strongHead': { zh: '找到的存档（{n}）', en: 'Saves found ({n})' },
+  'saves.strongHint': { zh: '游戏目录里的，或者引擎该写的地方', en: 'Inside the game, or where this engine writes' },
+  'saves.nothingFound': {
+    zh: '没找到任何存档。这个游戏可能把存档放在了别处 —— 用下面的按钮自己指定。',
+    en: 'No saves were found. This game may keep them somewhere else — point at them yourself below.'
+  },
+  'saves.addYourOwn': { zh: '找漏了的，自己加：', en: 'Anything the search missed, add it yourself:' },
+  'saves.addFile': { zh: '添加文件…', en: 'Add a file…' },
+  'saves.addFolder': { zh: '添加文件夹…', en: 'Add a folder…' },
+  'saves.saveTo': { zh: '备份到', en: 'Back up to' },
+  'saves.browse': { zh: '浏览…', en: 'Browse…' },
+  'saves.remember': { zh: '记住这个位置', en: 'Remember this location' },
+  'saves.estimate': { zh: '预计复制 {size}（{files} 个文件）', en: 'About {size} to copy ({files} files)' },
+  'saves.freeSpace': { zh: ' · 目标磁盘可用 {size}', en: ' · {size} free on the target drive' },
+  'saves.notEnoughSpace': {
+    zh: '目标磁盘放不下：需要 {needed}，只剩 {free}',
+    en: 'Not enough room: {needed} needed, {free} free'
+  },
+  'saves.selectedN': { zh: '已选 {n} 项', en: '{n} selected' },
+  'saves.collapse': { zh: '收起', en: 'Collapse' },
+  'saves.start': { zh: '开始备份', en: 'Start backing up' },
+  'saves.cancelBackup': { zh: '取消备份', en: 'Cancel' },
+  'saves.progress': { zh: '正在备份第 {i} / {n} 个 · ', en: 'Backing up {i} of {n} · ' },
+  'saves.doneTitle': { zh: '备份完成', en: 'Backup finished' },
+  'saves.noneTitle': { zh: '没有备份成功', en: 'Nothing was backed up' },
+  'saves.result': { zh: '{files} 个文件 · {size}', en: '{files} files · {size}' },
+  'saves.unreadable': { zh: ' · {n} 个文件读不到（游戏可能正开着）', en: ' · {n} unreadable (the game may be running)' },
+  'saves.openLocation': { zh: '打开位置', en: 'Show it' },
+  'saves.gotIt': { zh: '知道了', en: 'Done' },
+  'saves.cancelled': { zh: '已取消', en: 'cancelled' },
+  'saves.untouched': {
+    zh: '游戏文件夹分毫未动 —— 存档是复制出来的，不是移走的。',
+    en: 'The game folders were not touched — the saves were copied out, not moved.'
+  },
+  'saves.nothingPicked': { zh: '没有勾选任何东西', en: 'Nothing was ticked' },
+  'saves.copiedNothing': { zh: '一个文件都没复制成功', en: 'Not one file could be copied' },
+  'saves.blocked.isArchive': {
+    zh: '这是个还没解压的压缩包，还没有存档',
+    en: 'This is an archive that has not been installed yet — there are no saves'
+  },
+  'saves.blocked.noFolder': { zh: '找不到游戏文件夹', en: 'The game folder could not be found' },
+  'saves.blocked.insideGame': {
+    zh: '备份目录在游戏文件夹里面 —— 那不叫备份，删游戏时会一起没',
+    en: 'The backup folder is inside the game folder — that is not a backup; it goes in the bin with the game'
+  },
+  'saves.blocked': { zh: '《{name}》不能备份：{reason}', en: '{name} cannot be backed up: {reason}' },
+  'saves.cantStart': { zh: '无法开始备份', en: 'Could not start the backup' },
+  'saves.backedUpN': { zh: '已备份 {n} 个游戏的存档', en: 'Backed up saves for {n} games' },
+  'saves.partial': { zh: '{ok} 个成功，{bad} 个失败', en: '{ok} succeeded, {bad} failed' },
+  'saves.allFailed': { zh: '备份失败', en: 'The backup failed' },
+
+  /* ---- the note written beside the copies ---- */
+  'saveDoc.title': { zh: '存档备份', en: 'Save backup' },
+  'saveDoc.game': { zh: '游戏', en: 'Game' },
+  'saveDoc.folder': { zh: '游戏文件夹', en: 'Game folder' },
+  'saveDoc.when': { zh: '备份时间', en: 'Backed up' },
+  'saveDoc.intro': {
+    zh: '下表记着每一项原本在哪。要还原就照着它复制回去 —— 启动器不会替你做这件事，因为覆盖存档一旦弄错就找不回来了。',
+    en: 'The table below records where each item came from. To restore, copy it back yourself — the launcher will not do it for you, because overwriting a save is not something you can undo.'
+  },
+  'saveDoc.from': { zh: '原本在', en: 'Came from' },
+  'saveDoc.to': { zh: '备份里的位置', en: 'In this backup' },
+  'saveDoc.restore': {
+    zh: '还原前先把现在的存档也备份一份。',
+    en: 'Back up the saves you have now before putting these back.'
+  },
 
   /* ---- uninstaller / archive ---- */
   'uninst.noMethod': { zh: '无法确定卸载方式', en: 'No way to uninstall it could be determined' },

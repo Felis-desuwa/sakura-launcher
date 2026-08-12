@@ -57,6 +57,8 @@ Run anyway*.
   even when on, all that leaves the machine is a title
 - Playtime is measured by *whether any process is running inside the game folder*, which
   survives the very common launcher-exits-immediately case
+- Backing saves up looks in `%APPDATA%`, `LocalLow` and the root of C: as well — saves are
+  very often nowhere near the game — and recognises a completed save that came with the download
 - Packing a game up to share lists your personal traces for review first, and **leaves the
   source folder untouched**
 - Uninstalling takes three steps: confirm → copy out a flower's name by hand → hold for 2.5 s
@@ -222,6 +224,26 @@ about a story, and only a catalogue has them.
   a finished archive lands in *Pending install* automatically
 - **Pending install** — archive entries in the library. Right-click → *Extract* installs it;
   a double-click reminds you it is not installed yet
+- **Save backups** — right-click → *Back up saves…* copies the saves to a folder you choose
+  (Documents\Sakura Launcher Saves by default); select several games to do them in one go. Each
+  run writes a new timestamped folder and **never overwrites the last one**.
+  **It only copies — not one byte of the game folder is written to.**
+  Saves are frequently **not in the game folder**: Ren'Py keeps the authoritative copy in
+  `%APPDATA%\RenPy`, Unity uses `LocalLow`, RPG Maker MV and anything else on NW.js hides a
+  leveldb under `%LOCALAPPDATA%`, and some games write to the root of C:. So the search covers
+  those places, looking for a folder named after the game.
+  What it finds is split in two: **inside the game, or exactly where this engine writes** —
+  ticked; and **merely named like the game, somewhere the engine has no business writing** —
+  listed with the reason and **left unticked**, because names collide and only you can judge it.
+  Anything the search missed can be pointed at by hand, and is remembered afterwards.
+  There is one more trap: these downloads **routinely ship with a completed save**, identical
+  to your own in name, extension and location. The only thing that separates them is time, so
+  **anything untouched since before you added the game is flagged and left unticked** (entries
+  that were in the library before August 2026 have no such baseline, and the dialog says so
+  rather than guessing).
+  **There is deliberately no restore button** — putting a save back overwrites the one you
+  have, which is the only thing in this program that could lose data. Every backup carries a
+  `sakura-backup.md` recording where each item came from; copying it back is yours to do
 - **Sharing** — right-click → *Share…* packs a game up to send to someone. It first finds your
   personal traces (saves, logs, screenshots, and the launcher's own sidecar recording your
   playtime and rating) and **lists them for you to look over before deciding what to exclude**.
@@ -269,6 +291,10 @@ cache/icons/         icons extracted from executables
 cache/breakdown/     cached directory size breakdowns
 covers/              covers you set yourself
 ```
+
+Save backups are deliberately not kept here — they go to Documents\Sakura Launcher Saves by
+default, and Settings can move them. A backup that gets deleted along with this directory is
+not a backup.
 
 Delete that directory to return to a clean state. Nothing is ever written into the project
 directory. Each game folder also holds a `sakura-launcher.md`, a portable, hand-editable copy
@@ -327,6 +353,8 @@ npm run tag-test                                  # genre tags: which titles cou
                                                   # tags to drop. No network; response shapes pinned by real samples
 npm run cover-test                                # covers: which picture is usable, which counts as adult, the
                                                   # error page posing as an image, the user's own cover left alone
+npm run save-test                                 # locating saves: which folders belong to this game, which merely
+                                                  # share a name, and the save that came with the download
 npm run share-test                                # the share exclusion rules (mostly the ones that must NOT hit)
 npm run share-e2e                                 # calls a real 7-Zip; asserts the source folder is unchanged
 node scripts/scan-test.mts "<library folder>"     # prints the games, archives and group candidates found

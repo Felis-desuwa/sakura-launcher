@@ -23,6 +23,7 @@
     "diagnose-probe": "node scripts/diagnose-probe.mts",
     "tag-test": "node scripts/tag-test.mts",
     "cover-test": "node scripts/cover-test.mts",
+    "save-test": "node scripts/save-test.mts",
     "share-test": "node scripts/share-test.mts",
     "share-e2e": "node scripts/share-e2e.mts"
   },

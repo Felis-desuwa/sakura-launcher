@@ -10,6 +10,8 @@ import type {
   ExeChoices,
   Game,
   Group,
+  SaveBackupJob,
+  SavePlan,
   Settings,
   ShareCandidate,
   ShareJob,
@@ -57,6 +59,12 @@ import {
 } from './scanner'
 import { startShare, type ShareHandle } from './share'
 import {
+  backupDirFor,
+  planSaveBackup,
+  startSaveBackup,
+  type SaveBackupHandle
+} from './saves'
+import {
   applyMatch,
   cancelTagRun,
   computeTags,
@@ -90,6 +98,8 @@ protocol.registerSchemesAsPrivileged([
 let mainWindow: BrowserWindow | null = null
 /** The share queue in flight, if any. One at a time — see `startShare`. */
 let shareHandle: ShareHandle | null = null
+/** The save-backup queue in flight. Also one at a time, and for the same reason. */
+let saveHandle: SaveBackupHandle | null = null
 
 /**
  * Window icon for development runs. In a packaged build Windows takes the icon from
@@ -828,6 +838,98 @@ function registerIpc(): void {
       const picked = res.canceled ? null : res.filePaths[0]
       if (!picked) return null
       return isUnder(picked, dir) ? picked : null
+    }
+  )
+
+  /* ---------- copying the saves out ---------- */
+
+  /** Where the saves appear to be. Reads the folders and AppData; writes nothing. */
+  ipcMain.handle('saves:plan', (_e, ids: string[]): SavePlan[] => planSaveBackup(ids))
+
+  ipcMain.handle('saves:dir', () => backupDirFor())
+
+  /**
+   * Copy the ticked saves out.
+   *
+   * The plan is worked out again here rather than taken from the renderer. Every path
+   * that arrives is checked against what this side would have proposed, so the only
+   * things that can be read are the ones the rules found or the user pointed at through
+   * the picker below — a path the renderer invented copies nothing.
+   */
+  ipcMain.handle(
+    'saves:start',
+    (_e, jobs: SaveBackupJob[], destRoot: string): { ok: boolean; error?: string } => {
+      if (saveHandle) return { ok: false, error: t('err.shareBusy') }
+      if (!destRoot) return { ok: false, error: t('saves.cantStart') }
+
+      const plans = planSaveBackup(jobs.map((j) => j.gameId))
+      const resolved: Parameters<typeof startSaveBackup>[0] = []
+      for (const job of jobs) {
+        const game = db.findGame(job.gameId)
+        const plan = plans.find((p) => p.gameId === job.gameId)
+        if (!game || !plan || plan.blocked) continue
+        const known = new Set(plan.candidates.map((c) => c.path.toLowerCase()))
+        const include = job.include.filter((p) => known.has(p.toLowerCase()))
+        if (include.length === 0) continue
+        resolved.push({ job: { ...job, include }, game, candidates: plan.candidates })
+      }
+      if (resolved.length === 0) return { ok: false, error: t('saves.nothingPicked') }
+
+      saveHandle = startSaveBackup(
+        resolved,
+        destRoot,
+        (progress) => mainWindow?.webContents.send('saves:progress', progress),
+        (results) => {
+          saveHandle = null
+          mainWindow?.webContents.send('saves:done', results)
+          mainWindow?.webContents.send('db:changed')
+        }
+      )
+      return { ok: true }
+    }
+  )
+
+  ipcMain.handle('saves:cancel', () => {
+    saveHandle?.cancel()
+    return true
+  })
+
+  ipcMain.handle('dialog:pickBackupDir', async () => {
+    if (!mainWindow) return null
+    const res = await dialog.showOpenDialog(mainWindow, {
+      title: t('pick.backupDir'),
+      defaultPath: backupDirFor(),
+      properties: ['openDirectory', 'createDirectory']
+    })
+    return res.canceled ? null : res.filePaths[0]
+  })
+
+  /**
+   * Point at a save the search missed — anywhere on disk, which is the point.
+   *
+   * The choice is recorded on the game rather than held in the dialog: a person who has
+   * just gone and found where a game hides its saves should not have to find it again
+   * next time, and the record is what lets the plan be re-derived on the way in.
+   */
+  ipcMain.handle(
+    'dialog:pickSaveSource',
+    async (_e, gameId: string, kind: 'file' | 'dir'): Promise<string | null> => {
+      if (!mainWindow) return null
+      const game = db.findGame(gameId)
+      if (!game) return null
+      const res = await dialog.showOpenDialog(mainWindow, {
+        title: kind === 'dir' ? t('pick.saveDir') : t('pick.saveFile'),
+        defaultPath: game.dir,
+        properties: [kind === 'dir' ? 'openDirectory' : 'openFile']
+      })
+      const picked = res.canceled ? null : res.filePaths[0]
+      if (!picked) return null
+      const already = (game.saveDirs ?? []).some((d) => d.toLowerCase() === picked.toLowerCase())
+      if (!already) {
+        db.updateGame(gameId, { saveDirs: [...(game.saveDirs ?? []), picked] })
+        db.saveNow()
+      }
+      return picked
     }
   )
 

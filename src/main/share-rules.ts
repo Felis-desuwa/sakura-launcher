@@ -52,8 +52,14 @@ const GAME_DATA_EXT = new Set([
   '.mrg'
 ])
 
-/** Directory names that hold saved games, at any depth. */
-const SAVE_DIRS = [
+/**
+ * Directory names that hold saved games, at any depth.
+ *
+ * Exported because `save-rules.ts` needs the same list to recognise a save folder that
+ * sits *outside* the game — the two features disagree about what to do with a save, and
+ * must not disagree about what one looks like.
+ */
+export const SAVE_DIRS = [
   'save',
   'saves',
   'savedata',
@@ -93,7 +99,7 @@ const NOISE_DIRS = [
 ]
 
 /** Save files, wherever they sit. These extensions are not used for game data. */
-const SAVE_EXT = new Set(['.sav', '.save', '.svd', '.rvdata2', '.rvdata', '.rxdata', '.lsd'])
+export const SAVE_EXT = new Set(['.sav', '.save', '.svd', '.rvdata2', '.rvdata', '.rxdata', '.lsd'])
 
 /** Save-ish extensions that only count *inside* a save directory. */
 const SAVE_EXT_SCOPED = new Set(['.dat', '.bin', '.json', '.xml'])

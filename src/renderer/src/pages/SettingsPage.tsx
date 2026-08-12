@@ -52,10 +52,18 @@ export default function SettingsPage({
   const [has7z, setHas7z] = useState<boolean | null>(null)
   /** undefined while the probe is still running, so "not found" is not shown too early. */
   const [detected, setDetected] = useState<string | null | undefined>(undefined)
+  /** The suggested backup folder, shown when the user has not named one. */
+  const [backupDir, setBackupDir] = useState('')
 
   useEffect(() => {
     window.sakura.has7z().then(setHas7z)
   }, [])
+
+  // Re-asked whenever the choice changes: the answer is "theirs, or the default", so a
+  // value cached from before a reset would show the folder they just cleared.
+  useEffect(() => {
+    void window.sakura.backupDir().then(setBackupDir)
+  }, [settings.backupDir])
 
   useEffect(() => {
     setDetected(undefined)
@@ -545,6 +553,38 @@ export default function SettingsPage({
             className={`switch${settings.trashArchiveAfterExtract ? ' on' : ''}`}
             onClick={() => onChange({ trashArchiveAfterExtract: !settings.trashArchiveAfterExtract })}
           />
+        </div>
+      </div>
+
+      <div className="card" style={{ maxWidth: 760 }}>
+        <div className="section-title" style={{ marginTop: 0 }}>{t('settings.backupSection')}</div>
+
+        <div className="settings-row">
+          <label>
+            {t('settings.backupDir')}
+            <span className="settings-hint">{t('settings.backupDirHint')}</span>
+          </label>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <span style={{ flex: 1, fontSize: 12.5, color: 'var(--ink-soft)', wordBreak: 'break-all' }}>
+              {settings.backupDir ?? backupDir}
+              {settings.backupDir === null && t('settings.backupDirDefault')}
+            </span>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={async () => {
+                const dir = await window.sakura.pickBackupDir()
+                if (dir) onChange({ backupDir: dir })
+              }}
+            >
+              {t('settings.pick')}
+            </button>
+            {settings.backupDir && (
+              <button type="button" className="btn ghost" onClick={() => onChange({ backupDir: null })}>
+                {t('settings.resetDefault')}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

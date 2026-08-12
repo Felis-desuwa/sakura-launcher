@@ -154,6 +154,28 @@ export interface Game {
    */
   missing?: boolean
 
+  /**
+   * When this folder entered the library.
+   *
+   * The baseline the save backup dates everything against: a save file older than the
+   * moment the game was added cannot be this user's progress, because they had not
+   * started yet — it came inside the download. Only ever stamped on a genuinely new
+   * entry; an entry that predates this field keeps `undefined`, and the absence is
+   * reported rather than filled in, since a made-up baseline would declare every real
+   * save to be somebody else's.
+   */
+  addedAt?: number
+  /**
+   * Save locations the user named by hand.
+   *
+   * Kept because detection cannot be complete: a game that writes to a folder named
+   * after its brand, or to the root of C:, is not reachable by any rule that starts
+   * from the game folder. Absolute paths, and they survive every rescan.
+   */
+  saveDirs?: string[]
+  /** When the saves were last copied out. Absent means never. */
+  savesBackedUpAt?: number
+
   /** Archive entries only: every volume that makes up the archive. */
   archiveVolumes?: string[]
 }
@@ -684,6 +706,14 @@ export interface Settings {
    */
   onlineCovers: boolean
 
+  /**
+   * Where copied-out saves land. `null` means the folder under Documents we suggest.
+   *
+   * Deliberately outside the library: a backup written inside the game folder is not a
+   * backup, it is a second copy that gets deleted with the first.
+   */
+  backupDir: string | null
+
   /** Where downloads land. `null` means "follow the first scan root". */
   downloadDir: string | null
   downloader: DownloaderKey
@@ -713,6 +743,7 @@ export const DEFAULT_SETTINGS: Settings = {
   spoilerTags: false,
   adultTags: false,
   onlineCovers: true,
+  backupDir: null,
   downloadDir: null,
   downloader: 'idm',
   downloaderPath: null,
@@ -888,6 +919,115 @@ export interface ShareResult {
   skipped?: boolean
 }
 
+/* ---------- copying the saves out ---------- */
+
+/**
+ * A place Windows lets a game keep its saves.
+ *
+ * Named rather than spelled out because the actual path is a per-machine question —
+ * Documents can be redirected onto another drive, and `%APPDATA%` is not `%LOCALAPPDATA%`
+ * even though half the engines act as if it were. `saves.ts` resolves these through
+ * Electron; `save-rules.ts` only ever reasons about the names, which is what keeps it
+ * testable without a machine to test on.
+ */
+export type SaveRoot =
+  | 'game'
+  | 'appdata'
+  | 'localappdata'
+  | 'locallow'
+  | 'documents'
+  | 'savedgames'
+  | 'systemdrive'
+
+export const SAVE_ROOTS: SaveRoot[] = [
+  'game',
+  'appdata',
+  'localappdata',
+  'locallow',
+  'documents',
+  'savedgames',
+  'systemdrive'
+]
+
+/**
+ * How sure we are that something is this game's save data.
+ *
+ * `strong` is a save folder inside the game, or a folder named after the game sitting
+ * exactly where this engine is known to put its saves. `weak` is everything else that
+ * still looked worth showing — a name match somewhere the engine has no business writing
+ * to, or a folder called `Save` at the root of C: that could belong to anything. Only
+ * `strong` starts ticked; `weak` is offered, explained, and left to the user.
+ */
+export type SaveConfidence = 'strong' | 'weak'
+
+/** One place this game's saves might be. */
+export interface SaveCandidate {
+  /** Absolute path to the file or folder that would be copied. */
+  path: string
+  /** What the user reads: relative to the game folder, or the absolute path. */
+  label: string
+  isDir: boolean
+  sizeBytes: number
+  fileCount: number
+  /** The newest mtime anywhere inside, in epoch ms. Zero when nothing could be read. */
+  newestMs: number
+  root: SaveRoot
+  confidence: SaveConfidence
+  /** Why it is being proposed, in the user's words. Same contract as `ShareCandidate`. */
+  reason: string
+  /** Whether it starts ticked. */
+  checked: boolean
+  /**
+   * Nothing in here has been written since before the game entered the library, so it
+   * cannot be this user's progress — it arrived with the download. Shown anyway, and
+   * unticked: backing up somebody else's completed save is merely useless, but hiding it
+   * would be lying about what is on disk.
+   */
+  prepacked?: boolean
+  /** Large enough relative to the game that the rule has probably caught game data. */
+  oversized?: boolean
+  /** The user named this one themselves. */
+  byHand?: boolean
+}
+
+/** What would be copied for one game. */
+export interface SavePlan {
+  gameId: string
+  gameName: string
+  dir: string
+  engine: EngineId | null
+  candidates: SaveCandidate[]
+  /**
+   * The moment the game entered the library. `null` for entries added before the
+   * baseline existed, which is reported rather than guessed at — without it there is
+   * no way to tell a bundled save from a played one.
+   */
+  baselineMs: number | null
+  /** Set when this entry cannot be backed up at all, with the reason. */
+  blocked?: string
+}
+
+/** What the user settled on for one game. */
+export interface SaveBackupJob {
+  gameId: string
+  /** Absolute paths to copy. */
+  include: string[]
+}
+
+export interface SaveBackupResult {
+  gameId: string
+  ok: boolean
+  /** The folder that was written. */
+  dest?: string
+  files?: number
+  bytes?: number
+  /** Files that could not be read, which is not a reason to fail the whole job. */
+  unreadable?: number
+  error?: string
+  /** The user stopped the queue before this one ran. */
+  skipped?: boolean
+}
+
 /**
  * Everything on a game that came from the user rather than from disk.
  * Used to carry a record across a remove-and-re-add without dragging along stale
@@ -914,6 +1054,12 @@ export function userFieldsOf(game: Game): Partial<Game> {
     // that one of them is wrong cannot, so that is the half worth carrying.
     hiddenTags: game.hiddenTags,
     work: game.work,
+    // The baseline is the one field here that is *about* the folder yet cannot be
+    // re-derived from it: re-stamping it on a re-add would silently move it forward and
+    // reclassify every save the user has written since as having come with the download.
+    addedAt: game.addedAt,
+    saveDirs: game.saveDirs,
+    savesBackedUpAt: game.savesBackedUpAt,
     lastLaunchedAt: game.lastLaunchedAt,
     launchCount: game.launchCount,
     playtimeMs: game.playtimeMs,

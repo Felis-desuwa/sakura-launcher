@@ -53,6 +53,8 @@ interface Props {
   onExtract: (game: Game) => void
   /** Pack these up to send to someone. Never writes to the game folders. */
   onShare: (games: Game[]) => void
+  /** Copy these games' saves out. Also read-only as far as the game folders go. */
+  onBackupSaves: (games: Game[]) => void
   onGroupsChange: (groups: Group[]) => void
   onReorder: (ids: string[]) => void
   onAddGame: () => void
@@ -421,11 +423,19 @@ export default function DesktopPage(props: Props): React.JSX.Element {
 
     // Archives are already a file you can send; a missing folder has nothing to pack.
     if (game.kind !== 'archive') {
-      items.push({
-        label: t('menu.share'),
-        disabled: game.missing,
-        onClick: () => props.onShare([game])
-      })
+      items.push(
+        {
+          label: t('menu.share'),
+          disabled: game.missing,
+          onClick: () => props.onShare([game])
+        },
+        // An archive has never been played, so it has no saves to copy anywhere.
+        {
+          label: t('menu.backupSaves'),
+          disabled: game.missing,
+          onClick: () => props.onBackupSaves([game])
+        }
+      )
     }
 
     if (useGroups) {
@@ -503,6 +513,10 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     if (shareable.length > 0) {
       items.push(
         { label: t('menu.shareN', { n: shareable.length }), onClick: () => props.onShare(shareable) },
+        {
+          label: t('menu.backupSavesN', { n: shareable.length }),
+          onClick: () => props.onBackupSaves(shareable)
+        },
         { type: 'separator' }
       )
     }

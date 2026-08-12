@@ -10,6 +10,7 @@ import type {
   PendingDownload,
   PendingMatch,
   Settings,
+  SavePlan,
   SharePlan,
   SortKey,
   TabKey,
@@ -25,6 +26,7 @@ import DiagnoseDialog from './components/DiagnoseDialog'
 import ExeChooserDialog from './components/ExeChooserDialog'
 import ImportDialog from './components/ImportDialog'
 import PromptDialog from './components/PromptDialog'
+import SaveBackupDialog from './components/SaveBackupDialog'
 import ShareDialog from './components/ShareDialog'
 import PetalCanvas from './components/PetalCanvas'
 import DownloadDialog from './components/DownloadDialog'
@@ -107,6 +109,8 @@ export default function App(): React.JSX.Element {
   const [trouble, setTrouble] = useState<LaunchTroubleEvent | null>(null)
   /** Games being packed up to send, with what the scan proposes leaving out. */
   const [sharing, setSharing] = useState<SharePlan[] | null>(null)
+  /** Games whose saves are being copied out, with where each one's saves appear to be. */
+  const [backingUp, setBackingUp] = useState<SavePlan[] | null>(null)
   const [importing, setImporting] = useState<ImportPreview | null>(null)
   const [leftover, setLeftover] = useState<{ game: Game; bytes: number } | null>(null)
   const [extractProgress, setExtractProgress] = useState<Record<string, number>>({})
@@ -484,6 +488,19 @@ export default function App(): React.JSX.Element {
     [toast]
   )
 
+  /**
+   * Open the save backup dialog for a selection.
+   *
+   * Fetched before the dialog opens, like the share plan, and for a stronger reason: this
+   * one walks AppData as well as the game folders, so a dialog that painted first would
+   * sit visibly empty while the search ran.
+   */
+  const backupSaves = useCallback(async (list: Game[]): Promise<void> => {
+    const plans = await window.sakura.savePlan(list.map((g) => g.id))
+    if (plans.length === 0) return
+    setBackingUp(plans)
+  }, [])
+
   const addGame = useCallback(async (): Promise<void> => {
     const game = await window.sakura.pickExe()
     if (!game) return
@@ -686,6 +703,7 @@ export default function App(): React.JSX.Element {
             onBrowse={(game) => void window.sakura.reveal(game.id)}
             onExtract={(game) => void window.sakura.extract(game.id)}
             onShare={(list) => void share(list)}
+            onBackupSaves={(list) => void backupSaves(list)}
             onGroupsChange={(next) => {
               setGroups(next)
               void window.sakura.setGroups(next)
@@ -1007,6 +1025,14 @@ export default function App(): React.JSX.Element {
 
       {sharing && (
         <ShareDialog plans={sharing} onClose={() => setSharing(null)} onToast={toast} />
+      )}
+
+      {backingUp && (
+        <SaveBackupDialog
+          plans={backingUp}
+          onClose={() => setBackingUp(null)}
+          onToast={toast}
+        />
       )}
 
       {clearingIgnored && (

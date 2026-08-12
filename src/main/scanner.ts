@@ -176,6 +176,14 @@ export function rescan(options: RescanOptions = {}): ScanOutcome {
         hiddenTags: prev?.hiddenTags ?? [],
         taggedAt: prev?.taggedAt,
         work: prev?.work,
+        // Stamped only on an entry that did not exist before. `prev?.addedAt ?? now`
+        // would look equivalent and would be a bug: an entry that predates this field
+        // would get today's date, and every save the user has ever written would then
+        // date from before it and be declared somebody else's. An entry with no baseline
+        // keeps none, and the backup says so out loud instead.
+        addedAt: prev ? prev.addedAt : Date.now(),
+        saveDirs: prev?.saveDirs,
+        savesBackedUpAt: prev?.savesBackedUpAt,
         lastLaunchedAt: prev?.lastLaunchedAt ?? null,
         launchCount: prev?.launchCount ?? 0,
         playtimeMs: prev?.playtimeMs ?? 0,
@@ -458,6 +466,10 @@ export function addGameByExe(exePath: string, extras: AddGameExtras = {}): Game 
     tierOrder: 0,
     rating: null,
     tags: [],
+    // The baseline the save backup dates everything against. A folder that was removed
+    // and added back carries its original stamp forward through `userFieldsOf` below —
+    // including the case where it never had one, which stays absent on purpose.
+    addedAt: Date.now(),
     lastLaunchedAt: null,
     launchCount: 0,
     playtimeMs: 0,
