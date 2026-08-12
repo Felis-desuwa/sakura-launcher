@@ -62,6 +62,21 @@
      restate it. `--danger-ink` belongs to the red, not to the surface underneath. */
   --danger: #c62828;
   --danger-ink: #ffffff;
+
+  /*
+   * The same three meanings, as *text* rather than as a fill — a different problem.
+   *
+   * A filled danger button is legible in every theme because `--danger-ink` travels with
+   * the red. A colour set on text has to survive whatever surface it lands on, and these
+   * three land on `--panel`: on 夜樱's #3c2d43, #c62828 comes out at 2.4:1 and the orange
+   * at 2.3:1, which is the weakest text on the screen and is being used for warnings.
+   *
+   * So they are separate slots from `--danger`, and unlike it these *are* meant to be
+   * restated per theme. Only the dark one has to: every other theme paints on white.
+   */
+  --danger-text: #c62828;
+  --warn: #c05621;
+  --ok: #1b7a3d;
 }
 
 /* 夜樱 — the same blossom after dark */
@@ -97,6 +112,11 @@
   --placeholder-s: 38%;
   --placeholder-l1: 46%;
   --placeholder-l2: 33%;
+  /* Lifted off the dark panel: the light-theme values sit at barely 2:1 here. The fills
+     (`--danger`) are deliberately not restated — white on that red works everywhere. */
+  --danger-text: #ff9a9a;
+  --warn: #ffab63;
+  --ok: #79d59b;
 }
 
 /* 抹茶 */
@@ -770,10 +790,17 @@ body.tiles-dragging .tile.drop-target:hover {
 
 /* Top right, not bottom right: the label is drawn over the foot of the artwork, and a
    badge down there is a badge behind the game's own name. */
+/*
+ * The badge sits *below* the status flags, not beside them.
+ *
+ * `.tile-flags` starts at top 8px and is a single 18px row however many of 想玩 / 在玩 /
+ * 玩过 a game carries, so 30px clears it at every count — including none, where the badge
+ * simply keeps the same place rather than jumping up to fill the gap.
+ */
 .art-badge {
   position: absolute;
   right: 6px;
-  top: 6px;
+  top: 30px;
   padding: 1px 6px;
   border-radius: 7px;
   font-size: 10.5px;
@@ -782,6 +809,20 @@ body.tiles-dragging .tile.drop-target:hover {
   color: var(--danger-ink);
   background: color-mix(in srgb, var(--danger) 82%, transparent);
   pointer-events: none;
+}
+
+/*
+ * Artwork too small to carry a caption gets the blur without the badge.
+ *
+ * The blur is the protection and works at any size; the badge only explains it, and at
+ * 56px (想玩 list) or a quarter of a folder tile it is a third of the picture wide, which
+ * reads as damage rather than as a label. The full tile and the detail drawer still carry
+ * it, which is where someone is actually looking at the cover.
+ */
+.wish-icon .art-badge,
+.tier-icon .art-badge,
+.folder-items .art-badge {
+  display: none;
 }
 
 .tile-placeholder {
@@ -886,7 +927,7 @@ body.tiles-dragging .tile.drop-target:hover {
 }
 
 .tile.missing .tile-size {
-  color: var(--danger);
+  color: var(--danger-text);
   font-weight: 600;
 }
 
@@ -1196,7 +1237,7 @@ body.tiles-dragging .tile.drop-target:hover {
 }
 
 .menu-item.danger {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .menu-item.danger:hover {
@@ -1981,11 +2022,11 @@ input[type='range'] {
 }
 
 .share-why.error {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .share-warn {
-  color: #c05621;
+  color: var(--warn);
 }
 
 .share-size {
@@ -2048,7 +2089,7 @@ input[type='range'] {
   padding: 9px 12px;
   border-radius: 10px;
   background: color-mix(in srgb, var(--danger) 12%, transparent);
-  color: #a01c1c;
+  color: var(--danger-text);
   font-size: 12.5px;
   line-height: 1.6;
 }
@@ -2648,12 +2689,12 @@ select.field {
 }
 
 .exe-trial.alive {
-  color: #1b7a3d;
+  color: var(--ok);
 }
 
 .exe-trial.dead,
 .exe-trial.failed {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .exe-actions {
@@ -2776,7 +2817,7 @@ select.field {
 
 .bulk-confirm input.wrong {
   border-color: var(--danger);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .bulk-progress-label {
