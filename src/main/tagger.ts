@@ -1,0 +1,319 @@
+import path from 'node:path'
+import type { Game, PendingMatch, WorkMatch } from '../shared/types'
+import * as db from './db'
+import { queryLadder, searchableTitle, STRONG_MATCH, workNoIn } from './tag-rules.ts'
+import type { BangumiWork } from './tag-bangumi.ts'
+import { bangumiSearch, lookupDlsite, searchVndb, vndbById } from './tag-online'
+
+/**
+ * Working out what a game is about.
+ *
+ * Only ever by asking a catalogue, and only when the user has switched that on. Genres —
+ * 校园, NTR, 催泪 — are judgements about a story. They are not in the files, and no
+ * amount of reading a directory produces them.
+ *
+ * An earlier version also derived tags from the folder itself. Removing that fixed more
+ * than it cost: it walked every game directory hunting for save files, synchronously, on
+ * the main process — on a library of multi-gigabyte folders that blocked every IPC call
+ * for long enough that the application looked hung. Nothing here touches the disk now
+ * beyond reading a folder's *name*.
+ */
+
+export interface TagProgress {
+  done: number
+  total: number
+  /** The game being worked on, so the user can see it is not stuck. */
+  name: string
+}
+
+export interface TagRun {
+  /** How many games were looked up. */
+  looked: number
+  /** How many came back with a confident answer. */
+  matched: number
+  /** Title searches too uncertain to adopt, for the user to settle. */
+  pending: PendingMatch[]
+  /** Every lookup failed, so the UI can say "no network" once instead of per game. */
+  offline: boolean
+  /** The user stopped it part way. */
+  cancelled: boolean
+}
+
+/**
+ * Set while a pass is running, so it can be stopped.
+ *
+ * A pass over two hundred games paced for a free catalogue takes minutes, and a user who
+ * started it by accident — or who realises the catalogue is not answering — needs a way
+ * out that is not killing the program.
+ */
+let cancelled = false
+let running = false
+
+export function cancelTagRun(): void {
+  if (running) cancelled = true
+}
+
+export function tagRunActive(): boolean {
+  return running
+}
+
+export interface LookupResult {
+  match?: WorkMatch
+  candidates?: WorkMatch[]
+  /** A Japanese name Bangumi resolved, to seed the manual box when nothing else worked. */
+  suggestion?: string
+  reached: boolean
+}
+
+/**
+ * Walk the query ladder until a catalogue answers.
+ *
+ * VNDB's search is a substring match, so one stray word in the query returns nothing at
+ * all while a *shorter* query returns the right game. Trying the cleaned name, then its
+ * head, then its leading run is what turns `某某游戏的日常+ ～完美版 ～ 官方中文版 V1.5`
+ * into a hit. Stops at the first rung that answers, so a tidy name costs one request.
+ */
+async function searchLadder(name: string): Promise<{ hits: WorkMatch[]; reached: boolean }> {
+  let reached = false
+  for (const query of queryLadder(name)) {
+    const hits = await searchVndb(query)
+    if (hits.length > 0) return { hits, reached: true }
+    reached = true
+  }
+  return { hits: [], reached }
+}
+
+/**
+ * Ask Bangumi what the game is called in Japanese, down the same ladder.
+ *
+ * Stops at the first rung that answers. The name that comes back is one somebody entered
+ * into a catalogue against this exact work — it is looked up, never derived from the
+ * Chinese and never machine translated.
+ */
+async function resolveJapaneseName(name: string): Promise<BangumiWork[]> {
+  for (const query of queryLadder(name)) {
+    const hits = await bangumiSearch(query, 3)
+    if (hits.length > 0) return hits
+  }
+  return []
+}
+
+/**
+ * Ask the catalogues what this game is.
+ *
+ * Three sources, each doing the one thing it is good at. A work number goes to DLsite and
+ * is taken as given. A title goes to VNDB. A title VNDB has never heard of goes to
+ * Bangumi — not for tags, which are behind a login there, but for the *name*: it is a
+ * Chinese-language database and knows `另一个游戏` is `ある少女の生活`, which VNDB then
+ * recognises at once. The Japanese name is read out of a catalogue record, never derived
+ * from the Chinese one.
+ */
+export async function lookupGame(game: Game): Promise<LookupResult> {
+  const folderName = path.basename(game.dir)
+  const workNo = workNoIn(folderName)
+
+  if (workNo) {
+    const match = await lookupDlsite(workNo)
+    // A work number the catalogue does not know is a dead end, not a reason to go
+    // guessing at titles — the number was the more specific claim and it failed.
+    return match ? { match, reached: true } : { reached: false }
+  }
+
+  // Search on the name the user sees. A renamed tile is the user telling us what this
+  // game is called, which is better information than the folder name they renamed it
+  // away from.
+  const name = game.renamed ? game.name : folderName
+  const direct = await searchLadder(name)
+  if (direct.hits.length > 0) return settle(direct.hits, direct.reached)
+
+  // Nothing under that name. If it is a Chinese title, the name VNDB indexes it under is
+  // a different string entirely, and Bangumi is where the two are written down together.
+  //
+  // Asked down the same ladder, for the same reason VNDB is: a folder that reads
+  // `某某游戏AI-Extra-Pack对外整合` has the title glued to somebody's note, and
+  // only the shortened rung — `某某游戏` — finds anything.
+  const resolved = await resolveJapaneseName(name)
+  for (const work of resolved) {
+    const viaJapanese = await searchVndb(work.name)
+    if (viaJapanese.length > 0) return settle(viaJapanese, true)
+  }
+
+  // Bangumi knew the game and VNDB does not have it — common for doujin work that is not
+  // a visual novel. No tags to be had, but the real Japanese name is worth handing over
+  // so the manual box starts from something true rather than from a folder name.
+  return { suggestion: resolved[0]?.name, reached: true }
+}
+
+/**
+ * Adopt or ask.
+ *
+ * Silently only when one entry is an effectively exact match *and* nothing else comes
+ * close. Two near-identical scores is precisely the fan-disc case, and guessing between
+ * them is how a library ends up quietly mistagged.
+ */
+function settle(hits: WorkMatch[], reached: boolean): LookupResult {
+  const [best, runnerUp] = hits
+  if (best.score >= STRONG_MATCH && (!runnerUp || runnerUp.score < STRONG_MATCH)) {
+    return { match: best, reached }
+  }
+  return { candidates: hits, reached }
+}
+
+/**
+ * What the manual box runs.
+ *
+ * An id is not a guess, so `v1234` / `RJ01234567` / a link to either goes straight to the
+ * work. Anything else is a title and takes the same route an automatic lookup does,
+ * Bangumi resolution included — the user typing a Chinese name deserves the same help the
+ * folder name got.
+ */
+export async function searchWorks(query: string): Promise<WorkMatch[]> {
+  const text = query.trim()
+  if (!text) return []
+
+  const workNo = workNoIn(text)
+  if (workNo) {
+    const match = await lookupDlsite(workNo)
+    if (match) return [match]
+  }
+
+  const vndbId = /(?:^|\/)(v\d+)\b/i.exec(text)
+  if (vndbId) {
+    const match = await vndbById(vndbId[1].toLowerCase())
+    if (match) return [match]
+  }
+
+  const bangumiId = /bgm\.tv\/subject\/(\d+)|bangumi\.tv\/subject\/(\d+)/i.exec(text)
+  if (bangumiId) {
+    // Bangumi cannot give tags, so an id there is resolved to a name and handed to VNDB.
+    const id = bangumiId[1] ?? bangumiId[2]
+    const resolved = await bangumiSearch(id, 1)
+    if (resolved[0]) {
+      const hits = await searchVndb(resolved[0].name)
+      if (hits.length > 0) return hits
+    }
+  }
+
+  const direct = await searchLadder(text)
+  if (direct.hits.length > 0) return direct.hits
+
+  for (const work of await resolveJapaneseName(text)) {
+    const hits = await searchVndb(work.name)
+    if (hits.length > 0) return hits
+  }
+  return []
+}
+
+/**
+ * Which games a pass should actually look up.
+ *
+ * The ones never asked about — not the ones without an answer. A game the catalogue
+ * simply does not have would otherwise sit in this list forever, being re-queried on
+ * every run to be told the same thing, which is both a wait for the user and an
+ * imposition on a free service.
+ *
+ * Getting back to those is still possible and still cheap: "look everything up again"
+ * covers the library, and the tile's own menu covers one game — which is the case that
+ * matters, since the usual reason a game was not found is a folder name nothing could
+ * match, and the fix for that is renaming the tile and asking again.
+ */
+export function pendingTargets(games: Game[]): Game[] {
+  // Archive entries are included: an uninstalled game is still a game, and the volume it
+  // sits in is named after it just as well as an extracted folder would be.
+  return games.filter((g) => !g.taggedAt)
+}
+
+export async function computeTags(
+  ids: string[] | null,
+  onProgress: (progress: TagProgress) => void
+): Promise<TagRun> {
+  const settings = db.getSettings()
+  const games = db.getGames()
+  const targets = ids ? games.filter((g) => ids.includes(g.id)) : pendingTargets(games)
+
+  const empty: TagRun = { looked: 0, matched: 0, pending: [], offline: false, cancelled: false }
+  if (!settings.onlineTags || targets.length === 0) return empty
+
+  running = true
+  cancelled = false
+  const pending: PendingMatch[] = []
+  let matched = 0
+  let looked = 0
+  let reachedAny = false
+
+  try {
+    for (const [index, game] of targets.entries()) {
+      if (cancelled) break
+      onProgress({ done: index, total: targets.length, name: game.name })
+
+      const result = await lookupGame(game)
+      looked++
+      reachedAny ||= result.reached
+
+      if (result.match) {
+        matched++
+        db.updateGame(game.id, {
+          autoTags: result.match.tags,
+          work: {
+            source: result.match.source,
+            workId: result.match.workId,
+            title: result.match.title
+          },
+          taggedAt: Date.now()
+        })
+      } else {
+        // Records that it was asked, so a second pass does not ask again about a game the
+        // catalogue simply does not have.
+        db.updateGame(game.id, { taggedAt: Date.now() })
+        // Everything unresolved goes to the user, candidates or not. A game nothing
+        // matched is precisely the one that needs the manual box, and leaving it out of
+        // the dialog was leaving it with no way in at all.
+        pending.push({
+          gameId: game.id,
+          gameName: game.name,
+          candidates: result.candidates ?? [],
+          suggestion: result.suggestion ?? searchableTitle(path.basename(game.dir))
+        })
+      }
+    }
+
+    onProgress({ done: targets.length, total: targets.length, name: '' })
+    db.flush()
+    return { looked, matched, pending, offline: looked > 0 && !reachedAny, cancelled }
+  } finally {
+    running = false
+    cancelled = false
+  }
+}
+
+/**
+ * Adopt the catalogue entry the user picked.
+ *
+ * Replaces wholesale rather than merging: the user has just said this game is a different
+ * work than we thought, and tags from the work it is not have no claim to stay.
+ */
+export function applyMatch(gameId: string, match: WorkMatch): Game | undefined {
+  if (!db.findGame(gameId)) return undefined
+  return db.updateGame(gameId, {
+    autoTags: match.tags,
+    work: { source: match.source, workId: match.workId, title: match.title },
+    taggedAt: Date.now()
+  })
+}
+
+/**
+ * Strike a tag out, or put it back.
+ *
+ * Recorded per game rather than as a library-wide rule. The user is saying "not this
+ * game", and turning one wrong tag into a global ban would be a much larger claim than
+ * the one they made. The tag stays in the record and is filtered when read, so this
+ * stays reversible without asking the catalogue all over again.
+ */
+export function setTagHidden(gameId: string, tagId: string, hidden: boolean): Game | undefined {
+  const game = db.findGame(gameId)
+  if (!game) return undefined
+  const current = new Set(game.hiddenTags ?? [])
+  if (hidden) current.add(tagId)
+  else current.delete(tagId)
+  return db.updateGame(gameId, { hiddenTags: [...current] })
+}

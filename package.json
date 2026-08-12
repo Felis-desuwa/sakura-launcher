@@ -1,0 +1,44 @@
+{
+  "name": "sakura-launcher",
+  "version": "0.6.0",
+  "description": "A local game library manager for offline single-player games",
+  "main": "./out/main/index.js",
+  "author": "",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "dist": "electron-vite build && electron-builder --win --dir",
+    "dist:portable": "electron-vite build && electron-builder --win portable",
+    "dist:setup": "electron-vite build && electron-builder --win nsis",
+    "dist:all": "electron-vite build && electron-builder --win",
+    "scan-test": "node scripts/scan-test.mts",
+    "sidecar-test": "node scripts/sidecar-test.mts",
+    "downloader-test": "node scripts/downloader-test.mts",
+    "exe-pick-test": "node scripts/exe-pick-test.mts",
+    "diagnose-test": "node scripts/diagnose-test.mts",
+    "diagnose-probe": "node scripts/diagnose-probe.mts",
+    "tag-test": "node scripts/tag-test.mts",
+    "share-test": "node scripts/share-test.mts",
+    "share-e2e": "node scripts/share-e2e.mts"
+  },
+  "dependencies": {
+    "resedit": "^3.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^5.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^7.0.0"
+  }
+}
