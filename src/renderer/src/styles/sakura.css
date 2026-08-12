@@ -55,6 +55,13 @@
   --merge-plate: color-mix(in srgb, var(--brand) 55%, transparent);
   --radius: 16px;
   --topbar-h: 60px;
+
+  /* The one colour that is deliberately not a theme hue: destructive means the same red
+     in every theme, and a matcha-green delete button would be a joke at the user's
+     expense. Declared here rather than in each theme block precisely so no theme can
+     restate it. `--danger-ink` belongs to the red, not to the surface underneath. */
+  --danger: #c62828;
+  --danger-ink: #ffffff;
 }
 
 /* 夜樱 — the same blossom after dark */
@@ -501,17 +508,39 @@ button {
   transition: background 0.16s, transform 0.16s;
 }
 
-.wctl-btn:hover::before {
+/* Grows to very nearly the button's own 30px, so the dot the pointer is over is
+   unmistakably the one that will be pressed. */
+.wctl-btn:hover::before,
+.wctl-btn:focus-visible::before {
   background: var(--brand);
-  transform: scale(1.62);
-}
-
-.wctl-btn.close:hover::before {
-  background: var(--accent);
+  transform: scale(2.15);
 }
 
 .wctl-btn:active::before {
-  transform: scale(1.45);
+  transform: scale(1.9);
+}
+
+/*
+ * Close fills its whole button with the destructive red — the same red as every other
+ * irreversible control in the app, and the same convention Windows' own caption bar uses.
+ * A close button that looks like the other two until you read its glyph is a button people
+ * press by accident.
+ */
+.wctl-btn.close:hover::before,
+.wctl-btn.close:focus-visible::before {
+  background: var(--danger);
+  transform: scale(2.31);
+}
+
+.wctl-btn.close:hover,
+.wctl-btn.close:focus-visible {
+  /* The glyph belongs to the red, not to the theme — `--panel` is a dark plum under 夜樱
+     and would all but vanish on it. */
+  color: var(--danger-ink);
+}
+
+.wctl-btn.close:active::before {
+  transform: scale(2.05);
 }
 
 .wctl-btn svg {
@@ -828,7 +857,7 @@ body.tiles-dragging .tile.drop-target:hover {
 }
 
 .tile.missing .tile-size {
-  color: #c62828;
+  color: var(--danger);
   font-weight: 600;
 }
 
@@ -1138,11 +1167,11 @@ body.tiles-dragging .tile.drop-target:hover {
 }
 
 .menu-item.danger {
-  color: #c62828;
+  color: var(--danger);
 }
 
 .menu-item.danger:hover {
-  background: rgba(198, 40, 40, 0.12);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
 .menu-item .check {
@@ -1627,8 +1656,8 @@ input[type='range'] {
 }
 
 .btn.danger {
-  background: #c62828;
-  color: var(--panel);
+  background: var(--danger);
+  color: var(--danger-ink);
 }
 
 .modal-backdrop {
@@ -1720,7 +1749,7 @@ input[type='range'] {
 }
 
 .field.shake {
-  border-color: #c62828;
+  border-color: var(--danger);
   animation: shake 0.35s;
 }
 
@@ -1923,7 +1952,7 @@ input[type='range'] {
 }
 
 .share-why.error {
-  color: #c62828;
+  color: var(--danger);
 }
 
 .share-warn {
@@ -1989,7 +2018,7 @@ input[type='range'] {
 .share-blocked {
   padding: 9px 12px;
   border-radius: 10px;
-  background: color-mix(in srgb, #c62828 12%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
   color: #a01c1c;
   font-size: 12.5px;
   line-height: 1.6;
@@ -2572,7 +2601,7 @@ select.field {
 
 .exe-trial.dead,
 .exe-trial.failed {
-  color: #c62828;
+  color: var(--danger);
 }
 
 .exe-actions {
@@ -2694,8 +2723,8 @@ select.field {
 }
 
 .bulk-confirm input.wrong {
-  border-color: #c62828;
-  color: #c62828;
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .bulk-progress-label {
@@ -3167,7 +3196,7 @@ select.field {
   padding: 12px 14px;
   border-radius: 14px;
   background: var(--panel);
-  border: 1px solid color-mix(in srgb, #c62828 35%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
   box-shadow: var(--shadow-lg);
   animation: toast-in 0.2s ease;
 }
@@ -3204,7 +3233,7 @@ select.field {
 }
 
 .diag-row.blocker {
-  border-left-color: #c62828;
+  border-left-color: var(--danger);
 }
 .diag-row.likely {
   border-left-color: #d98324;
@@ -3234,7 +3263,7 @@ select.field {
 }
 
 .diag-chip.blocker {
-  background: #c62828;
+  background: var(--danger);
 }
 .diag-chip.likely {
   background: #d98324;
