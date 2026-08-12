@@ -29,6 +29,16 @@ export interface BangumiWork {
   nameCn?: string
   /** `YYYY-MM-DD`, when recorded. */
   date?: string
+  /**
+   * The entry's own blurb, as somebody wrote it into the catalogue.
+   *
+   * The reason this module now asks for more than names: it is the only Chinese
+   * description of a game reachable without a login, which is what makes a summary
+   * possible at all here. Not always Chinese even so — a doujin entry often carries the
+   * Japanese store copy verbatim — so what comes back is a candidate, and the judging
+   * happens in `tag-rules.ts`.
+   */
+  summary?: string
 }
 
 interface RawRow {
@@ -36,6 +46,7 @@ interface RawRow {
   name?: string
   name_cn?: string
   air_date?: string
+  summary?: string
 }
 
 /** `type=4` is Bangumi's category for games. Anything else here would be an anime or a book. */
@@ -53,9 +64,13 @@ export async function searchBangumi(
   fetchJson: (url: string) => Promise<unknown>,
   limit = 3
 ): Promise<BangumiWork[]> {
+  // `responseGroup=medium` rather than `small`: the small group answers with names and
+  // nothing else, and the summary is the field this whole request exists to carry when a
+  // description has been asked for. It costs one response group, not one more request —
+  // the same row either way — so name resolution keeps working exactly as it did.
   const url =
     `https://api.bgm.tv/search/subject/${encodeURIComponent(query)}` +
-    `?type=${GAME_TYPE}&responseGroup=small&max_results=${limit}`
+    `?type=${GAME_TYPE}&responseGroup=medium&max_results=${limit}`
 
   const body = (await fetchJson(url)) as { list?: RawRow[] } | null
   return parseBangumi(body)
@@ -79,7 +94,8 @@ export function parseBangumi(body: unknown): BangumiWork[] {
       id: row.id,
       name,
       nameCn: (row.name_cn ?? '').trim() || undefined,
-      date: (row.air_date ?? '').trim() || undefined
+      date: (row.air_date ?? '').trim() || undefined,
+      summary: (row.summary ?? '').trim() || undefined
     })
   }
   return out

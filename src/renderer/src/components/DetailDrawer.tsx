@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Breakdown, DiskInfo, Game } from '../../../shared/types'
 import {
   formatDuration,
+  SUMMARY_SOURCE_LABEL,
   TAG_SOURCE_LABEL,
   tagLabel,
   tagReason,
@@ -402,6 +403,27 @@ export default function DetailDrawer({
                     </div>
                   )}
                 </div>
+              </>
+            )}
+
+            {/* Last, and deliberately so: this is the only thing in the drawer somebody
+                else wrote, and everything above it is a fact about the folder. Not put
+                behind the adult switch the cover is behind — a cover is painted on the
+                shelf where anyone walking past sees it, while this is a paragraph at the
+                bottom of a panel opened for one game on purpose. */}
+            {game.summary && (
+              <>
+                <div className="section-title">{t('drawer.summary')}</div>
+                <div className="drawer-summary">
+                  {game.summary.split(/\n{2,}/).map((para, i) => (
+                    <p key={i}>{para}</p>
+                  ))}
+                </div>
+                <p className="drawer-note dim">
+                  {t('summary.from', {
+                    source: SUMMARY_SOURCE_LABEL[game.summaryFrom ?? 'bangumi']
+                  })}
+                </p>
               </>
             )}
           </>

@@ -2917,6 +2917,34 @@ select.field {
   flex-wrap: wrap;
 }
 
+/**
+ * The catalogue's description.
+ *
+ * `pre-line` because the line breaks are the author's: store copy and Bangumi entries
+ * alike break a blurb by phrase, and reflowing it into a block undoes the only shape the
+ * text has. Blank runs became separate paragraphs before it got here, so this keeps the
+ * single breaks and nothing else.
+ */
+.drawer-summary {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.85;
+  color: var(--ink);
+  white-space: pre-line;
+  /* No scroll box of its own. The drawer already scrolls, and a second bar beside the
+     first is two ways to move one panel; the length is bounded where it should be — the
+     text is cut to `MAX_SUMMARY_CHARS` before it ever gets here. */
+  padding-bottom: 2px;
+}
+
+.drawer-summary p {
+  margin: 0 0 10px;
+}
+
+.drawer-summary p:last-child {
+  margin-bottom: 0;
+}
+
 .linklike {
   border: 0;
   padding: 0;

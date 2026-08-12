@@ -1,14 +1,19 @@
 import {
+  dlsiteIntro,
   dlsiteWork,
+  isChineseText,
+  pickBangumiSummary,
   pickDlsiteGenres,
   pickVndbTags,
   queryLadder,
   searchableTitle,
+  tidySummary,
   titleKey,
   titleScore,
   vndbWorks,
   workNoIn,
   yearTag,
+  MAX_SUMMARY_CHARS,
   VNDB_MIN_RATING,
   type VndbTag
 } from '../src/main/tag-rules.ts'
@@ -470,6 +475,123 @@ check(
 check(
   'a year can still be the first thing picked',
   JSON.stringify(toggleTagFilter([], 'year:2017')) === JSON.stringify(['year:2017'])
+)
+
+console.log('\n== the blurb ==')
+
+/*
+ * A description is the one piece of catalogue text that cannot be half right. A genre
+ * that lands on the wrong game is a word somebody can argue with; a paragraph that lands
+ * on the wrong game is fluent, confident, and reads exactly like the truth. So the tests
+ * here are about refusing: the wrong language, the near-miss title, the fan disc.
+ */
+
+const ZH_BLURB =
+  '这是一部以校园为舞台的恋爱冒险游戏。主角在春天转学到一所海边的高中，' +
+  '遇见了三位性格迥异的少女。随着季节推移，藏在小镇里的往事被一点点揭开。' +
+  '原名为《サンプルゲーム》，由示例社发行。'
+const JA_BLURB =
+  'ある春の日、海辺の高校に転校してきた主人公は、three人の少女と出会う。' +
+  '季節が移ろうにつれて、小さな町に隠されていた出来事が少しずつ明らかになっていく。'
+
+check('a Chinese blurb reads as Chinese', isChineseText(ZH_BLURB))
+check('a Japanese one does not', !isChineseText(JA_BLURB))
+check(
+  'a Chinese blurb quoting a Japanese title is still Chinese',
+  isChineseText('本作原名《サンプルゲーム》，讲的是一个海边小镇的夏天。')
+)
+check('English is not Chinese either', !isChineseText('A love story set in a seaside town.'))
+check('nor is a row of symbols', !isChineseText('★★★ 2016/07/29 ★★★'))
+check('nor is nothing at all', !isChineseText(''))
+check('nor is a Japanese title on its own', !isChineseText('サンプルゲーム'))
+
+eq(
+  'store copy loses its line-ending noise',
+  tidySummary('第一行。\r\n第二行。\r\n\r\n\r\n第三行。'),
+  '第一行。\n第二行。\n\n第三行。'
+)
+eq('and its stray markup', tidySummary('<br>一段介绍。<b>重点</b>'), '一段介绍。 重点')
+eq('and the spacing somebody used for layout', tidySummary('  一段　　介绍。  '), '一段 介绍。')
+
+const LONG = '这是一段很长的介绍。'.repeat(400)
+const capped = tidySummary(LONG)
+check('a store page is cut down to a paragraph', capped.length <= MAX_SUMMARY_CHARS + 1)
+check('and the cut is marked, not silent', capped.endsWith('…'))
+check('a blurb that already fits is untouched', tidySummary(ZH_BLURB) === ZH_BLURB)
+
+/*
+ * DLsite answers in the work's own language whatever locale it was asked in, so most of
+ * these are Japanese and the interesting case is that they are refused rather than shown.
+ */
+eq('a Chinese DLsite blurb is taken', dlsiteIntro({ intro_s: ZH_BLURB }), ZH_BLURB)
+eq('a Japanese one is not', dlsiteIntro({ intro_s: JA_BLURB }), undefined)
+eq('and neither is a missing one', dlsiteIntro({}), undefined)
+eq(
+  'the long store-page intro is never read',
+  dlsiteIntro({ intro_s: '', intro: ZH_BLURB } as Parameters<typeof dlsiteIntro>[0] & {
+    intro: string
+  }),
+  undefined
+)
+
+const withIntro = dlsiteWork({
+  workno: 'RJ01234567',
+  work_name: '示例游戏',
+  regist_date: '2016-07-29',
+  intro_s: ZH_BLURB,
+  genres: [{ name: '校园', name_base: '学園' }]
+})
+eq('a work number carries its own blurb through', withIntro?.summary, ZH_BLURB)
+
+const BGM_ROWS = [
+  { name: 'サンプルゲーム', nameCn: '示例游戏', summary: ZH_BLURB },
+  { name: 'サンプルゲーム ファンディスク', nameCn: '示例游戏 FD', summary: '另一段介绍。' }
+]
+
+eq(
+  'the row that is the work gives up its blurb',
+  pickBangumiSummary(BGM_ROWS, ['サンプルゲーム']),
+  ZH_BLURB
+)
+eq('matching on the Chinese name works too', pickBangumiSummary(BGM_ROWS, ['示例游戏']), ZH_BLURB)
+eq(
+  'a fan disc is not the game',
+  pickBangumiSummary([BGM_ROWS[1]], ['サンプルゲーム']),
+  undefined
+)
+eq(
+  'a Japanese blurb on the right row is no blurb at all',
+  pickBangumiSummary([{ name: 'サンプルゲーム', summary: JA_BLURB }], ['サンプルゲーム']),
+  undefined
+)
+/* The failure this guards against: taking the *next* row's text once the matching row
+   turns out to have nothing usable, which is describing somebody else's game. */
+eq(
+  'and it does not fall through to the row below',
+  pickBangumiSummary(
+    [
+      { name: 'サンプルゲーム', summary: JA_BLURB },
+      { name: '别的游戏', summary: '另一段介绍。' }
+    ],
+    ['サンプルゲーム']
+  ),
+  undefined
+)
+eq('nothing to match against, nothing taken', pickBangumiSummary(BGM_ROWS, [undefined, '']), undefined)
+eq('nothing came back, nothing taken', pickBangumiSummary([], ['サンプルゲーム']), undefined)
+
+/*
+ * Bangumi's search rows are where the Chinese text comes from — the summary is the field
+ * `responseGroup=medium` exists for, and the reason this request asks for more than names.
+ */
+const bgmParsed = parseBangumi({
+  list: [{ id: 12345, name: 'サンプルゲーム', name_cn: '示例游戏', summary: ZH_BLURB }]
+})
+eq('a search row carries its summary', bgmParsed[0]?.summary, ZH_BLURB)
+eq(
+  'a row without one says so rather than carrying an empty string',
+  parseBangumi({ list: [{ id: 12345, name: 'サンプルゲーム', summary: '   ' }] })[0]?.summary,
+  undefined
 )
 
 /* -------------------------------------------------------------------------- */

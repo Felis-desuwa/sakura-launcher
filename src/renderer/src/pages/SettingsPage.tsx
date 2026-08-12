@@ -350,6 +350,23 @@ export default function SettingsPage({
           </div>
         )}
 
+        {/* Under covers rather than beside them: the description arrives on the same
+            request, so with covers off there is nothing for this to ride along with. */}
+        {settings.onlineTags && settings.onlineCovers && (
+          <div className="settings-row">
+            <label htmlFor="onlineSummary">
+              {t('settings.onlineSummary')}
+              <span className="settings-hint">{t('settings.onlineSummaryNote')}</span>
+            </label>
+            <button
+              id="onlineSummary"
+              type="button"
+              className={`switch${settings.onlineSummary ? ' on' : ''}`}
+              onClick={() => onChange({ onlineSummary: !settings.onlineSummary })}
+            />
+          </div>
+        )}
+
         {/* Only worth asking about once there is something they could reveal. */}
         {settings.onlineTags && (
           <div className="settings-row">

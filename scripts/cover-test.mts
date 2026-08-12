@@ -3,7 +3,9 @@ import {
   acceptCover,
   coverFromDlsite,
   coverFromVndb,
+  coverSourceOf,
   mayReplaceCover,
+  mayReplaceSummary,
   sniffImage,
   MAX_COVER_BYTES
 } from '../src/main/cover-rules.ts'
@@ -170,7 +172,41 @@ console.log("\n== a cover the user chose is the user's ==")
 check('a batch leaves a hand-picked cover alone', mayReplaceCover('user', 'bulk') === false)
 check('but one game picked from its own menu replaces it', mayReplaceCover('user', 'single') === true)
 check('a catalogue cover is replaceable in a batch', mayReplaceCover('vndb', 'bulk') === true)
-check('so is one with no record of where it came from', mayReplaceCover(undefined, 'bulk') === true)
+check('so is a game with no cover at all', mayReplaceCover(undefined, 'bulk') === true)
+
+/*
+ * The library that predates `coverFrom`: a path and no source. Every one of those was set
+ * by hand, and reading them as unowned would have a batch overwrite precisely the covers
+ * somebody chose themselves — the failure the rule above is meant to prevent, arriving
+ * through the back door.
+ */
+eq(
+  'a cover from before the field existed belongs to the user',
+  coverSourceOf({ coverPath: 'C:\\pics\\a.png' }),
+  'user'
+)
+eq(
+  'a catalogue cover says so itself',
+  coverSourceOf({ coverFrom: 'dlsite', coverPath: 'C:\\x.jpg' }),
+  'dlsite'
+)
+eq('and no cover belongs to nobody', coverSourceOf({ coverPath: null }), undefined)
+check(
+  'so an old hand-picked cover survives a batch',
+  mayReplaceCover(coverSourceOf({ coverPath: 'C:\\pics\\a.png' }), 'bulk') === false
+)
+
+/* -------------------------------------------------------------------------- */
+console.log('\n== fetching a description again ==')
+
+/*
+ * Nobody types a description in, so this is about traffic rather than ownership: a
+ * selection of eighty games does not ask a free catalogue eighty questions it has already
+ * answered, while asking for one game means asking for it again.
+ */
+check('a game with no description is asked about', mayReplaceSummary(false, 'bulk') === true)
+check('one that already has it is left out of a batch', mayReplaceSummary(true, 'bulk') === false)
+check('but a single game is asked again', mayReplaceSummary(true, 'single') === true)
 
 /* -------------------------------------------------------------------------- */
 console.log(`\n${pass} passed, ${fail} failed`)

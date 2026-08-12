@@ -1532,6 +1532,11 @@ export const MESSAGES = {
     zh: '允许从同一条作品记录里取封面 —— 这会额外向图片主机（t.vndb.org、img.dlsite.jp）请求图片文件，比只发一个标题多一步，所以单独给个开关。即便开着也不会自动取：得右键点「获取封面」。R18 封面照常存下来，跟着上面那个开关打码。',
     en: 'Lets cover art be taken from the same catalogue record. That means asking an image host (t.vndb.org, img.dlsite.jp) for a file, which is a step beyond sending a title, so it gets its own switch. Even on, nothing is fetched by itself: it takes an explicit "Fetch cover". Adult covers are stored either way and blurred under the switch above.'
   },
+  'settings.onlineSummary': { zh: '同时获取简介', en: 'Fetch the description too' },
+  'settings.onlineSummaryNote': {
+    zh: '取封面的时候顺手把目录站的简介一起带回来，显示在游戏详情最下面 —— 是同一条作品记录，不多跑一趟。没有单独的「获取简介」按钮，开不开就在这里决定。暂时只要中文：日文简介会被跳过，不会翻译。',
+    en: 'Brings the catalogue\'s description back with the cover and shows it at the bottom of the details panel — same record, no extra trip. There is no separate "fetch description" button anywhere; this switch is the whole decision. Chinese only for now: a Japanese blurb is skipped rather than translated.'
+  },
   'settings.tagsSection': { zh: '题材标签', en: 'Genre tags' },
   'settings.tagsNote': {
     zh: '题材（校园、催泪、NTR 这些）不在游戏文件里 —— 那是对故事的判断，只有目录站有。编号能精确对上的直接采用，靠标题搜到的会让你确认。整个过程不碰游戏文件夹，只读文件夹的名字。',
@@ -1595,6 +1600,10 @@ export const MESSAGES = {
     en: ', left {n} covers you set yourself alone'
   },
   'covers.missed': { zh: '，{n} 个没有图', en: ', {n} had no picture' },
+  'covers.summaries': { zh: '，{n} 条简介', en: ', {n} descriptions' },
+  'drawer.summary': { zh: '简介', en: 'Description' },
+  /** Named, because it is the one paragraph in the drawer this program did not write. */
+  'summary.from': { zh: '简介来自 {source}', en: 'Description from {source}' },
   'covers.adultBadge': { zh: 'R18', en: 'R18' },
   'covers.blurred': {
     zh: '这张封面被目录站标为成人向，已打码。设置里可以显示。',

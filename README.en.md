@@ -150,6 +150,16 @@ about a story, and only a catalogue has them.
   skipped; only picking one game out of its own menu replaces its cover, because that is
   unambiguous about which game is meant. Image downloads have their own switch, so you can
   keep the tags without them
+- **The description rides along with the cover** — fetching a cover also brings back the
+  catalogue's description and puts it at the **bottom of the details panel**, saying who wrote
+  it. **There is no separate "fetch description" button**: the picture and the text hang off
+  the same work entry, and asking for them separately would be two trips for one answer — so
+  whether it happens is decided once, in the settings. **Chinese only for now**: a Japanese
+  blurb is skipped rather than translated, because this program does not put words in a
+  catalogue's mouth. A work reached by its number uses DLsite's own copy, which needs no
+  matching and so cannot be matched wrongly; everything else asks Bangumi once and **takes
+  only the row whose name is the work's**. No match, no description — a wrong one is worse
+  than none, because it reads exactly like the truth
 - **Only the title ever leaves** — with the feature on, fetching tags sends exactly two kinds
   of thing: **the work number in the folder name**, or **the game's title**. The recipients are
   DLsite, VNDB and Bangumi. Paths, sizes, playtime, ratings, how big your library is — none of
@@ -350,7 +360,8 @@ npm run diagnose-test                             # launch diagnosis: runtime ma
                                                   # the PE parser is checked against real system binaries,
                                                   # no samples are committed to the repository
 npm run tag-test                                  # genre tags: which titles count as a match, which catalogue
-                                                  # tags to drop. No network; response shapes pinned by real samples
+                                                  # tags to drop; and which descriptions to refuse — not Chinese,
+                                                  # or not this game. No network; shapes pinned by real samples
 npm run cover-test                                # covers: which picture is usable, which counts as adult, the
                                                   # error page posing as an image, the user's own cover left alone
 npm run save-test                                 # locating saves: which folders belong to this game, which merely

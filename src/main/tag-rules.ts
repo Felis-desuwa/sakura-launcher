@@ -249,6 +249,141 @@ export function titleScore(folder: string, candidate: string): number {
 export const STRONG_MATCH = 0.92
 
 /* -------------------------------------------------------------------------- */
+/* the blurb                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * How much of a description is worth keeping.
+ *
+ * A drawer is not a store page. Store copy runs to several thousand characters of
+ * specification lists and campaign notices, and pasting all of it under the disk chart
+ * turns a panel somebody opened to check a playtime into a wall of text.
+ */
+export const MAX_SUMMARY_CHARS = 1200
+
+/** Marks the cut, so a truncated blurb does not read as a description that stops mid-sentence. */
+const ELLIPSIS = '…'
+
+/**
+ * Store copy, made into a paragraph.
+ *
+ * Both sources hand over text meant for a web page: CRLF line endings, runs of blank
+ * lines used as spacing, and — on the store side — the occasional stray tag. None of that
+ * survives into the drawer.
+ */
+export function tidySummary(raw: string | undefined | null): string {
+  const text = (raw ?? '')
+    .replace(/<\/?[a-z][^>]{0,200}>/gi, ' ')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/[ \t　]+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+
+  if (text.length <= MAX_SUMMARY_CHARS) return text
+  return text.slice(0, MAX_SUMMARY_CHARS).trimEnd() + ELLIPSIS
+}
+
+/**
+ * Kana, which is what tells the two languages apart.
+ *
+ * Chinese and Japanese share their characters and cannot be separated by looking at
+ * those; hiragana and katakana exist in only one of the two, so their share of the text
+ * is the whole test. A ratio rather than a presence check, because a Chinese blurb
+ * routinely quotes the Japanese title it is describing — a few kana inside two hundred
+ * characters of Chinese is a citation, not a language.
+ *
+ * The threshold sits where it does because the two cases are not close: Japanese prose
+ * runs around half kana, and even a kanji-heavy specification list stays well above a
+ * third, while a title quoted inside a paragraph of Chinese is a handful of characters
+ * out of a hundred. A short Chinese blurb quoting a long title is the only thing anywhere
+ * near the line, so the line is set generously on that side.
+ */
+/** Hiragana and katakana, the two blocks that exist in Japanese and not in Chinese. */
+const KANA_RE = /[぀-ゟ゠-ヿ]/g
+/**
+ * A quoted title, which is the citation this test must not be fooled by.
+ *
+ * A Chinese blurb naming the work it describes — `本作原名《サンプルゲーム》…` — is kana
+ * inside Chinese, and in a short sentence the quote can be a third of the characters. It
+ * is also marked as a quotation by the brackets around it, so it is taken out before
+ * anything is counted rather than being weighed against a threshold that cannot tell it
+ * from Japanese.
+ */
+const QUOTED_RE = /[《〈「『【][^》〉」』】]{0,80}[》〉」』】]/g
+/** Han characters — CJK Unified Ideographs and its extension A, which is where rarer names live. */
+const HAN_RE = /[㐀-䶿一-鿿]/g
+const KANA_SHARE = 0.15
+
+/**
+ * Whether a description is in Chinese.
+ *
+ * The catalogues are asked for Chinese and answer in it most of the time; the exception
+ * is a doujin entry whose blurb was copied out of a Japanese store page, and there is no
+ * flag on the record saying which of the two arrived. So it is read off the text.
+ *
+ * Anything with no Han characters at all — English, Korean, a row of symbols — is not
+ * Chinese either, and is refused by the same rule rather than by a second one.
+ */
+export function isChineseText(raw: string | undefined | null): boolean {
+  const text = (raw ?? '').replace(QUOTED_RE, ' ')
+  const han = text.match(HAN_RE)?.length ?? 0
+  if (han === 0) return false
+  const kana = text.match(KANA_RE)?.length ?? 0
+  return kana / (kana + han) <= KANA_SHARE
+}
+
+/**
+ * DLsite's own description of a product, when it happens to be Chinese.
+ *
+ * `intro_s` is the short blurb; the long `intro` is markup for a store page and is left
+ * alone. The catalogue is asked in `zh_CN` and still answers with the work's own language
+ * here — the locale governs the genre names, not the copy somebody wrote — so most of
+ * these are Japanese and get refused. The ones that survive are the Chinese-language
+ * releases, and for those this is the best description obtainable: it is about exactly
+ * the work whose number was read out of the folder name, with nothing to match and
+ * therefore nothing to get wrong.
+ */
+export function dlsiteIntro(product: DlsiteProduct): string | undefined {
+  const text = tidySummary(typeof product.intro_s === 'string' ? product.intro_s : '')
+  return text && isChineseText(text) ? text : undefined
+}
+
+/**
+ * The Chinese blurb for a work, from a Bangumi search response.
+ *
+ * The row has to *be* the work — a description is the one piece of catalogue text that
+ * cannot be half right, because the wrong one is a fluent, confident paragraph about a
+ * different game, and nothing on screen would say so. So the same threshold that lets a
+ * genre match be adopted without asking applies here, against every name the work is
+ * known by.
+ *
+ * Only the matching row is considered. If that row's blurb turns out to be Japanese,
+ * the answer is that there is no Chinese description — taking the next row's would be
+ * describing somebody else's game.
+ */
+export function pickBangumiSummary(
+  rows: { name: string; nameCn?: string; summary?: string }[],
+  names: (string | undefined)[]
+): string | undefined {
+  const wanted = names.filter((n): n is string => Boolean(n && n.trim()))
+  if (wanted.length === 0) return undefined
+
+  for (const row of rows) {
+    const score = [row.name, row.nameCn]
+      .filter((n): n is string => Boolean(n))
+      .reduce((best, candidate) => {
+        return Math.max(best, ...wanted.map((name) => titleScore(name, candidate)))
+      }, 0)
+    if (score < STRONG_MATCH) continue
+    const text = tidySummary(row.summary)
+    return text && isChineseText(text) ? text : undefined
+  }
+  return undefined
+}
+
+/* -------------------------------------------------------------------------- */
 /* judging what a catalogue sent back                                           */
 /* -------------------------------------------------------------------------- */
 
@@ -381,6 +516,13 @@ export interface DlsiteProduct {
    */
   age_category_string?: string
   age_category?: number
+  /**
+   * The short blurb. The long `intro` is a store page's markup and is not read.
+   *
+   * In the work's own language whatever locale the catalogue was asked in, so it is only
+   * a Chinese description for a Chinese-language release — see `dlsiteIntro()`.
+   */
+  intro_s?: string
 }
 
 /**
@@ -408,6 +550,7 @@ export function dlsiteWork(product: DlsiteProduct): WorkMatch | null {
     title,
     released,
     cover: coverFromDlsite(product) ?? undefined,
+    summary: dlsiteIntro(product),
     // Read out of the folder name, so it names exactly one work and cannot be a near miss.
     score: 1,
     tags: [

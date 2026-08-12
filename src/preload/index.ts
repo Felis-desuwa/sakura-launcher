@@ -51,6 +51,8 @@ export interface CoverRunResult {
   off?: boolean
   /** Covers actually written. */
   fetched?: number
+  /** Descriptions brought back — counted apart, since a game can get one without the other. */
+  summaries?: number
   /** Left alone because the user had chosen that cover themselves. */
   keptUser?: number
   /** No picture in the catalogue, or the download failed. */

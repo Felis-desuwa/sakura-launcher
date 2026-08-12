@@ -328,14 +328,16 @@ export default function App(): React.JSX.Element {
         if (result.busy || result.off) return
         await refresh()
         const fetched = result.fetched ?? 0
+        const summaries = result.summaries ?? 0
         const keptUser = result.keptUser ?? 0
         const missed = result.missed ?? 0
         if (result.offline) toast(tr('tags.offline'), true)
-        else if (fetched === 0 && keptUser === 0) toast(tr('covers.none'), true)
+        else if (fetched === 0 && summaries === 0 && keptUser === 0) toast(tr('covers.none'), true)
         else {
           // One sentence, assembled from what actually happened. A count that says
           // nothing about the games it left alone is a count that looks like a failure.
           let line = tr('covers.done', { fetched })
+          if (summaries > 0) line += tr('covers.summaries', { n: summaries })
           if (keptUser > 0) line += tr('covers.keptUser', { n: keptUser })
           if (missed > 0) line += tr('covers.missed', { n: missed })
           toast(line)

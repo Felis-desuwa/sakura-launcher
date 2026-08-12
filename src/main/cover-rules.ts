@@ -9,6 +9,10 @@ import type { DlsiteProduct, VndbVn } from './tag-rules.ts'
  * lives in `tag-online.ts`, and the orchestration in `covers.ts`, so the judgement can be
  * tested without a socket.
  *
+ * The description that comes back with the cover is judged in `tag-rules.ts`, where the
+ * rest of the catalogue-record reading lives; what is here is the one rule the two share —
+ * when something already on file may be written over.
+ *
  * The judgement matters more than it looks. A cover is not a tag: it is painted across
  * the whole tile, at the size of a playing card, on a shelf somebody may have open when
  * another person walks past. Getting "is this explicit" wrong is not a wrong label, it is
@@ -129,4 +133,33 @@ export function mayReplaceCover(
 ): boolean {
   if (coverFrom !== 'user') return true
   return scope === 'single'
+}
+
+/**
+ * Who a cover belongs to.
+ *
+ * `coverFrom` was added with this feature, so a library that predates it has covers with
+ * a path and no source — and every one of those was set by hand, because until this
+ * existed nothing else could set one. Reading that absence as "nobody's" would let a pass
+ * over a selection quietly replace exactly the pictures somebody took the trouble to
+ * choose, which is the case the rule below exists for.
+ */
+export function coverSourceOf(game: {
+  coverFrom?: string | null
+  coverPath?: string | null
+}): string | undefined {
+  return game.coverFrom ?? (game.coverPath ? 'user' : undefined)
+}
+
+/**
+ * Whether a description may be fetched over one already on file.
+ *
+ * Nobody types a description in, so nothing here can destroy the user's own writing —
+ * this is about traffic, not ownership. A selection of eighty games leaves the ones that
+ * already have a blurb alone rather than asking a free catalogue eighty questions it has
+ * already answered; asking for one game is somebody saying "get this one again", and it
+ * is done.
+ */
+export function mayReplaceSummary(hasSummary: boolean, scope: 'single' | 'bulk'): boolean {
+  return !hasSummary || scope === 'single'
 }

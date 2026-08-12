@@ -125,6 +125,16 @@ export interface Game {
   hiddenTags?: string[]
   /** When the auto tags were last worked out. Absent means never — not "none found". */
   taggedAt?: number
+  /**
+   * What the game is about, in the catalogue's words.
+   *
+   * Fetched alongside the cover and never on its own, because it is the same request to
+   * the same record. Derived like the auto tags — it can always be asked for again — so
+   * it never goes into the sidecar.
+   */
+  summary?: string
+  /** Which catalogue wrote it. Shown with the text; a paragraph with no author is a rumour. */
+  summaryFrom?: SummarySource
   /** The catalogue entry the genre tags came from, once one has been settled on. */
   work?: { source: TagSource; workId: string; title: string }
 
@@ -530,6 +540,29 @@ export interface WorkMatch {
    * candidate. Only `covers.ts`, in the main process, ever follows it.
    */
   cover?: { url: string; adult: boolean }
+  /**
+   * The catalogue's own description of the work, in Chinese, when it has one.
+   *
+   * Only ever set where the record itself carries Chinese copy — a work number identifies
+   * one product, so a DLsite blurb belongs to it beyond doubt. Everything reached by
+   * searching a name is resolved separately, in `covers.ts`, and against a stricter test.
+   */
+  summary?: string
+}
+
+/**
+ * Where a description came from.
+ *
+ * Named on screen for the same reason a tag names its catalogue: this is a paragraph
+ * somebody else wrote about the game, and a user deciding how much to believe it needs to
+ * know who wrote it. Bangumi is here and not in `TagSource` because it is a description
+ * source only — its tags are behind a login, as `tag-bangumi.ts` explains.
+ */
+export type SummarySource = 'dlsite' | 'bangumi'
+
+export const SUMMARY_SOURCE_LABEL: Record<SummarySource, string> = {
+  dlsite: 'DLsite',
+  bangumi: 'Bangumi'
 }
 
 /**
@@ -705,6 +738,19 @@ export interface Settings {
    * Even then, no cover is ever fetched on its own: it takes an explicit menu action.
    */
   onlineCovers: boolean
+  /**
+   * Bring back the catalogue's description along with the cover.
+   *
+   * A sub-switch of `onlineCovers` and deliberately not a button of its own: the record
+   * that holds the picture holds the text, and asking for one and then separately for the
+   * other would be two trips for one answer. So there is no "fetch description" anywhere
+   * in the interface — there is this, and whether it happens is decided here, once.
+   *
+   * Chinese only for now. A description in a language the reader cannot read is not a
+   * description, and translating one would mean this program putting words in a
+   * catalogue's mouth.
+   */
+  onlineSummary: boolean
 
   /**
    * Where copied-out saves land. `null` means the folder under Documents we suggest.
@@ -743,6 +789,7 @@ export const DEFAULT_SETTINGS: Settings = {
   spoilerTags: false,
   adultTags: false,
   onlineCovers: true,
+  onlineSummary: true,
   backupDir: null,
   downloadDir: null,
   downloader: 'idm',

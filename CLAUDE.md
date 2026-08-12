@@ -33,7 +33,7 @@ npm run sidecar-test     # sidecar read/write and the merge when both sides chan
 npm run exe-pick-test    # executable classification and ranking
 npm run downloader-test  # downloader detection, command lines, completion
 npm run diagnose-test    # launch diagnosis: runtime mapping, mojibake, engine detection, PE parsing
-npm run tag-test         # genre-tag matching: title cleaning, which catalogue tags survive
+npm run tag-test         # genre-tag matching: title cleaning, which tags survive, which blurbs do
 npm run cover-test       # cover art: which picture, whether it is adult, what is not an image
 npm run save-test        # locating saves: name matching, engine roots, the download's own save
 npm run share-test       # share exclusion rules
@@ -190,6 +190,13 @@ These come from user decisions and are load-bearing. Violating one is a bug even
   equivalent to what `scanner.ts` does and is a bug: it would back-date every existing entry to
   today and declare every real save to be somebody else's. An entry without a baseline keeps
   none, and the dialog says so out loud.
+- **A description is only ever fetched alongside a cover**, and there is no "fetch description"
+  action anywhere — the picture and the text are on one catalogue record, so a second button
+  would be a second trip for one answer. The only control is `Settings.onlineSummary`.
+  **Chinese only**, and nothing is translated: a blurb that reads as Japanese is dropped
+  (`isChineseText`). A blurb is kept only from the record the work number named, or from the
+  one Bangumi row whose name matches the work — never the next row down. The wrong plot summary
+  is worse than none, because unlike a wrong tag it reads exactly like the truth.
 - **Diagnosis is read-only** and does not go over the network. It names the missing runtime; it does
   not fetch it.
 - **No hardcoded personal paths anywhere.** Scan roots start empty (`DEFAULT_SETTINGS.roots: []`),
