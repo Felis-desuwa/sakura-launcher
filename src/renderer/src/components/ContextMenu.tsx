@@ -7,6 +7,19 @@ export interface MenuItem {
   danger?: boolean
   disabled?: boolean
   onClick?: () => void
+  /**
+   * Leave the menu open after the click.
+   *
+   * For entries that *set a value the menu itself is showing* — the three status flags,
+   * the stars, the sort order. Those are places where one click is very often not the
+   * whole intention: marking a game played and then giving it four stars used to mean
+   * finding the tile and right-clicking it a second time, and the tick that appears is
+   * feedback the user never got to see, because it arrived on a menu that was closing.
+   *
+   * Everything that opens a dialog, launches something or cannot be undone still closes:
+   * there the menu has handed off and staying would just be in the way.
+   */
+  keepOpen?: boolean
   submenu?: MenuItem[]
 }
 
@@ -137,7 +150,7 @@ function MenuLevel({
               onClick={() => {
                 if (hasSub || item.disabled) return
                 item.onClick?.()
-                onClose()
+                if (!item.keepOpen) onClose()
               }}
             >
               {item.checked !== undefined && (

@@ -343,14 +343,18 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     return {
       label: t('menu.rating'),
       submenu: [
+        // Left open: the tick moves to the row you picked, which is the only confirmation
+        // a rating gets, and changing your mind by one star is the common second click.
         ...[1, 2, 3, 4, 5].map((n) => ({
           label: '★'.repeat(n) + '☆'.repeat(5 - n),
           checked: current === n,
+          keepOpen: true,
           onClick: () => targets.forEach((g) => onPatch(g.id, { rating: n }))
         })),
         { type: 'separator' as const },
         {
           label: t('menu.clearRating'),
+          keepOpen: true,
           onClick: () => targets.forEach((g) => onPatch(g.id, { rating: null }))
         }
       ]
@@ -379,10 +383,13 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     // archive is a file waiting to be unpacked, so none of the three can be true of it
     // yet — and rating it would be judging something nobody has seen.
     if (game.kind === 'installed') {
+      // All three stay open. They are one decision often taken in two clicks — finishing a
+      // game is 玩过 on and 在玩 off — and because 想玩 excludes the other two, leaving the
+      // menu up is also where you see that rule happen instead of guessing at it.
       items.push(
-        { label: t('tab.wishlist'), checked: game.wishlist, onClick: () => onPatch(game.id, { wishlist: !game.wishlist }) },
-        { label: t('tab.playing'), checked: game.playing, onClick: () => onPatch(game.id, { playing: !game.playing }) },
-        { label: t('tab.played'), checked: game.played, onClick: () => onPatch(game.id, { played: !game.played }) },
+        { label: t('tab.wishlist'), checked: game.wishlist, keepOpen: true, onClick: () => onPatch(game.id, { wishlist: !game.wishlist }) },
+        { label: t('tab.playing'), checked: game.playing, keepOpen: true, onClick: () => onPatch(game.id, { playing: !game.playing }) },
+        { label: t('tab.played'), checked: game.played, keepOpen: true, onClick: () => onPatch(game.id, { played: !game.played }) },
         { type: 'separator' },
         ratingSubmenu([game]),
         { type: 'separator' }
@@ -486,9 +493,9 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     // archives in it are not games yet.
     if (installed.length > 0) {
       items.push(
-        { label: t('menu.markWishlist'), onClick: () => installed.forEach((g) => onPatch(g.id, { wishlist: true })) },
-        { label: t('menu.markPlaying'), onClick: () => installed.forEach((g) => onPatch(g.id, { playing: true })) },
-        { label: t('menu.markPlayed'), onClick: () => installed.forEach((g) => onPatch(g.id, { played: true })) },
+        { label: t('menu.markWishlist'), keepOpen: true, onClick: () => installed.forEach((g) => onPatch(g.id, { wishlist: true })) },
+        { label: t('menu.markPlaying'), keepOpen: true, onClick: () => installed.forEach((g) => onPatch(g.id, { playing: true })) },
+        { label: t('menu.markPlayed'), keepOpen: true, onClick: () => installed.forEach((g) => onPatch(g.id, { played: true })) },
         { type: 'separator' },
         ratingSubmenu(installed),
         { type: 'separator' }
@@ -561,9 +568,12 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     { type: 'separator' },
     {
       label: t('top.sortTitle'),
+      // Also left open: the grid rearranges behind the menu, so trying an order and
+      // immediately trying another is the natural way to use this.
       submenu: SORT_KEYS.map((key) => ({
         label: t(`sort.${key}` as MessageKey),
         checked: sortKey === key,
+        keepOpen: true,
         onClick: () => props.onSortChange(key)
       }))
     }
@@ -962,11 +972,19 @@ export default function DesktopPage(props: Props): React.JSX.Element {
         <ContextMenu
           x={menu.x}
           y={menu.y}
+          /*
+           * Rebuilt from the live list on every render, not from what was captured when
+           * the menu opened. `keepOpen` entries are the reason: an item that stays up
+           * after setting a value has to show the value it just set, and `menu.game` is a
+           * snapshot that stopped being true the moment it was clicked. A game that has
+           * gone from the library in the meantime falls back to the snapshot rather than
+           * emptying the menu under the pointer.
+           */
           items={
             menu.kind === 'game'
-              ? gameMenu(menu.game)
+              ? gameMenu(games.find((g) => g.id === menu.game.id) ?? menu.game)
               : menu.kind === 'bulk'
-                ? bulkMenu(menu.targets)
+                ? bulkMenu(menu.targets.map((t) => games.find((g) => g.id === t.id) ?? t))
                 : menu.kind === 'group'
                   ? groupMenu(menu.group)
                   : blankMenu()
