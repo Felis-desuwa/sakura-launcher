@@ -791,16 +791,17 @@ body.tiles-dragging .tile.drop-target:hover {
 /* Top right, not bottom right: the label is drawn over the foot of the artwork, and a
    badge down there is a badge behind the game's own name. */
 /*
- * The badge sits *below* the status flags, not beside them.
+ * The badge takes the corner when the corner is free, and queues under the status flags
+ * when it is not — rather than always sitting low and leaving a gap on the tiles that
+ * carry no flags at all, which is most of them.
  *
- * `.tile-flags` starts at top 8px and is a single 18px row however many of 想玩 / 在玩 /
- * 玩过 a game carries, so 30px clears it at every count — including none, where the badge
- * simply keeps the same place rather than jumping up to fill the gap.
+ * `right` matches `.tile-flags` exactly so the two share an edge when stacked; a badge
+ * two pixels out from the row above it is the kind of thing you cannot stop seeing.
  */
 .art-badge {
   position: absolute;
-  right: 6px;
-  top: 30px;
+  right: 8px;
+  top: 8px;
   padding: 1px 6px;
   border-radius: 7px;
   font-size: 10.5px;
@@ -809,6 +810,15 @@ body.tiles-dragging .tile.drop-target:hover {
   color: var(--danger-ink);
   background: color-mix(in srgb, var(--danger) 82%, transparent);
   pointer-events: none;
+}
+
+/*
+ * Something is already up there. `.tile-flags` starts at 8px and is a single 18px row
+ * however many of 想玩 / 在玩 / 玩过 a game carries, so one offset clears it at every
+ * count — the badge never needs to know which flags are showing, only that some are.
+ */
+.tile.has-flags .art-badge {
+  top: 30px;
 }
 
 /*

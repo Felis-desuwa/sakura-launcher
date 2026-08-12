@@ -34,8 +34,14 @@ export default function Tile({
 }: Props): React.JSX.Element {
   const t = useT()
   const lang = useLang()
+  // The top-right corner is shared: the status flags sit there, and so does the R18 badge
+  // on a blurred cover. Whether anything else is up there is not something CSS can ask
+  // from inside the artwork — the flags are a later sibling — so the tile carries the
+  // answer and the badge reads it off.
+  const hasFlags = game.wishlist || game.playing || game.played
   const classes = [
     'tile',
+    hasFlags ? 'has-flags' : '',
     selected ? 'selected' : '',
     nudging ? 'nudge' : '',
     hole ? 'dragging' : '',
