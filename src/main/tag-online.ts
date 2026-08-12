@@ -99,7 +99,7 @@ function request<T>({ method, url, body }: FetchOptions): Promise<T | null> {
     req.setHeader('Accept', 'application/json')
     // Identify the program honestly. A catalogue being able to see who is calling is what
     // lets it ask us to stop rather than simply block us.
-    req.setHeader('User-Agent', 'SakuraLauncher/0.6 (local game library manager)')
+    req.setHeader('User-Agent', 'SakuraLauncher/0.7 (local game library manager)')
     if (body !== undefined) req.setHeader('Content-Type', 'application/json; charset=utf-8')
 
     req.on('response', (res) => {
@@ -166,7 +166,7 @@ export function fetchImage(url: string): Promise<Buffer | null> {
     }, TIMEOUT_MS)
 
     req.setHeader('Accept', 'image/*')
-    req.setHeader('User-Agent', 'SakuraLauncher/0.6 (local game library manager)')
+    req.setHeader('User-Agent', 'SakuraLauncher/0.7 (local game library manager)')
 
     req.on('response', (res) => {
       const chunks: Buffer[] = []
