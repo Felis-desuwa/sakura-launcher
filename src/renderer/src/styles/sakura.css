@@ -293,6 +293,15 @@ button {
 
 /* ---------- top bar ---------- */
 
+/*
+ * The top bar is also the title bar: the window is frameless, so this strip is what the
+ * user drags, and dragging is the whole reason it has to be a region rather than a
+ * handler — Windows does the drag, the snap and the double-click-to-maximise itself once
+ * the region is declared, and none of that can be reproduced from JavaScript.
+ *
+ * The padding on the right is smaller than on the left because the caption buttons carry
+ * their own.
+ */
 .topbar {
   position: relative;
   z-index: 3;
@@ -301,11 +310,28 @@ button {
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 0 20px;
+  /* No padding on the right: the close button's box has to reach the window edge, or the
+     screen corner — the one target you can throw the pointer at without aiming — lands on
+     dead bar instead of close. The dot inside it stays visually inset. */
+  padding: 0 0 0 20px;
   background: var(--glass);
   backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--glass-border);
   box-shadow: var(--shadow-sm);
+  -webkit-app-region: drag;
+}
+
+/*
+ * Everything clickable has to opt out, or the drag region swallows the click. Listed by
+ * element rather than by class so a control added later is not silently dead.
+ */
+.topbar button,
+.topbar input,
+.topbar select,
+.topbar a,
+.topbar .tabs,
+.topbar .pagebtns {
+  -webkit-app-region: no-drag;
 }
 
 .brand {
@@ -425,6 +451,90 @@ button {
   background: var(--accent);
   color: var(--panel);
   font-weight: 600;
+}
+
+/* ---------- window controls ---------- */
+
+/*
+ * Three petals where Windows would have put its caption buttons.
+ *
+ * The glyph is hidden until the pointer arrives: at rest these are punctuation at the end
+ * of the bar, and a shelf of games does not need three pieces of system chrome shouting at
+ * the top of it. The hit target stays 30px square regardless, so "hidden glyph" never
+ * means "harder to click".
+ *
+ * Colours come from the theme's own slots, so every theme gets its own set without
+ * restating anything — and close is the one that changes hue on hover, because the
+ * destructive button must never be a guess.
+ */
+.wctl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: -6px;
+  padding: 0;
+}
+
+.wctl-btn {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--panel);
+  transition: background 0.16s;
+}
+
+/* The dot itself. Drawn as a pseudo-element so the button can stay a comfortable size
+   while the visible mark stays small. */
+.wctl-btn::before {
+  content: '';
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--brand) 78%, transparent);
+  transition: background 0.16s, transform 0.16s;
+}
+
+.wctl-btn:hover::before {
+  background: var(--brand);
+  transform: scale(1.62);
+}
+
+.wctl-btn.close:hover::before {
+  background: var(--accent);
+}
+
+.wctl-btn:active::before {
+  transform: scale(1.45);
+}
+
+.wctl-btn svg {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+  transition: opacity 0.16s;
+}
+
+.wctl-btn:hover svg,
+.wctl-btn:focus-visible svg {
+  opacity: 1;
+}
+
+.wctl-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* ---------- desktop grid ---------- */

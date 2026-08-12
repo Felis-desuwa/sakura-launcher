@@ -141,6 +141,11 @@ function createWindow(): void {
     show: false,
     backgroundColor: '#fff5f9',
     title: 'Sakura Launcher',
+    // The top bar *is* the title bar. Windows' own strip is a white slab above a
+    // cherry-blossom window no matter which theme is on, and there is no way to colour it —
+    // so the frame goes and the controls are drawn in `WindowControls.tsx` instead.
+    // A frameless window is still resizable from its edges and still snaps.
+    frame: false,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -149,6 +154,9 @@ function createWindow(): void {
       sandbox: false
     }
   })
+
+  mainWindow.on('maximize', () => mainWindow?.webContents.send('win:maximized', true))
+  mainWindow.on('unmaximize', () => mainWindow?.webContents.send('win:maximized', false))
 
   mainWindow.once('ready-to-show', () => {
     painted = true
@@ -275,6 +283,22 @@ async function getBreakdown(dir: string): Promise<Breakdown | null> {
 }
 
 function registerIpc(): void {
+  /*
+   * The window buttons, which the renderer draws itself now that there is no frame.
+   *
+   * `win:maximized` is asked for once on mount and pushed on every change: the maximise
+   * button has to show a restore glyph while maximised, and the window can get there
+   * without the button — Win+↑, a drag to the top edge, a double-click on the drag region.
+   */
+  ipcMain.handle('win:minimize', () => mainWindow?.minimize())
+  ipcMain.handle('win:toggleMaximize', () => {
+    if (!mainWindow) return
+    if (mainWindow.isMaximized()) mainWindow.unmaximize()
+    else mainWindow.maximize()
+  })
+  ipcMain.handle('win:close', () => mainWindow?.close())
+  ipcMain.handle('win:isMaximized', () => mainWindow?.isMaximized() ?? false)
+
   ipcMain.handle('db:snapshot', () => ({
     games: db.getGames(),
     groups: db.getGroups(),

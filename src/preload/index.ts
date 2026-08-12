@@ -105,6 +105,21 @@ export interface UninstallResult {
 }
 
 const api = {
+  /*
+   * The window buttons. There is no frame, so minimise / maximise / close are ordinary
+   * clicks in the top bar and have to come back here to be carried out.
+   */
+  minimizeWindow: (): Promise<void> => ipcRenderer.invoke('win:minimize'),
+  toggleMaximizeWindow: (): Promise<void> => ipcRenderer.invoke('win:toggleMaximize'),
+  closeWindow: (): Promise<void> => ipcRenderer.invoke('win:close'),
+  isWindowMaximized: (): Promise<boolean> => ipcRenderer.invoke('win:isMaximized'),
+  /** Fires for every route to maximised, including Win+↑ and a double-click on the bar. */
+  onMaximizeChange: (cb: (maximized: boolean) => void): (() => void) => {
+    const handler = (_e: unknown, maximized: boolean): void => cb(maximized)
+    ipcRenderer.on('win:maximized', handler)
+    return () => ipcRenderer.off('win:maximized', handler)
+  },
+
   snapshot: (): Promise<{ games: Game[]; groups: Group[]; settings: Settings }> =>
     ipcRenderer.invoke('db:snapshot'),
   updateSettings: (patch: Partial<Settings>): Promise<Settings> =>

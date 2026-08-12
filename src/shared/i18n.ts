@@ -71,6 +71,11 @@ export const MESSAGES = {
     en: 'Re-read what is already in the library: names, sizes, sidecar files, and whether each folder is still there. To take in new games, go to Settings → Library folders → Rescan and add.'
   },
 
+  'win.minimize': { zh: '最小化', en: 'Minimise' },
+  'win.maximize': { zh: '最大化', en: 'Maximise' },
+  'win.restore': { zh: '向下还原', en: 'Restore down' },
+  'win.close': { zh: '关闭', en: 'Close' },
+
   'sort.manual': { zh: '手动', en: 'Manual' },
   'sort.name': { zh: '名称', en: 'Name' },
   'sort.size': { zh: '体积', en: 'Size' },

@@ -2,6 +2,7 @@ import type { MessageKey } from '../../../shared/i18n'
 import type { SortKey, TabKey } from '../../../shared/types'
 import { SORT_KEYS, TAB_KEYS } from '../../../shared/types'
 import { useT } from '../lib/i18n'
+import WindowControls from './WindowControls'
 
 export type PageKey = 'desktop' | 'tier' | 'wishlist' | 'disk' | 'settings'
 
@@ -132,6 +133,9 @@ export default function TopBar({
           </button>
         ))}
       </nav>
+
+      {/* The window has no frame, so the bar ends where the caption buttons used to be. */}
+      <WindowControls />
     </header>
   )
 }

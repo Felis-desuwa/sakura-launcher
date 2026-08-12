@@ -237,6 +237,12 @@ about a story, and only a catalogue has them.
 - **Chinese and English** — the interface, launch errors, diagnosis findings and the sidecar
   written into the game folder all follow the language you pick. The sidecar is parsed in both
   languages, so a file written before you switched does not stop working
+- **No system title bar** — Windows' white caption strip ignores the theme; it stays white
+  above a cherry-blossom window and above a midnight one. So the frame is gone and **the top
+  bar is the title bar**: drag it to move the window, double-click to maximise, edge-snapping
+  works as before, and the three dots at its right end are minimise / maximise / close, each
+  showing its glyph on hover, close taking a colour of its own. The cost is the Windows 11
+  snap-layouts flyout, which only the real caption buttons can raise
 - **Splash window** — Electron takes a second or two to get from double-click to a drawn
   shelf, and Windows shows nothing at all during that time, so people click again. Now a small
   cherry-blossom window appears immediately and hands over once the shelf is really ready
