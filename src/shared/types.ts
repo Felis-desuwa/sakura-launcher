@@ -84,6 +84,22 @@ export interface Game {
   iconPath: string | null
   /** User-chosen cover overrides the extracted icon. */
   coverPath: string | null
+  /**
+   * Where the cover came from.
+   *
+   * `'user'` is a decision about their own library and a pass over many games must never
+   * quietly undo it — the same protection `renamed` gives a hand-typed title. Absent on
+   * covers set before this field existed, which are treated as the user's, because that
+   * is what they were: nothing else could set one.
+   */
+  coverFrom?: 'user' | TagSource
+  /**
+   * The cover is explicit, by the catalogue's own account.
+   *
+   * Stored rather than re-derived: it is blurred at display time under the same switch as
+   * the tags, so turning the switch on is instant and costs no traffic.
+   */
+  coverAdult?: boolean
   groupId: string | null
   order: number
 
@@ -484,6 +500,14 @@ export interface WorkMatch {
   score: number
   /** The genres this entry would apply. */
   tags: AutoTag[]
+  /**
+   * The catalogue's picture for this work, if it has one.
+   *
+   * Carried as an address, never fetched here — the renderer receives this object and
+   * must not open a socket, or confirming a match would quietly download an image per
+   * candidate. Only `covers.ts`, in the main process, ever follows it.
+   */
+  cover?: { url: string; adult: boolean }
 }
 
 /**
@@ -647,6 +671,18 @@ export interface Settings {
    * a shelf that can be looked at with somebody standing behind you.
    */
   adultTags: boolean
+  /**
+   * Allow cover art to be downloaded from the same catalogues.
+   *
+   * A sub-switch of `onlineTags`, not a second master: with the catalogue off, nothing
+   * here can happen. It exists because covers change *what* leaves the machine — the
+   * genre lookups only ever send a work number or a title, while a cover means asking an
+   * image host for a file — and somebody may want the tags without that. On by default,
+   * since it does nothing at all until the catalogue is switched on.
+   *
+   * Even then, no cover is ever fetched on its own: it takes an explicit menu action.
+   */
+  onlineCovers: boolean
 
   /** Where downloads land. `null` means "follow the first scan root". */
   downloadDir: string | null
@@ -676,6 +712,7 @@ export const DEFAULT_SETTINGS: Settings = {
   onlineTags: false,
   spoilerTags: false,
   adultTags: false,
+  onlineCovers: true,
   downloadDir: null,
   downloader: 'idm',
   downloaderPath: null,

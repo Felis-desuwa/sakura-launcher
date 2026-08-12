@@ -2,6 +2,7 @@
 // where nothing fills them in — the same reason scan-core.ts does it.
 import type { AutoTag, WorkMatch } from '../shared/types.ts'
 import { looksAdult } from '../shared/vndb-tags.ts'
+import { coverFromDlsite, coverFromVndb } from './cover-rules.ts'
 
 /**
  * Deciding which of a catalogue's tags are worth keeping.
@@ -370,6 +371,16 @@ export interface DlsiteProduct {
    * and a Japanese one reach the same verdict about the same genre.
    */
   genres?: { name?: string; name_base?: string }[]
+  /** The product image, as a protocol-relative address. `image_thumb` is the small one. */
+  image_main?: { url?: string }
+  image_thumb?: { url?: string }
+  /**
+   * DLsite rates the work, not the picture. `age_category_string` reads `adult` /
+   * `r15` / `general`; the numeric `age_category` says 3 for adult. Both are read,
+   * because the JSON API has answered with one or the other over the years.
+   */
+  age_category_string?: string
+  age_category?: number
 }
 
 /**
@@ -396,6 +407,7 @@ export function dlsiteWork(product: DlsiteProduct): WorkMatch | null {
     workId,
     title,
     released,
+    cover: coverFromDlsite(product) ?? undefined,
     // Read out of the folder name, so it names exactly one work and cannot be a near miss.
     score: 1,
     tags: [
@@ -429,6 +441,13 @@ export interface VndbVn {
   released?: string
   titles?: VndbTitle[]
   tags?: VndbTag[]
+  /**
+   * The work's cover.
+   *
+   * `sexual` and `violence` are VNDB's own 0–2 ratings of that picture, voted on by its
+   * users. Read by `cover-rules.ts`; the tags do not use them.
+   */
+  image?: { url?: string; sexual?: number; violence?: number }
 }
 
 /** The Chinese name a work is released under, when it has one. */
@@ -481,6 +500,7 @@ export function vndbWorks(items: VndbVn[], query: string): WorkMatch[] {
       altTitle: japaneseTitle(item) !== title ? japaneseTitle(item) : undefined,
       zhTitle: chineseTitle(item),
       released: item.released,
+      cover: coverFromVndb(item) ?? undefined,
       score,
       tags: [
         ...pickVndbTags(item.tags ?? []).map((tag) => ({

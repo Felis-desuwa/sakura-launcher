@@ -1,4 +1,5 @@
 import { net } from 'electron'
+import { MAX_COVER_BYTES } from './cover-rules.ts'
 import { mainLang } from './i18n'
 import { searchBangumi, type BangumiWork } from './tag-bangumi.ts'
 import { dlsiteWork, vndbWorks, type DlsiteProduct, type VndbVn } from './tag-rules.ts'
@@ -38,7 +39,15 @@ const TIMEOUT_MS = 15_000
  * Tracked per host rather than globally because they are unrelated services: making a
  * DLsite lookup wait on VNDB's budget doubles the time a library takes for no reason.
  */
-const GAP_MS: Record<string, number> = { vndb: 2_000, dlsite: 1_000, bangumi: 1_000 }
+const GAP_MS: Record<string, number> = {
+  vndb: 2_000,
+  dlsite: 1_000,
+  bangumi: 1_000,
+  // The image hosts are separate machines from the APIs and are paced separately: making
+  // a picture wait on the API's budget would double how long a batch of covers takes for
+  // no benefit to anybody.
+  image: 1_000
+}
 
 const lastRequestAt: Record<string, number> = {}
 
@@ -121,6 +130,84 @@ function request<T>({ method, url, body }: FetchOptions): Promise<T | null> {
 }
 
 /**
+ * Download one picture.
+ *
+ * Separate from `request()` because everything about it differs: the body is bytes rather
+ * than JSON, the size has to be capped while it arrives rather than after, and the host is
+ * an image server rather than an API. What it shares is the rule that every failure —
+ * offline, timeout, a 404, a body that turns out to be an error page — comes back as null.
+ *
+ * The cap is enforced *during* the download, not on the finished buffer: refusing eight
+ * megabytes after receiving eighty is not a cap.
+ */
+export function fetchImage(url: string): Promise<Buffer | null> {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (value: Buffer | null): void => {
+      if (settled) return
+      settled = true
+      resolve(value)
+    }
+
+    let req: Electron.ClientRequest
+    try {
+      req = net.request({ method: 'GET', url })
+    } catch {
+      return finish(null)
+    }
+
+    const timer = setTimeout(() => {
+      try {
+        req.abort()
+      } catch {
+        /* already gone */
+      }
+      finish(null)
+    }, TIMEOUT_MS)
+
+    req.setHeader('Accept', 'image/*')
+    req.setHeader('User-Agent', 'SakuraLauncher/0.6 (local game library manager)')
+
+    req.on('response', (res) => {
+      const chunks: Buffer[] = []
+      let size = 0
+      res.on('data', (chunk: Buffer) => {
+        size += chunk.length
+        if (size > MAX_COVER_BYTES) {
+          clearTimeout(timer)
+          try {
+            req.abort()
+          } catch {
+            /* already gone */
+          }
+          return finish(null)
+        }
+        chunks.push(chunk)
+      })
+      res.on('end', () => {
+        clearTimeout(timer)
+        if (res.statusCode < 200 || res.statusCode >= 300) return finish(null)
+        finish(Buffer.concat(chunks))
+      })
+      res.on('error', () => {
+        clearTimeout(timer)
+        finish(null)
+      })
+    })
+    req.on('error', () => {
+      clearTimeout(timer)
+      finish(null)
+    })
+    req.end()
+  })
+}
+
+/** Pace an image download against the other image downloads. */
+export function paceImage(): Promise<void> {
+  return pace('image')
+}
+
+/**
  * Look a DLsite work number up.
  *
  * The catalogue is asked in the interface language and answers in it — the genres come
@@ -150,7 +237,8 @@ export async function lookupDlsite(workNo: string): Promise<WorkMatch | null> {
  * it is the same row either way.
  */
 const VNDB_FIELDS =
-  'id,title,alttitle,released,titles{lang,title,latin},tags.name,tags.rating,tags.spoiler,tags.category'
+  'id,title,alttitle,released,titles{lang,title,latin},image{url,sexual,violence},' +
+  'tags.name,tags.rating,tags.spoiler,tags.category'
 
 /**
  * One query against VNDB.

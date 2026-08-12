@@ -141,17 +141,29 @@ about a story, and only a catalogue has them.
   Several genres combine as AND — each extra chip narrows further — but **only one year can be
   selected at a time**, since a work is not both 2016 and 2017 and holding two could only ever
   give you an empty shelf
+- **Cover art comes off the same record** — a catalogue keeps the cover and the tags on one
+  work entry, so matching once gets both. **Manual only**: right-click a game for *Fetch cover
+  online*, or **select several and fetch them together** (tags work the same way).
+  **A cover you set yourself is never overwritten** — a batch skips it and says how many it
+  skipped; only picking one game out of its own menu replaces its cover, because that is
+  unambiguous about which game is meant. Image downloads have their own switch, so you can
+  keep the tags without them
 - **Only the title ever leaves** — with the feature on, fetching tags sends exactly two kinds
   of thing: **the work number in the folder name**, or **the game's title**. The recipients are
   DLsite, VNDB and Bangumi. Paths, sizes, playtime, ratings, how big your library is — none of
-  it is sent, and nothing identifies you or this machine. With the feature off not one byte
+  it is sent, and nothing identifies you or this machine. **Fetching a cover is one step
+  further**: it asks an image host (`t.vndb.org`, `img.dlsite.jp`) for the picture file itself,
+  which is exactly why that has a switch of its own. With the feature off not one byte
   goes out, and **the whole process never touches the game folder; it only reads the folder's
   name**
 - **What you'd rather not see is hidden by default** — tags VNDB marks as spoilers are
   **hidden by default**, because nobody wants a story spoiled by their own shelf, and **R18
   tags are hidden by default** as well, with a switch in the settings. The tags are fetched and
   stored either way; the switch only decides what is drawn, so flipping it takes effect
-  instantly with no catalogue round trip
+  instantly with no catalogue round trip. **Adult covers are blurred under the same switch**,
+  with a small R18 badge in the corner so a blurred tile does not read as a broken image.
+  Which covers count is the catalogue's own word: VNDB rates each picture, DLsite rates the
+  work
 - Only games that have never been looked up are queried, and none are asked about twice. You
   can stop at any point, or re-query the whole library
 
@@ -313,6 +325,8 @@ npm run diagnose-test                             # launch diagnosis: runtime ma
                                                   # no samples are committed to the repository
 npm run tag-test                                  # genre tags: which titles count as a match, which catalogue
                                                   # tags to drop. No network; response shapes pinned by real samples
+npm run cover-test                                # covers: which picture is usable, which counts as adult, the
+                                                  # error page posing as an image, the user's own cover left alone
 npm run share-test                                # the share exclusion rules (mostly the ones that must NOT hit)
 npm run share-e2e                                 # calls a real 7-Zip; asserts the source folder is unchanged
 node scripts/scan-test.mts "<library folder>"     # prints the games, archives and group candidates found

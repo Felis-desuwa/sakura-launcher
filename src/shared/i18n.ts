@@ -1399,6 +1399,11 @@ export const MESSAGES = {
     zh: 'VNDB 会标出哪些标签泄露剧情。默认藏起来 —— 没人想在自己的书架上被剧透。',
     en: 'VNDB marks which tags give the plot away. Hidden by default — nobody wants their own shelf to spoil a story.'
   },
+  'settings.onlineCovers': { zh: '同时下载封面', en: 'Download cover art too' },
+  'settings.onlineCoversNote': {
+    zh: '允许从同一条作品记录里取封面 —— 这会额外向图片主机（t.vndb.org、img.dlsite.jp）请求图片文件，比只发一个标题多一步，所以单独给个开关。即便开着也不会自动取：得右键点「获取封面」。R18 封面照常存下来，跟着上面那个开关打码。',
+    en: 'Lets cover art be taken from the same catalogue record. That means asking an image host (t.vndb.org, img.dlsite.jp) for a file, which is a step beyond sending a title, so it gets its own switch. Even on, nothing is fetched by itself: it takes an explicit "Fetch cover". Adult covers are stored either way and blurred under the switch above.'
+  },
   'settings.tagsSection': { zh: '题材标签', en: 'Genre tags' },
   'settings.tagsNote': {
     zh: '题材（校园、催泪、NTR 这些）不在游戏文件里 —— 那是对故事的判断，只有目录站有。编号能精确对上的直接采用，靠标题搜到的会让你确认。整个过程不碰游戏文件夹，只读文件夹的名字。',
@@ -1445,7 +1450,28 @@ export const MESSAGES = {
   /** Chinese wraps game titles in corner brackets; English uses nothing but the name. */
   'common.quoted': { zh: '《{name}》', en: '{name}' },
   'menu.chooseExe': { zh: '更换主程序…', en: 'Change main program…' },
-  'menu.matchWork': { zh: '手动匹配…', en: 'Match manually…' }
+  'menu.matchWork': { zh: '手动匹配…', en: 'Match manually…' },
+
+  /* ---- covers from a catalogue ---- */
+  'menu.fetchCover': { zh: '联网获取封面', en: 'Fetch cover online' },
+  'menu.fetchCoverN': { zh: '联网获取封面（{n} 个）', en: 'Fetch covers online ({n})' },
+  'menu.fetchTagsN': { zh: '获取标签（{n} 个）', en: 'Fetch tags ({n})' },
+  'covers.fetching': { zh: '正在取封面…', en: 'Fetching covers…' },
+  'covers.done': { zh: '取到 {fetched} 张封面', en: 'Got {fetched} covers' },
+  'covers.none': {
+    zh: '没取到封面 —— 目录站没有图，或者没连上',
+    en: 'No cover came back — the catalogue has none, or it could not be reached'
+  },
+  'covers.keptUser': {
+    zh: '，跳过 {n} 个你自己设的封面',
+    en: ', left {n} covers you set yourself alone'
+  },
+  'covers.missed': { zh: '，{n} 个没有图', en: ', {n} had no picture' },
+  'covers.adultBadge': { zh: 'R18', en: 'R18' },
+  'covers.blurred': {
+    zh: '这张封面被目录站标为成人向，已打码。设置里可以显示。',
+    en: 'The catalogue marks this cover adult, so it is blurred. Settings can show it.'
+  }
 } satisfies Record<string, Entry>
 
 export type MessageKey = keyof typeof MESSAGES

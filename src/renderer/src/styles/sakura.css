@@ -755,6 +755,35 @@ body.tiles-dragging .tile.drop-target:hover {
   object-fit: cover;
 }
 
+/*
+ * An explicit cover with the switch off.
+ *
+ * Blurred rather than replaced, so flipping the switch shows the real picture instantly
+ * and costs no catalogue traffic — the same arrangement the explicit tags use. The scale
+ * is not decoration: a blur samples beyond the element's edge and would otherwise leave a
+ * clear rim of the original around all four sides.
+ */
+.tile-art.cover.blurred img {
+  filter: blur(18px) saturate(0.75);
+  transform: scale(1.18);
+}
+
+/* Top right, not bottom right: the label is drawn over the foot of the artwork, and a
+   badge down there is a badge behind the game's own name. */
+.art-badge {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  padding: 1px 6px;
+  border-radius: 7px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--danger-ink);
+  background: color-mix(in srgb, var(--danger) 82%, transparent);
+  pointer-events: none;
+}
+
 .tile-placeholder {
   width: 100%;
   height: 100%;

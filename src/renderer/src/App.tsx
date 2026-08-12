@@ -17,6 +17,7 @@ import type {
 } from '../../shared/types'
 import { DEFAULT_SETTINGS, normalizeStatus, toggleTagFilter } from '../../shared/types'
 import { makeT, type MessageKey } from '../../shared/i18n'
+import { setShowAdultArt } from './components/Artwork'
 import BulkUninstallDialog from './components/BulkUninstallDialog'
 import ConfirmDialog from './components/ConfirmDialog'
 import DetailDrawer from './components/DetailDrawer'
@@ -130,6 +131,10 @@ export default function App(): React.JSX.Element {
    */
   const langRef = useRef<Lang>(settings.language)
   langRef.current = settings.language
+
+  // Set during render, before any child renders, so the first paint after the switch is
+  // flipped already has it right. See the note in `Artwork.tsx` for why this is not a prop.
+  setShowAdultArt(settings.adultTags)
   const tr = useCallback(
     (key: MessageKey, vars?: Record<string, string | number>) =>
       makeT(langRef.current)(key, vars),
@@ -303,6 +308,43 @@ export default function App(): React.JSX.Element {
   )
 
   useEffect(() => window.sakura.onTagProgress(setTagProgress), [])
+
+  /**
+   * Fetch cover art for the games named.
+   *
+   * Shares the tag pass's progress line rather than growing a second one: they are the
+   * same kind of wait, over the same catalogues, and only one of them can run at a time.
+   */
+  const fetchCovers = useCallback(
+    async (ids: string[], scope: 'single' | 'bulk'): Promise<void> => {
+      if (ids.length === 0) return
+      setTagProgress({ done: 0, total: ids.length, name: '' })
+      try {
+        const result = await window.sakura.fetchCovers(ids, scope)
+        if (result.busy || result.off) return
+        await refresh()
+        const fetched = result.fetched ?? 0
+        const keptUser = result.keptUser ?? 0
+        const missed = result.missed ?? 0
+        if (result.offline) toast(tr('tags.offline'), true)
+        else if (fetched === 0 && keptUser === 0) toast(tr('covers.none'), true)
+        else {
+          // One sentence, assembled from what actually happened. A count that says
+          // nothing about the games it left alone is a count that looks like a failure.
+          let line = tr('covers.done', { fetched })
+          if (keptUser > 0) line += tr('covers.keptUser', { n: keptUser })
+          if (missed > 0) line += tr('covers.missed', { n: missed })
+          toast(line)
+        }
+        if (result.pending && result.pending.length > 0) setPendingMatches(result.pending)
+      } finally {
+        setTagProgress(null)
+      }
+    },
+    [refresh, toast, tr]
+  )
+
+  useEffect(() => window.sakura.onCoverProgress(setTagProgress), [])
 
   // Recount whenever the library changes: adding games, or matching some, both move it.
   useEffect(() => {
@@ -663,7 +705,10 @@ export default function App(): React.JSX.Element {
               toast(tr('toast.wishlistNoLaunch'))
             }
             onRename={setRenaming}
-            onRetag={(game) => void computeTags([game.id])}
+            onRetag={(targets) => void computeTags(targets.map((g) => g.id))}
+            onFetchCovers={(targets, scope) => void fetchCovers(targets.map((g) => g.id), scope)}
+            onlineTags={settings.onlineTags}
+            onlineCovers={settings.onlineCovers}
             // Straight into the dialog with the search box, no lookup first. This is the
             // route for a folder nothing could ever match on its own.
             onMatchWork={(game) =>

@@ -65,6 +65,7 @@ import {
   setTagHidden,
   tagRunActive
 } from './tagger'
+import { cancelCoverRun, coverRunActive, fetchCovers } from './covers'
 import { sanitizeArchiveName, scanPersonalData } from './share-rules'
 import { syncAll, toSidecar as sidecarFrom, writeGameSidecar } from './sidecar-sync'
 import { closeSplash, showSplash, splashStage } from './splash'
@@ -427,6 +428,29 @@ function registerIpc(): void {
     }
   })
 
+  /**
+   * Cover art, only ever for the games named.
+   *
+   * Gated on both switches: the catalogue itself, and the sub-switch for image
+   * downloads. Refusing here rather than only hiding the menu entry means a stale
+   * renderer cannot open a socket the settings say is closed.
+   */
+  ipcMain.handle('covers:fetch', async (e, ids: string[], scope: 'single' | 'bulk') => {
+    const settings = db.getSettings()
+    if (!settings.onlineTags || !settings.onlineCovers) return { ok: false, off: true }
+    if (coverRunActive()) return { ok: false, busy: true }
+    const run = await fetchCovers(ids, scope, (progress) => {
+      if (!e.sender.isDestroyed()) e.sender.send('covers:progress', progress)
+    })
+    mainWindow?.webContents.send('db:changed')
+    return { ok: true, ...run }
+  })
+
+  ipcMain.handle('covers:cancel', () => {
+    cancelCoverRun()
+    return true
+  })
+
   /** How many games a pass would look up, so the button can say so before it is pressed. */
   ipcMain.handle('tags:pendingCount', () => pendingTargets(db.getGames()).length)
 
@@ -685,10 +709,13 @@ function registerIpc(): void {
     } catch {
       return null
     }
-    return db.updateGame(id, { coverPath: dest })
+    // Marked as the user's, which is what stops a batch of catalogue covers overwriting it.
+    return db.updateGame(id, { coverPath: dest, coverFrom: 'user', coverAdult: false })
   })
 
-  ipcMain.handle('game:clearCover', (_e, id: string) => db.updateGame(id, { coverPath: null }))
+  ipcMain.handle('game:clearCover', (_e, id: string) =>
+    db.updateGame(id, { coverPath: null, coverFrom: undefined, coverAdult: undefined })
+  )
 
   ipcMain.handle('uninstall:plan', (_e, id: string) => planUninstall(id))
   ipcMain.handle('uninstall:perform', (_e, id: string) => performUninstall(id))

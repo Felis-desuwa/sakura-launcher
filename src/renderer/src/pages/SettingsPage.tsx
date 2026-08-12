@@ -324,6 +324,24 @@ export default function SettingsPage({
           />
         </div>
 
+        {/* A sub-switch of the one above: with the catalogue off, nothing here can
+            happen. It is separate because covers change *what* leaves the machine —
+            a request to an image host, rather than a title to an API. */}
+        {settings.onlineTags && (
+          <div className="settings-row">
+            <label htmlFor="onlineCovers">
+              {t('settings.onlineCovers')}
+              <span className="settings-hint">{t('settings.onlineCoversNote')}</span>
+            </label>
+            <button
+              id="onlineCovers"
+              type="button"
+              className={`switch${settings.onlineCovers ? ' on' : ''}`}
+              onClick={() => onChange({ onlineCovers: !settings.onlineCovers })}
+            />
+          </div>
+        )}
+
         {/* Only worth asking about once there is something they could reveal. */}
         {settings.onlineTags && (
           <div className="settings-row">

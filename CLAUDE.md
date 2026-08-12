@@ -33,6 +33,8 @@ npm run sidecar-test     # sidecar read/write and the merge when both sides chan
 npm run exe-pick-test    # executable classification and ranking
 npm run downloader-test  # downloader detection, command lines, completion
 npm run diagnose-test    # launch diagnosis: runtime mapping, mojibake, engine detection, PE parsing
+npm run tag-test         # genre-tag matching: title cleaning, which catalogue tags survive
+npm run cover-test       # cover art: which picture, whether it is adult, what is not an image
 npm run share-test       # share exclusion rules
 npm run share-e2e        # calls a real 7-Zip; asserts the source folder is unchanged afterwards
 ```
@@ -74,8 +76,8 @@ Always pass `--user-data-dir`; without it this writes to the user's actual
 
 ### The pure-module convention
 
-`scan-core.ts`, `share-rules.ts`, `download-core.ts`, `diagnose-rules.ts`, `pe-imports.ts` **must not
-import electron**. The `.mts` harnesses load them directly under node, which is what makes the
+`scan-core.ts`, `share-rules.ts`, `download-core.ts`, `diagnose-rules.ts`, `pe-imports.ts`,
+`tag-rules.ts`, `tag-bangumi.ts`, `cover-rules.ts` **must not import electron**. The `.mts` harnesses load them directly under node, which is what makes the
 logic testable without a window. They also spell out `.ts` in their relative imports (`from
 './i18n.ts'`) because node has no bundler to fill the extension in — `allowImportingTsExtensions`
 is on in `tsconfig.node.json` for exactly this. If you add an import to one of these files, keep

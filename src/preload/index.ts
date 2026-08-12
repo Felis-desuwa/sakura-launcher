@@ -41,6 +41,23 @@ export interface TagRunResult {
   cancelled?: boolean
 }
 
+export interface CoverRunResult {
+  ok: boolean
+  /** A run was already going, or the catalogue/cover switch is off. */
+  busy?: boolean
+  off?: boolean
+  /** Covers actually written. */
+  fetched?: number
+  /** Left alone because the user had chosen that cover themselves. */
+  keptUser?: number
+  /** No picture in the catalogue, or the download failed. */
+  missed?: number
+  /** Games nothing could be matched to — these need the manual dialog. */
+  pending?: PendingMatch[]
+  offline?: boolean
+  cancelled?: boolean
+}
+
 /** A launch that produced no game, pushed the moment the watcher gives up on it. */
 export interface LaunchTroubleEvent {
   id: string
@@ -185,6 +202,23 @@ const api = {
     const handler = (_e: unknown, progress: TagProgress): void => cb(progress)
     ipcRenderer.on('tags:progress', handler)
     return () => ipcRenderer.off('tags:progress', handler)
+  },
+
+  /**
+   * Fetch cover art for the games named, from the catalogue each is matched to.
+   *
+   * `scope` is not a hint: `'bulk'` leaves a cover the user chose by hand alone, while
+   * `'single'` replaces it, because picking one game out of its own menu says so.
+   * Requires both `settings.onlineTags` and `settings.onlineCovers`; the main process
+   * checks again rather than trusting this side.
+   */
+  fetchCovers: (ids: string[], scope: 'single' | 'bulk'): Promise<CoverRunResult> =>
+    ipcRenderer.invoke('covers:fetch', ids, scope),
+  cancelCovers: (): Promise<boolean> => ipcRenderer.invoke('covers:cancel'),
+  onCoverProgress: (cb: (progress: TagProgress) => void): (() => void) => {
+    const handler = (_e: unknown, progress: TagProgress): void => cb(progress)
+    ipcRenderer.on('covers:progress', handler)
+    return () => ipcRenderer.off('covers:progress', handler)
   },
   removeTile: (id: string): Promise<{ ok: boolean; name?: string; error?: string }> =>
     ipcRenderer.invoke('game:remove', id),
