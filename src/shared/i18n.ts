@@ -56,7 +56,6 @@ export const MESSAGES = {
 
   'page.library': { zh: '书架', en: 'Library' },
   'page.tier': { zh: '评价', en: 'Tiers' },
-  'page.wishlist': { zh: '想玩选择', en: 'Pick a game' },
   'page.disk': { zh: '磁盘', en: 'Disk' },
   'page.settings': { zh: '设置', en: 'Settings' },
 
@@ -817,6 +816,15 @@ export const MESSAGES = {
   'drawer.size': { zh: '体积', en: 'Size' },
   'drawer.installed': { zh: '安装/修改', en: 'Installed / updated' },
   'drawer.unknown': { zh: '未知', en: 'unknown' },
+  /* The catalogue record's own account of the work — the names it is released under,
+     who made it, when. Not facts about this copy on this disk, which is why they sit in
+     a block of their own. */
+  'drawer.work': { zh: '作品资料', en: 'The work' },
+  'drawer.altTitle': { zh: '原名', en: 'Original title' },
+  'drawer.zhTitle': { zh: '中文名', en: 'Chinese title' },
+  'drawer.developer': { zh: '品牌', en: 'Developer' },
+  'drawer.released': { zh: '发售日期', en: 'Released' },
+  'drawer.workLink': { zh: '在浏览器中打开该条目', en: 'Open this entry in the browser' },
   'drawer.tags': { zh: '标签', en: 'Tags' },
   'drawer.sessions': { zh: '游玩记录', en: 'Play history' },
   'drawer.moreSessions': {
@@ -1213,17 +1221,6 @@ export const MESSAGES = {
   'tier.clearDetail2': {
     zh: '评级同时记在每个游戏文件夹的 sakura-launcher.md 里，清除后下次扫描会一并同步过去。',
     en: 'Tiers are also recorded in each game’s sakura-launcher.md; the next scan syncs the clearing through to those files.'
-  },
-
-  /* ---- wishlist page ---- */
-  'wish.onlySelected': { zh: '只看已选', en: 'Selected only' },
-  'wish.selected': { zh: '已选 {n} / {total}', en: '{n} of {total} selected' },
-  'wish.add': { zh: '加入想玩', en: 'Add to wishlist' },
-  'wish.remove': { zh: '移出想玩', en: 'Remove from wishlist' },
-  'wish.noMatch': { zh: '没有匹配的游戏', en: 'No games match' },
-  'wish.noMatchHint': {
-    zh: '换个关键词，或者关掉「只看已选」。',
-    en: 'Try another word, or turn off Selected only.'
   },
 
   /* ---- downloader ---- */

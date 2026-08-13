@@ -824,12 +824,11 @@ body.tiles-dragging .tile.drop-target:hover {
 /*
  * Artwork too small to carry a caption gets the blur without the badge.
  *
- * The blur is the protection and works at any size; the badge only explains it, and at
- * 56px (想玩 list) or a quarter of a folder tile it is a third of the picture wide, which
+ * The blur is the protection and works at any size; the badge only explains it, and at a
+ * tier row's 56px or a quarter of a folder tile it is a third of the picture wide, which
  * reads as damage rather than as a label. The full tile and the detail drawer still carry
  * it, which is where someone is actually looking at the cover.
  */
-.wish-icon .art-badge,
 .tier-icon .art-badge,
 .folder-items .art-badge {
   display: none;
@@ -1528,64 +1527,7 @@ body.tiles-dragging .tile.drop-target:hover {
   box-shadow: var(--shadow-md);
 }
 
-/* ---------- wishlist picker ---------- */
-
-.wish-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
-  gap: 8px;
-}
-
-.wish-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 9px 14px;
-  border-radius: 12px;
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
-  cursor: pointer;
-  user-select: none;
-  transition: background 0.14s;
-}
-
-.wish-row:hover {
-  background: var(--glass-strong);
-}
-
-.wish-icon {
-  position: relative; /* contains the absolutely-positioned artwork */
-  width: 56px;
-  height: 56px;
-  flex: none;
-  border-radius: 11px;
-  overflow: hidden;
-  background: color-mix(in srgb, var(--panel) 85%, transparent);
-  display: grid;
-  place-items: center;
-}
-
-.wish-icon img {
-  width: 84%;
-  height: 84%;
-  object-fit: contain;
-}
-
-.wish-icon .tile-placeholder {
-  font-size: 1.5em;
-}
-
-.wish-name {
-  flex: 1;
-  min-width: 0;
-  font-size: 13.5px;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
+/* ---------- toggle switch ---------- */
 
 .switch {
   flex: none;

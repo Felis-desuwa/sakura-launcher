@@ -4,12 +4,11 @@ import { SORT_KEYS, TAB_KEYS } from '../../../shared/types'
 import { useT } from '../lib/i18n'
 import WindowControls from './WindowControls'
 
-export type PageKey = 'desktop' | 'tier' | 'wishlist' | 'disk' | 'settings'
+export type PageKey = 'desktop' | 'tier' | 'disk' | 'settings'
 
 /** Sub-pages, with the key their name is looked up under. */
 const PAGES: [PageKey, MessageKey][] = [
   ['tier', 'page.tier'],
-  ['wishlist', 'page.wishlist'],
   ['disk', 'page.disk'],
   ['settings', 'page.settings']
 ]

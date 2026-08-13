@@ -41,7 +41,6 @@ import MatchDialog from './components/MatchDialog'
 import TagBar from './components/TagBar'
 import SettingsPage from './pages/SettingsPage'
 import TierPage from './pages/TierPage'
-import WishlistPage from './pages/WishlistPage'
 
 interface Toast {
   id: number
@@ -729,8 +728,6 @@ export default function App(): React.JSX.Element {
               toast(tr('toast.tiersCleared'))
             }}
           />
-        ) : page === 'wishlist' ? (
-          <WishlistPage games={games} onPatch={patchGame} />
         ) : page === 'disk' ? (
           <DiskPage games={games} onToast={toast} onRescan={() => void runScan(false, false)} />
         ) : (
