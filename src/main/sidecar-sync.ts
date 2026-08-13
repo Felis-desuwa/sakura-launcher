@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { Game, Tier } from '../shared/types'
 import { MAX_SESSIONS, normalizeStatus, TIERS } from '../shared/types'
+import { adoptCover } from './covers'
 import * as db from './db'
 import {
   findCoverIn,
@@ -63,6 +64,22 @@ function absolutizeArgs(game: Game, args: string[] | undefined): string[] | unde
     const resolved = path.resolve(game.dir, arg)
     return isUnder(resolved, game.dir) && fs.existsSync(resolved) ? resolved : arg
   })
+}
+
+/**
+ * Move a cover that lives elsewhere in beside the game.
+ *
+ * For the ones that predate covers being kept in the game folder: they sit under
+ * `%APPDATA%`, pointed at by an absolute path, and nothing would ever bring them across
+ * on their own — a catalogue pass leaves a hand-picked cover alone, which is exactly the
+ * cover most worth keeping. So the copy happens here, once, the next time the folder is
+ * written to anyway.
+ */
+function ensurePortableCover(game: Game): void {
+  const cover = game.coverPath
+  if (!cover || isUnder(cover, game.dir) || !fs.existsSync(cover)) return
+  const dest = adoptCover(game, cover)
+  if (dest) db.updateGame(game.id, { coverPath: dest })
 }
 
 /**
@@ -227,6 +244,7 @@ function syncable(game: Game): boolean {
 /** Push one game out to its sidecar. Used when a play session starts and ends. */
 export function writeGameSidecar(game: Game): void {
   if (!syncable(game)) return
+  ensurePortableCover(game)
   const result = writeSidecarIfChanged(game.dir, toSidecar(game))
   if (result.ok && result.mtimeMs !== undefined) {
     game.sidecarSyncedAt = result.mtimeMs
@@ -250,6 +268,7 @@ export function syncAll(): SyncOutcome {
 
   for (const game of db.getGames()) {
     if (!syncable(game)) continue
+    ensurePortableCover(game)
     const file = path.join(game.dir, SIDECAR)
     const mtime = statMtime(file)
 
