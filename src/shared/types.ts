@@ -150,8 +150,15 @@ export interface Game {
    * they are not worth the same.
    */
   summaryTranslated?: boolean
-  /** The catalogue entry the genre tags came from, once one has been settled on. */
-  work?: { source: TagSource; workId: string; title: string }
+  /**
+   * The catalogue entry the genre tags came from, once one has been settled on.
+   *
+   * More than an id: the names a work goes by are the whole reason a folder called
+   * `032601` can be found again by typing its Japanese title, and they are only ever
+   * learnt at the moment of the lookup. Storing the id alone threw them away and left
+   * the search box with nothing but the name the user had already typed.
+   */
+  work?: WorkRecord
 
   lastLaunchedAt: number | null
   launchCount: number
@@ -456,6 +463,51 @@ export function visibleTags(game: Game, showSpoilers: boolean, showAdult = true)
   )
 }
 
+/** The folder a game lives in, without the rest of the path. */
+export function folderNameOf(game: Game): string {
+  const parts = game.dir.split(/[\\/]/).filter(Boolean)
+  return parts[parts.length - 1] ?? ''
+}
+
+/**
+ * Whether a game answers to what was typed in the search box.
+ *
+ * Everything a person might reach for, which is deliberately more than the name on the
+ * tile. A renamed game keeps its folder name and, once a catalogue has been asked, the
+ * names the work is actually released under — and those are exactly the strings somebody
+ * types when the shelf says 多娜多娜 and they think of the Japanese title, or when they
+ * remember only that it lived in `RJ01234567`. The path above the folder is left out on
+ * purpose: a shared parent directory matches every game at once, which is the one result
+ * nobody wants from a search.
+ *
+ * `tags` is passed in rather than derived so the caller's spoiler and adult filtering
+ * holds here too — a hidden tag must not be able to match on the sly.
+ */
+export function matchesQuery(game: Game, query: string, tags: AutoTag[]): boolean {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  const has = (value: string | undefined): boolean =>
+    Boolean(value && value.toLowerCase().includes(q))
+
+  if (has(game.name) || has(folderNameOf(game))) return true
+  const work = game.work
+  if (
+    work &&
+    (has(work.title) ||
+      has(work.altTitle) ||
+      has(work.zhTitle) ||
+      has(work.developer) ||
+      // The number the drawer shows as this game's identity. Somebody who has just read
+      // `v1234` there and typed it back has named the game exactly.
+      has(work.workId))
+  )
+    return true
+  if (game.tags.some((tag) => has(tag))) return true
+  // Both readings of a VNDB tag. The shelf shows 校园 and the record stores `High School`,
+  // and searching only the record means the word on screen is the one word that fails.
+  return tags.some((tag) => has(tag.id) || has(tag.label) || has(vndbTagZh(tag.label ?? '')))
+}
+
 /**
  * Facets where holding two chips at once can only ever match nothing.
  *
@@ -526,6 +578,67 @@ export const TAG_SOURCE_LABEL: Record<TagSource, string> = {
   vndb: 'VNDB'
 }
 
+/**
+ * What was kept of the catalogue entry a game was settled on.
+ *
+ * The subset of `WorkMatch` that is worth storing: everything else in a match either is
+ * applied elsewhere (the tags, the cover, the blurb) or describes the search rather than
+ * the work (`score`). These fields cannot be derived from the folder — they are what the
+ * lookup was for — so they go into the database *and* into the sidecar beside the game.
+ */
+export interface WorkRecord {
+  source: TagSource
+  workId: string
+  /** The name the catalogue answered under, in whatever language it was asked in. */
+  title: string
+  /**
+   * The original Japanese name, as the catalogue records it. Never derived from the
+   * title and never translated — the same rule `WorkMatch.altTitle` follows.
+   */
+  altTitle?: string
+  /** The Chinese name the work is released under, when the catalogue records one. */
+  zhTitle?: string
+  /** `YYYY-MM-DD`, or whatever coarser prefix the catalogue gave. */
+  released?: string
+  /** The brand or circle that made it. */
+  developer?: string
+}
+
+/**
+ * What to store about a match, in one place.
+ *
+ * Both routes to a settled match — the automatic pass and the user picking an entry out
+ * of the dialog — write the same record, and they used to build it twice. A field added
+ * to one and forgotten in the other is invisible until somebody notices their hand-picked
+ * games are the ones missing a release date.
+ */
+export function workRecordOf(match: WorkMatch): WorkRecord {
+  return {
+    source: match.source,
+    workId: match.workId,
+    title: match.title,
+    altTitle: match.altTitle,
+    zhTitle: match.zhTitle,
+    released: match.released,
+    developer: match.developer
+  }
+}
+
+/**
+ * The page this work has on the catalogue it came from.
+ *
+ * A map rather than a ternary, so that adding a catalogue is a compile error here instead
+ * of a link that quietly sends somebody to the wrong site's 404.
+ */
+const WORK_URL: Record<TagSource, (workId: string) => string> = {
+  vndb: (id) => `https://vndb.org/${id}`,
+  dlsite: (id) => `https://www.dlsite.com/maniax/work/=/product_id/${id}.html`
+}
+
+export function workUrl(work: WorkRecord): string {
+  return WORK_URL[work.source](work.workId)
+}
+
 /** A catalogue entry the launcher believes is this game. */
 export interface WorkMatch {
   source: TagSource
@@ -543,6 +656,13 @@ export interface WorkMatch {
   /** The Chinese name the work is released under, when the catalogue records one. */
   zhTitle?: string
   released?: string
+  /**
+   * The brand or circle, as the catalogue names it.
+   *
+   * One name even where a catalogue lists several: this is shown on a line in a drawer
+   * and searched on, not credited. The first is the one the work is known by.
+   */
+  developer?: string
   /** 0–1. An exact id match is 1 and is never put to the user. */
   score: number
   /** The genres this entry would apply. */

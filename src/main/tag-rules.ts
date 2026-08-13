@@ -519,6 +519,13 @@ export interface DlsiteProduct {
   work_name?: string
   regist_date?: string
   /**
+   * The circle. `maker_name` follows the locale asked for, exactly as the title and the
+   * genres do, and is what a reader of that interface expects to see; `maker_name_base`
+   * is the Japanese original and stands in when the record carries no localised name.
+   */
+  maker_name?: string
+  maker_name_base?: string
+  /**
    * `name` follows the locale the catalogue was asked in; `name_base` is always the
    * Japanese original. Classification keys on the base name so that a Chinese interface
    * and a Japanese one reach the same verdict about the same genre.
@@ -567,6 +574,12 @@ export function dlsiteWork(product: DlsiteProduct): WorkMatch | null {
     workId,
     title,
     released,
+    // The catalogue is asked in the interface language and answers in it, exactly as the
+    // title and the genres do; the base name is the fallback for a record that carries no
+    // localised one. `||` and not `??`: this API answers with an empty string as readily
+    // as it omits a field, and `??` would keep the empty one and never reach the name
+    // that is actually there.
+    developer: (product.maker_name || product.maker_name_base || '').trim() || undefined,
     cover: coverFromDlsite(product) ?? undefined,
     blurb: dlsiteIntro(product),
     // Read out of the folder name, so it names exactly one work and cannot be a near miss.
@@ -609,6 +622,19 @@ export interface VndbVn {
    * users. Read by `cover-rules.ts`; the tags do not use them.
    */
   image?: { url?: string; sexual?: number; violence?: number }
+  /**
+   * Who made it. `name` is romanised and `original` is the name in its own script —
+   * the form the brand is known by, and the one somebody types.
+   */
+  developers?: { name?: string; original?: string }[]
+}
+
+/** The brand or circle a VNDB entry credits, in the script it is known by. */
+function vndbDeveloper(item: VndbVn): string | undefined {
+  // The first is the one the work is known by; a co-development credit is not what a
+  // one-line field in a drawer is for.
+  const first = (item.developers ?? [])[0]
+  return (first?.original || first?.name || '').trim() || undefined
 }
 
 /** The Chinese name a work is released under, when it has one. */
@@ -661,6 +687,7 @@ export function vndbWorks(items: VndbVn[], query: string): WorkMatch[] {
       altTitle: japaneseTitle(item) !== title ? japaneseTitle(item) : undefined,
       zhTitle: chineseTitle(item),
       released: item.released,
+      developer: vndbDeveloper(item),
       cover: coverFromVndb(item) ?? undefined,
       score,
       tags: [

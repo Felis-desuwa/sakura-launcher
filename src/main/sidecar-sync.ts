@@ -184,10 +184,25 @@ function applySidecar(game: Game, data: SidecarData): void {
   /* ---- what a catalogue said, coming back ---- */
 
   if (data.work && (data.work.source === 'dlsite' || data.work.source === 'vndb')) {
+    // Only what is on record for *this* work. A hand-edited id means the user is saying
+    // this is a different game, and the previous game's brand and dates are not its.
+    const kept =
+      game.work?.source === data.work.source && game.work?.workId === data.work.workId
+        ? game.work
+        : undefined
     game.work = {
       source: data.work.source,
       workId: data.work.workId,
-      title: data.work.title ?? data.work.workId
+      title: data.work.title ?? data.work.workId,
+      // A line that is not there is not an instruction to forget. Files written by an
+      // older build carry the work line and none of these, so reading them as deletions
+      // would strip a record that only another paced pass over the catalogue could
+      // rebuild — and no pass will look at this game again, because `taggedAt` is set.
+      // Same judgement the cover below makes: keep, and let a value that *is* written win.
+      altTitle: data.work.altTitle ?? kept?.altTitle,
+      zhTitle: data.work.zhTitle ?? kept?.zhTitle,
+      released: data.work.released ?? kept?.released,
+      developer: data.work.developer ?? kept?.developer
     }
     // A game carrying a work has been looked up, whatever this database remembers. Without
     // this, a folder arriving with a full record would still queue itself for a lookup it

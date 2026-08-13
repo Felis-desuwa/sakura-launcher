@@ -258,7 +258,7 @@ export async function lookupDlsite(workNo: string): Promise<WorkMatch | null> {
  */
 const VNDB_FIELDS =
   'id,title,alttitle,released,titles{lang,title,latin},image{url,sexual,violence},' +
-  'tags.name,tags.rating,tags.spoiler,tags.category'
+  'developers{name,original},tags.name,tags.rating,tags.spoiler,tags.category'
 
 /**
  * One query against VNDB.

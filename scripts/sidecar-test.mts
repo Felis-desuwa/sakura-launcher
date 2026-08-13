@@ -134,7 +134,15 @@ console.log('\n— 目录站资料 —')
  */
 const catalogued: SidecarData = {
   name: '示例游戏',
-  work: { source: 'vndb', workId: 'v1234', title: 'サンプルゲーム' },
+  work: {
+    source: 'vndb',
+    workId: 'v1234',
+    title: 'サンプルゲーム',
+    altTitle: 'サンプルゲーム',
+    zhTitle: '示例游戏',
+    released: '2016-05-27',
+    developer: 'サンプルソフト'
+  },
   cover: { name: 'sakura-cover.jpg', from: 'vndb' },
   autoTags: [
     { id: 'genre:校园', facet: 'genre', label: '校园', reasonKey: 'tag.why.vndb' },
@@ -149,6 +157,11 @@ const catalogued: SidecarData = {
 const round = parseSidecar(renderSidecar(catalogued))
 check('作品编号回得来', round.work?.source === 'vndb' && round.work?.workId === 'v1234')
 check('作品名也一起记着', round.work?.title === 'サンプルゲーム')
+/* 别名是查一次才知道的东西 —— 丢了就只能再联网一次，而搜索框正是靠它认出改过名的游戏 */
+check('原名回得来', round.work?.altTitle === 'サンプルゲーム')
+check('中文名回得来', round.work?.zhTitle === '示例游戏')
+check('发售日期回得来', round.work?.released === '2016-05-27')
+check('品牌回得来', round.work?.developer === 'サンプルソフト')
 check('封面记的是文件名', round.cover?.name === 'sakura-cover.jpg')
 check('封面来源也记着', round.cover?.from === 'vndb')
 check('简介一字不差', round.summary === catalogued.summary, JSON.stringify(round.summary))
@@ -198,6 +211,48 @@ const handWritten = parseSidecar(
 check('小写的来源也认', handWritten.work?.source === 'vndb')
 check('简介去掉了引用符号', handWritten.summary === '手写的一段。')
 check('没署名就是没署名', handWritten.summaryFrom === undefined)
+/* 这几行是后加的：先前写出去的文件里没有，手改时删掉一行也是常事，缺了就是缺了 */
+check('没有原名那几行照样解析得动', handWritten.work?.altTitle === undefined)
+check('缺发售日期不是错', handWritten.work?.released === undefined)
+
+/*
+ * 简介是别人写的一段话，不是我们的字段表。
+ * 商店文案里「原名：」「发售日期：」「品牌：」是家常便饭，要是拿整份文件去找这几行，
+ * 简介里的句子就会被当成这个游戏的资料读回来 —— 下次同步还会把它们写成正式的
+ * 「- 原名:」，一路进到数据库、详情页和搜索里。所以这几行只在简介之前的部分找。
+ */
+const blurbLooksLikeFields = renderSidecar({
+  work: { source: 'vndb', workId: 'v1234', title: 'Sample Game' },
+  summary: '原名：ある作品\n发售日期：2016年5月27日\n品牌：サンプルサークル\n这是一段简介。',
+  summaryFrom: 'bangumi'
+})
+const notFooled = parseSidecar(blurbLooksLikeFields)
+check('简介里的「原名：」不是作品原名', notFooled.work?.altTitle === undefined)
+check('简介里的「发售日期：」也不是', notFooled.work?.released === undefined)
+check('简介里的「品牌：」也不是', notFooled.work?.developer === undefined)
+check('简介本身一字未动', notFooled.summary?.startsWith('原名：ある作品') === true)
+
+/* 空值不写行 —— 写一行空的等于宣称「这部作品没有品牌」，那是个说法，不写才是沉默 */
+const partial = renderSidecar({ work: { source: 'dlsite', workId: 'RJ01234567', title: '某作品' } })
+check('查不到的字段一行都不写', !/原名|中文名|发售日期|品牌/.test(partial))
+check('作品那行照写', /作品: DLsite RJ01234567 · 某作品/.test(partial))
+
+/* 英文界面写英文字段名，读的时候两种都认 —— 换过语言的库不能因此失效 */
+const enWritten = [
+  '## From the catalogue',
+  '',
+  '- Work: VNDB v1234 · Sample Game',
+  '- Original title: サンプルゲーム',
+  '- Chinese title: 示例游戏',
+  '- Released: 2016-05-27',
+  '- Developer: サンプルソフト',
+  ''
+].join('\n')
+const enRound = parseSidecar(enWritten)
+check('英文写法的原名也读得回来', enRound.work?.altTitle === 'サンプルゲーム')
+check('英文写法的中文名也读得回来', enRound.work?.zhTitle === '示例游戏')
+check('英文写法的发售日期也读得回来', enRound.work?.released === '2016-05-27')
+check('英文写法的品牌也读得回来', enRound.work?.developer === 'サンプルソフト')
 
 console.log('\n— 删除 —')
 removeSidecar(dir)

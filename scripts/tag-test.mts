@@ -19,11 +19,14 @@ import {
 } from '../src/main/tag-rules.ts'
 import { parseBangumi } from '../src/main/tag-bangumi.ts'
 import {
+  folderNameOf,
   isAdultTag,
+  matchesQuery,
   tagFacetOf,
   tagLabel,
   toggleTagFilter,
   visibleTags,
+  workRecordOf,
   type AutoTag,
   type Game
 } from '../src/shared/types.ts'
@@ -176,12 +179,37 @@ const [work] = vndbWorks(
       title: 'Sample * Game',
       alttitle: 'サンプル＊ゲーム',
       released: '2016-01-01',
+      titles: [{ lang: 'zh-Hans', title: '示例＊游戏' }],
+      developers: [{ name: 'Sample Soft', original: 'サンプルソフト' }],
       tags: vndbTags
     }
   ],
   'サンプル＊ゲーム'
 )
 check('the Japanese title matches even though the entry is titled in romaji', work.score === 1)
+eq('the Japanese name is carried, not derived', work.altTitle, 'サンプル＊ゲーム')
+eq('so is the Chinese one', work.zhTitle, '示例＊游戏')
+// The brand is written in its own script on every box it ever appeared on; the romanised
+// form is a transliteration somebody made up, and nobody types it.
+eq('the brand comes back in its own script', work.developer, 'サンプルソフト')
+eq(
+  'a brand with no original script falls back to the romanised name',
+  vndbWorks([{ id: 'v1', title: 'X', developers: [{ name: 'Sample Soft' }] }], 'X')[0].developer,
+  'Sample Soft'
+)
+eq(
+  'a co-developed work names the first, since this is one line and not a credits roll',
+  vndbWorks(
+    [{ id: 'v2', title: 'Y', developers: [{ original: '甲' }, { original: '乙' }] }],
+    'Y'
+  )[0].developer,
+  '甲'
+)
+eq(
+  'no developer recorded is no developer written',
+  vndbWorks([{ id: 'v3', title: 'Z' }], 'Z')[0].developer,
+  undefined
+)
 check(
   'spoiler tags are flagged',
   work.tags.some((t) => t.id.includes('cousin incest') && t.spoiler)
@@ -213,8 +241,36 @@ const dl = dlsiteWork({
   workno: 'RJ01234567',
   work_name: 'ある作品',
   regist_date: '2022-12-26 00:00:00',
+  maker_name: '示例社团',
+  maker_name_base: 'サンプルサークル',
   genres: dlGenres.map((g) => ({ name: g.name, name_base: g.base }))
 })
+// The catalogue was asked in the interface language and answered in it — the same reason
+// the genres above need no translation table of ours.
+eq('the circle comes back in the language the catalogue was asked in', dl?.developer, '示例社团')
+eq(
+  'and falls back to the Japanese name when the record carries no localised one',
+  dlsiteWork({ workno: 'RJ01234567', work_name: 'x', maker_name_base: 'サンプルサークル' })
+    ?.developer,
+  'サンプルサークル'
+)
+eq(
+  'a record with no circle at all writes nothing',
+  dlsiteWork({ workno: 'RJ01234567', work_name: 'x' })?.developer,
+  undefined
+)
+// This API answers with an empty string as readily as it omits a field, and an empty
+// string is not an answer — falling back is the whole reason the base name is read.
+eq(
+  'an empty localised name falls through rather than winning',
+  dlsiteWork({
+    workno: 'RJ01234567',
+    work_name: 'x',
+    maker_name: '',
+    maker_name_base: 'サンプルサークル'
+  })?.developer,
+  'サンプルサークル'
+)
 check('a work number match scores 1 and is never put to the user', dl?.score === 1)
 check('the release date is trimmed to a day', dl?.released === '2022-12-26')
 check('the year becomes a tag', dl?.tags.some((t) => t.id === 'year:2022') ?? false)
@@ -476,6 +532,84 @@ check(
   'a year can still be the first thing picked',
   JSON.stringify(toggleTagFilter([], 'year:2017')) === JSON.stringify(['year:2017'])
 )
+
+/* -------------------------------------------------------------------------- */
+console.log('\n== finding a game again ==')
+
+/*
+ * What the search box has to answer to. The names a work is released under are only ever
+ * learnt from a catalogue, so a library that has been looked up knows more about a game
+ * than the word on its tile — and the whole point of storing them is that typing any of
+ * them finds it. The folder is in here for the opposite reason: it is the one string that
+ * survives every rename, and `RJ01234567` is frequently all somebody remembers.
+ */
+
+const shelved = {
+  name: '示例游戏',
+  dir: 'D:\\games\\032601',
+  tags: ['汉化'],
+  work: {
+    source: 'vndb',
+    workId: 'v1234',
+    title: 'Sample Game',
+    altTitle: 'サンプルゲーム',
+    zhTitle: '示例游戏',
+    developer: 'サンプルソフト'
+  }
+} as unknown as Game
+
+const autoOn = [
+  { id: 'genre:high school', facet: 'genre', label: 'High School', reasonKey: 'tag.why.vndb' }
+] as unknown as AutoTag[]
+
+check('the name on the tile still matches', matchesQuery(shelved, '示例', autoOn))
+check('so does the work number the drawer shows', matchesQuery(shelved, 'v1234', autoOn))
+check('so does the Japanese name it is released under', matchesQuery(shelved, 'サンプル', autoOn))
+check('and the Chinese one', matchesQuery(shelved, '示例游戏', autoOn))
+check('and the brand', matchesQuery(shelved, 'サンプルソフト', autoOn))
+check('and the folder, which outlives every rename', matchesQuery(shelved, '032601', autoOn))
+check('a user tag matches', matchesQuery(shelved, '汉化', autoOn))
+check('so does an automatic one', matchesQuery(shelved, 'high school', autoOn))
+check('case does not matter', matchesQuery(shelved, 'HIGH SCHOOL', autoOn))
+// The tag reads 校园 on the shelf and `High School` in the record. Searching only the
+// record makes the word actually on screen the one word that finds nothing.
+check('a VNDB tag matches the name it is shown under', matchesQuery(shelved, '校园', autoOn))
+// Handed in by the caller precisely so this holds: a tag the spoiler or adult switch is
+// hiding must not be able to pull its game onto the screen from behind the switch.
+check('a tag being hidden takes it out of the search too', !matchesQuery(shelved, 'high school', []))
+check('something nothing carries matches nothing', !matchesQuery(shelved, 'zzzz', autoOn))
+check('an empty query matches everything', matchesQuery(shelved, '   ', autoOn))
+// The path above the folder is every game's path, so matching it would hand back the
+// whole library — the one answer a search can give that is worse than none.
+check('the folder above is not searched', !matchesQuery(shelved, 'games', autoOn))
+eq('the folder name is the last segment', folderNameOf(shelved), '032601')
+eq(
+  'a trailing separator does not swallow it',
+  folderNameOf({ dir: 'H:\\games\\032601\\' } as unknown as Game),
+  '032601'
+)
+check(
+  'a game nothing was ever looked up for still searches by name and folder',
+  matchesQuery({ name: '示例', dir: 'D:\\x\\示例', tags: [] } as unknown as Game, '示例', [])
+)
+
+// One record, built one way. Both routes to a settled match — the automatic pass and the
+// dialog — go through this, so a field can never arrive on only half the library.
+const record = workRecordOf({
+  source: 'vndb',
+  workId: 'v5678',
+  title: 'Sample * Game',
+  altTitle: 'サンプル＊ゲーム',
+  zhTitle: '示例＊游戏',
+  released: '2016-01-01',
+  developer: 'サンプルソフト',
+  score: 1,
+  tags: []
+})
+eq('the record keeps the names', record.altTitle, 'サンプル＊ゲーム')
+eq('and the date', record.released, '2016-01-01')
+eq('and the brand', record.developer, 'サンプルソフト')
+check('and nothing about the search itself', !('score' in record))
 
 console.log('\n== the blurb ==')
 

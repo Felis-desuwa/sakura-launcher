@@ -107,6 +107,10 @@ export default function MatchDialog({
           </div>
         )}
         <div className="match-meta">
+          {/* The brand settles more of these than the date does: a sequel and its fan disc
+              share a year and a tag cloud, and the row that is not this game is very often
+              the row from another studio entirely. */}
+          {match.developer && <span>{match.developer}</span>}
           {match.released && <span>{t('match.released', { date: match.released })}</span>}
           <span>{t('match.tagCount', { n: match.tags.length })}</span>
           {hidden > 0 && <span className="dim">{t('match.spoilerHidden', { n: hidden })}</span>}

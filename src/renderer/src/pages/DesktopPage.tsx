@@ -7,7 +7,7 @@ import type {
   SortKey,
   TabKey
 } from '../../../shared/types'
-import { ARCHIVE_GROUP_ID, SORT_KEYS, visibleTags } from '../../../shared/types'
+import { ARCHIVE_GROUP_ID, matchesQuery, SORT_KEYS, visibleTags } from '../../../shared/types'
 import type { MessageKey } from '../../../shared/i18n'
 import { useT } from '../lib/i18n'
 import Artwork from '../components/Artwork'
@@ -167,20 +167,13 @@ export default function DesktopPage(props: Props): React.JSX.Element {
   )
 
   const visible = useMemo(() => {
-    const q = search.trim().toLowerCase()
+    const q = search.trim()
     return games.filter((g) => {
-      // Tags are searchable too, which is most of what makes them worth keeping — and the
-      // automatic ones alongside them, since the tag bar deliberately leaves out anything
-      // only one game carries and search is where those have to remain findable.
-      if (
-        q &&
-        !g.name.toLowerCase().includes(q) &&
-        !g.tags.some((t) => t.toLowerCase().includes(q)) &&
-        !visibleTags(g, showSpoilers, showAdult).some(
-          (t) => t.id.toLowerCase().includes(q) || (t.label ?? '').toLowerCase().includes(q)
-        )
-      )
-        return false
+      // Name, folder, the names the catalogue records, and the tags — `matchesQuery`
+      // holds the whole list, so the drawer and the grid cannot drift apart on what
+      // "found" means. The visible tags are handed in on purpose: a tag hidden by the
+      // spoiler or adult switch must not be able to match on the sly.
+      if (q && !matchesQuery(g, q, visibleTags(g, showSpoilers, showAdult))) return false
       // Several selected tags narrow rather than widen: picking KiriKiri and 有汉化 means
       // both, which is what a person reaching for a second filter is asking for.
       if (activeTags.length > 0) {

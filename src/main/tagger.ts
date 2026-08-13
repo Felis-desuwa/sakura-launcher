@@ -1,5 +1,6 @@
 import path from 'node:path'
 import type { Game, PendingMatch, WorkMatch } from '../shared/types'
+import { workRecordOf } from '../shared/types'
 import { applyCover, applySummary } from './covers'
 import * as db from './db'
 import { writeGameSidecar } from './sidecar-sync'
@@ -320,11 +321,7 @@ export async function computeTags(
         matched++
         db.updateGame(game.id, {
           autoTags: result.match.tags,
-          work: {
-            source: result.match.source,
-            workId: result.match.workId,
-            title: result.match.title
-          },
+          work: workRecordOf(result.match),
           taggedAt: Date.now()
         })
 
@@ -397,7 +394,7 @@ export async function applyMatch(gameId: string, match: WorkMatch): Promise<Game
   const settings = db.getSettings()
   db.updateGame(gameId, {
     autoTags: match.tags,
-    work: { source: match.source, workId: match.workId, title: match.title },
+    work: workRecordOf(match),
     taggedAt: Date.now()
   })
 

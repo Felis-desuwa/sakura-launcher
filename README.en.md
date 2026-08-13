@@ -153,6 +153,14 @@ about a story, and only a catalogue has them.
   skipped; only picking one game out of its own menu replaces its cover, because that is
   unambiguous about which game is meant. Image downloads have their own switch, so you can
   keep the tags without them
+- **What the work is, noted down while it is there** — the same record also carries the
+  **original Japanese name, the Chinese name, the release date and the brand or circle**. They
+  are kept, shown under *The work* in the details panel, and the work number is a link that
+  opens the catalogue's page in your browser. This is not decoration: **a renamed game can be
+  found again by its Japanese title precisely because those names were written down** — they
+  are only ever learnt at the moment of the lookup. **Catalogue scores are deliberately not
+  taken** — the rating in this program is the one you gave it, and two scores side by side
+  only argue with each other
 - **The description rides along with the cover** — fetching a cover also brings back the
   catalogue's description and puts it at the **bottom of the details panel**, saying who wrote
   it. **There is no separate "fetch description" button**: the picture and the text hang off
@@ -215,6 +223,12 @@ about a story, and only a catalogue has them.
   and **never move a single file on disk**
 - **Sorting** — manual / name / size / installed·modified time / last played / playtime,
   switchable from the top bar. Under manual sorting, drag tiles wherever you want them
+- **Search knows the other names** — besides the name on the tile, the search box answers to
+  the **original Japanese name, the Chinese name and the brand** (once a catalogue has been
+  asked), the **folder name**, and both your own tags and the genre tags. So a game shown in
+  Chinese and living in a folder called `RJ01234567` is findable by any of the three. The
+  **directory above the folder is not matched** — that one is shared by every game, and
+  searching it would hand back the whole library
 - **Renaming touches no files** — right-click to rename, and the new name is written into the
   `sakura-launcher.md` inside the game folder. **The folder itself is never renamed**, because
   many of these games locate their assets by path and a renamed folder stops opening. That file
@@ -226,7 +240,8 @@ about a story, and only a catalogue has them.
   you edited by hand is read back when you press *Refresh* in the top bar (modification times
   are compared and the newer side wins); the automatic sync at startup deliberately does not do
   this, as it would cost one disk round trip per game
-- **What was looked up goes in there too** — the work number, the genre tags, the description
+- **What was looked up goes in there too** — the work number, the original and Chinese names,
+  the release date, the brand, the genre tags, the description
   and the cover's file name all live in that same `sakura-launcher.md`, and **the cover itself
   is written into the game folder** as `sakura-cover.jpg`. So a title you renamed and a lookup
   you paid for survive **a new version, a new machine, and a folder renamed to

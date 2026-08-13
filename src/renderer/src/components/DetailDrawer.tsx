@@ -6,7 +6,8 @@ import {
   TAG_SOURCE_LABEL,
   tagLabel,
   tagReason,
-  visibleTags
+  visibleTags,
+  workUrl
 } from '../../../shared/types'
 import { formatBytes, formatDate, formatPercent } from '../lib/format'
 import { useLang, useT } from '../lib/i18n'
@@ -329,6 +330,56 @@ export default function DetailDrawer({
               <dt>{t('drawer.installed')}</dt>
               <dd>{game.mtimeMs ? formatDate(game.mtimeMs) : t('drawer.unknown')}</dd>
             </dl>
+
+            {/* What the catalogue record said about the work itself, as opposed to about
+                this copy of it. A name the game is released under is worth showing even
+                when it is the one on the tile's shelf already — it is what somebody else
+                calls it, and it is what the search box now answers to. */}
+            {game.work && (
+              <>
+                <div className="section-title">{t('drawer.work')}</div>
+                <dl className="info-grid">
+                  {game.work.altTitle && game.work.altTitle !== game.name && (
+                    <>
+                      <dt>{t('drawer.altTitle')}</dt>
+                      <dd>{game.work.altTitle}</dd>
+                    </>
+                  )}
+                  {game.work.zhTitle && game.work.zhTitle !== game.name && (
+                    <>
+                      <dt>{t('drawer.zhTitle')}</dt>
+                      <dd>{game.work.zhTitle}</dd>
+                    </>
+                  )}
+                  {game.work.developer && (
+                    <>
+                      <dt>{t('drawer.developer')}</dt>
+                      <dd>{game.work.developer}</dd>
+                    </>
+                  )}
+                  {game.work.released && (
+                    <>
+                      <dt>{t('drawer.released')}</dt>
+                      <dd>{game.work.released}</dd>
+                    </>
+                  )}
+                  <dt>{TAG_SOURCE_LABEL[game.work.source]}</dt>
+                  <dd>
+                    {/* The main process denies the new window and hands the address to the
+                        system browser, so this opens outside without any IPC of ours. */}
+                    <a
+                      className="linkish"
+                      href={workUrl(game.work)}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={t('drawer.workLink')}
+                    >
+                      {game.work.workId}
+                    </a>
+                  </dd>
+                </dl>
+              </>
+            )}
 
             {game.tags.length > 0 && (
               <>

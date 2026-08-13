@@ -746,7 +746,16 @@ export interface SidecarData {
    * database, and everything below can be fetched again from it in one request. A folder
    * that turns up on another machine carries it and needs no matching at all.
    */
-  work?: { source: string; workId: string; title?: string }
+  work?: {
+    source: string
+    workId: string
+    title?: string
+    /** The names the work is released under, which is what a search box is asked for. */
+    altTitle?: string
+    zhTitle?: string
+    released?: string
+    developer?: string
+  }
   /** Genre tags, by the name each was shown under. */
   autoTags?: AutoTag[]
   /** The catalogue's description, as text. */
@@ -816,6 +825,13 @@ const SIDECAR_FIELDS = {
   launches: { zh: '启动次数', en: 'Times launched' },
   last: { zh: '最后游玩', en: 'Last played' },
   work: { zh: '作品', en: 'Work' },
+  // The names and the credits off the same record. They are here rather than folded into
+  // the work line because a person editing this file has to be able to correct one of
+  // them, and because a title with a ` · ` in it would otherwise be unparseable.
+  altTitle: { zh: '原名', en: 'Original title' },
+  zhTitle: { zh: '中文名', en: 'Chinese title' },
+  released: { zh: '发售日期', en: 'Released' },
+  developer: { zh: '品牌', en: 'Developer' },
   cover: { zh: '封面', en: 'Cover' },
   // Three lines rather than one with markers on it. What separates them is not decoration:
   // the launcher hides the second and third by default, and a file that flattened them
@@ -973,6 +989,15 @@ export function renderSidecar(data: SidecarData): string {
       const label = SOURCE_LABELS[data.work.source] ?? data.work.source
       const title = data.work.title ? ` · ${data.work.title}` : ''
       lines.push(`- ${fieldLabel('work')}: ${label} ${data.work.workId}${title}`)
+      // Only what the catalogue actually gave. An empty line reads as "this work has no
+      // brand", which is a claim, where a missing line is merely silence.
+      const detail = (key: SidecarField, value: string | undefined): void => {
+        if (value) lines.push(`- ${fieldLabel(key)}: ${value}`)
+      }
+      detail('altTitle', data.work.altTitle)
+      detail('zhTitle', data.work.zhTitle)
+      detail('released', data.work.released)
+      detail('developer', data.work.developer)
     }
     if (cover) {
       const from = !cover.from
@@ -1076,15 +1101,29 @@ export function parseSidecar(text: string): SidecarData {
   const data: SidecarData = {}
 
   // Tolerant of both colon forms and of the `键 = 值` shape the v0.1.0 file used.
-  const field = (key: SidecarField): string | null => {
+  const fieldIn = (source: string, key: SidecarField): string | null => {
     const { zh, en } = SIDECAR_FIELDS[key]
     // Either language's label, whichever the file happens to use.
     const m = new RegExp(
       `^[ \\t]*[-*]?[ \\t]*(?:${zh}|${en})[ \\t]*[:：=][ \\t]*(.+?)[ \\t]*$`,
       'mi'
-    ).exec(raw)
+    ).exec(source)
     return m ? m[1].trim() : null
   }
+  const field = (key: SidecarField): string | null => fieldIn(raw, key)
+
+  /**
+   * The part of the file that is ours to read as `label: value`.
+   *
+   * Everything above the first `###`, which is to say everything above the description —
+   * and the description is a paragraph somebody else wrote. Store copy opens with lines
+   * shaped exactly like `原名：ある作品` or `品牌：サンプルサークル` all the time, and read
+   * against the whole file those parse as this game's own fields, get written back out as
+   * real `- 原名:` lines by the next sync, and arrive in the drawer and the search box as
+   * facts. Most labels here are launcher jargon no blurb would contain; the four names and
+   * credits are precisely the words a blurb does contain, so they are read from here.
+   */
+  const head = raw.split(/^[ \t]*#{3,6}[ \t]/m)[0]
 
   const name = field('name')
   if (name) data.name = name
@@ -1151,7 +1190,13 @@ export function parseSidecar(text: string): SidecarData {
       data.work = {
         source: m[1].toLowerCase(),
         workId: m[2],
-        title: m[3]?.trim() || undefined
+        title: m[3]?.trim() || undefined,
+        // Each on its own line, and each optional: files written before these existed —
+        // and files a person trimmed by hand — have to keep parsing.
+        altTitle: fieldIn(head, 'altTitle')?.trim() || undefined,
+        zhTitle: fieldIn(head, 'zhTitle')?.trim() || undefined,
+        released: fieldIn(head, 'released')?.trim() || undefined,
+        developer: fieldIn(head, 'developer')?.trim() || undefined
       }
     }
   }
