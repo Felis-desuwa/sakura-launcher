@@ -804,16 +804,6 @@ export default function App(): React.JSX.Element {
               {tr('rename.note')}
             </>
           }
-          extraAction={{
-            label: tr('rename.revert'),
-            onClick: async () => {
-              const target = renaming
-              setRenaming(null)
-              await window.sakura.resetName(target.id)
-              await refresh()
-              toast(tr('toast.renamedBack'))
-            }
-          }}
           onCancel={() => setRenaming(null)}
           onConfirm={async (name) => {
             const target = renaming

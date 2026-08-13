@@ -3,6 +3,7 @@ import type { Game, PendingMatch, WorkMatch } from '../shared/types'
 import { applyCover, applySummary } from './covers'
 import * as db from './db'
 import { writeGameSidecar } from './sidecar-sync'
+import { displayNameFor } from './scan-core'
 import { queryLadder, searchableTitle, STRONG_MATCH, workNoIn } from './tag-rules.ts'
 import type { BangumiWork } from './tag-bangumi.ts'
 import { bangumiSearch, lookupDlsite, searchVndb, vndbById } from './tag-online'
@@ -113,6 +114,24 @@ async function resolveJapaneseName(name: string): Promise<BangumiWork[]> {
 }
 
 /**
+ * The title a person gave this game, if one did.
+ *
+ * Not `game.renamed`, which looks like the right flag and is not: the sidecar is the
+ * source of truth for a title, so the first sync after a rename clears the flag while
+ * keeping the name. Reading it would mean a game called 多娜多娜 in a folder called
+ * `032601` gets looked up as `032601` — the string that has already failed — and then
+ * offered `032601` back in the box that asks what it is really called.
+ *
+ * Comparing against the folder's own display name catches both routes at once: renaming
+ * the tile, and typing a name into the file by hand.
+ */
+function chosenName(game: Game): string | undefined {
+  const name = game.name?.trim()
+  if (!name) return undefined
+  return name === displayNameFor(game.dir) ? undefined : name
+}
+
+/**
  * Ask the catalogues what this game is.
  *
  * Three sources, each doing the one thing it is good at. A work number goes to DLsite and
@@ -144,10 +163,10 @@ export async function lookupGame(game: Game): Promise<LookupResult> {
     return match ? { match, reached: true } : { reached: false }
   }
 
-  // Search on the name the user sees. A renamed tile is the user telling us what this
-  // game is called, which is better information than the folder name they renamed it
+  // Search on the name the user sees. A tile somebody renamed is them telling us what
+  // this game is called, which is better information than the folder name they renamed it
   // away from.
-  const name = game.renamed ? game.name : folderName
+  const name = chosenName(game) ?? folderName
   const direct = await searchLadder(name)
   if (direct.hits.length > 0) return settle(direct.hits, direct.reached)
 
@@ -339,7 +358,12 @@ export async function computeTags(
           gameId: game.id,
           gameName: game.name,
           candidates: result.candidates ?? [],
-          suggestion: result.suggestion ?? searchableTitle(path.basename(game.dir))
+          // The name a person gave it comes first. That is somebody having already
+          // answered the question this box is about to ask, and offering them `032601`
+          // back — the string that just failed — instead of the title they typed is the
+          // box ignoring the one good piece of information it has.
+          suggestion:
+            chosenName(game) ?? result.suggestion ?? searchableTitle(path.basename(game.dir))
         })
       }
     }
@@ -368,16 +392,33 @@ export async function computeTags(
  * Replaces wholesale rather than merging: the user has just said this game is a different
  * work than we thought, and tags from the work it is not have no claim to stay.
  */
-export function applyMatch(gameId: string, match: WorkMatch): Game | undefined {
+export async function applyMatch(gameId: string, match: WorkMatch): Promise<Game | undefined> {
   if (!db.findGame(gameId)) return undefined
-  const updated = db.updateGame(gameId, {
+  const settings = db.getSettings()
+  db.updateGame(gameId, {
     autoTags: match.tags,
     work: { source: match.source, workId: match.workId, title: match.title },
     taggedAt: Date.now()
   })
+
+  // The rest of the same record, exactly as an automatic match would take it. This is the
+  // route for a folder called `032601`, which no search can resolve — somebody types the
+  // name once, and typing it once has to be enough. Leaving the cover and the description
+  // out meant the games that needed the most help ended up with the least, and with no
+  // way to ask for the remainder: they were matched, so no later pass would look at them
+  // again. `'single'` because this is one game, named deliberately.
+  const scope = 'single' as const
+  const game = db.findGame(gameId)
+  if (game && settings.onlineCovers) await applyCover(game, match, scope)
+  if (game && settings.onlineCovers && settings.onlineSummary) {
+    await applySummary(game, match, scope)
+  }
+
   // Settled by hand, which is the answer least worth losing: written straight out to the
   // file beside the game rather than waiting for a scan.
+  const updated = db.findGame(gameId)
   if (updated) writeGameSidecar(updated)
+  db.flush()
   return updated
 }
 

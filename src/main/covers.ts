@@ -176,7 +176,8 @@ export async function applyCover(
  * the intended answer and not a failure to report.
  */
 async function fetchSummary(
-  match: WorkMatch
+  match: WorkMatch,
+  alsoKnownAs?: string
 ): Promise<{ text: string; from: SummarySource } | null> {
   if (match.summary && match.source === 'dlsite') {
     return { text: match.summary, from: 'dlsite' }
@@ -186,7 +187,11 @@ async function fetchSummary(
   const query = match.altTitle ?? match.title
   if (!query.trim()) return null
   const rows = await bangumiSearch(query, 3)
-  const text = pickBangumiSummary(rows, [match.title, match.altTitle, match.zhTitle])
+  // The name the user gave this game counts too. Somebody typing 多娜多娜 into the match
+  // box is naming the work, and that name is often the one Bangumi files it under while
+  // VNDB's romaji title matches nothing there. It still has to clear the same threshold
+  // against a row, so it widens what can be recognised without widening what is accepted.
+  const text = pickBangumiSummary(rows, [match.title, match.altTitle, match.zhTitle, alsoKnownAs])
   return text ? { text, from: 'bangumi' } : null
 }
 
@@ -204,7 +209,7 @@ export async function applySummary(
   scope: 'single' | 'bulk'
 ): Promise<boolean> {
   if (!mayReplaceSummary(Boolean(game.summary), scope)) return false
-  const blurb = await fetchSummary(match)
+  const blurb = await fetchSummary(match, game.name)
   if (!blurb) return false
   db.updateGame(game.id, { summary: blurb.text, summaryFrom: blurb.from })
   return true

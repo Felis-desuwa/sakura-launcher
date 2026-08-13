@@ -8,7 +8,6 @@ interface Props {
   placeholder?: string
   confirmLabel?: string
   /** Extra action rendered on the left, e.g. "restore the original name". */
-  extraAction?: { label: string; onClick: () => void }
   onConfirm: (value: string) => void
   onCancel: () => void
 }
@@ -23,7 +22,6 @@ export default function PromptDialog({
   initialValue = '',
   placeholder,
   confirmLabel,
-  extraAction,
   onConfirm,
   onCancel
 }: Props): React.JSX.Element {
@@ -69,16 +67,6 @@ export default function PromptDialog({
           }}
         />
         <div className="modal-actions">
-          {extraAction && (
-            <button
-              type="button"
-              className="btn ghost"
-              style={{ marginRight: 'auto' }}
-              onClick={extraAction.onClick}
-            >
-              {extraAction.label}
-            </button>
-          )}
           <button type="button" className="btn ghost" onClick={onCancel}>
             {t('common.cancel')}
           </button>

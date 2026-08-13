@@ -171,7 +171,6 @@ const api = {
     name: string
   ): Promise<{ ok: boolean; sidecar?: boolean; file?: string; error?: string }> =>
     ipcRenderer.invoke('game:rename', id, name),
-  resetName: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('game:resetName', id),
   setTags: (id: string, tags: string[]): Promise<Game | undefined> =>
     ipcRenderer.invoke('game:setTags', id, tags),
 

@@ -125,7 +125,10 @@ export default function MatchDialog({
             disabled={busy !== null}
             onClick={() => void apply(entry.gameId, match)}
           >
-            {t('match.apply')}
+            {/* Adopting now fetches the cover and the description from the same record, so
+                it takes a couple of paced requests rather than being instant. Said out
+                loud, or the dialog looks stuck at exactly the moment it is working. */}
+            {busy === entry.gameId ? t('match.applying') : t('match.apply')}
           </button>
         </div>
       </div>

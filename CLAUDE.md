@@ -99,6 +99,11 @@ The sidecar is **bilingual**: written in the current UI language, parsed in both
 add it to `SIDECAR_FIELDS`/`STATUS_LABELS`/`SENTINELS` with both strings, and remember `header()`
 is a function rather than a const precisely so it cannot freeze the wrong language at import time.
 
+`Game.renamed` is **not** the flag for "a person named this game". The sidecar is the source of
+truth for a title, so the first sync after a rename clears it while keeping the name. Use
+`chosenName()` in `tagger.ts` (name ≠ `displayNameFor(dir)`), or a game called 多娜多娜 in a
+folder called `032601` gets looked up as `032601` and offered `032601` back in the match box.
+
 **What a lookup found is written down too** — work id, genre tags, description, and the cover's
 file name. It is nominally derivable, but only by somebody with the switch on, a connection and
 the patience for a paced pass, which is no help to a folder that has just been renamed or moved

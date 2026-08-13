@@ -524,7 +524,6 @@ export const MESSAGES = {
     zh: '已从名单里清除，下次重新扫描该文件夹时会重新问你',
     en: 'Dropped from the list — the next rescan of that folder will ask about it again'
   },
-  'toast.renamedBack': { zh: '已恢复为文件夹名', en: 'Restored to the folder name' },
   'toast.renameFailed': { zh: '重命名失败', en: 'Rename failed' },
   'toast.renamedWithSidecar': {
     zh: '已重命名，说明文件已写入游戏文件夹',
@@ -614,7 +613,6 @@ export const MESSAGES = {
     zh: '新名字会写进游戏文件夹里的 sakura-launcher.md，不会改动文件夹名，也不影响游戏启动 —— 很多游戏按路径找资源，直接改文件夹名会让它们打不开。那个文件里还记着这个游戏的状态、评分、标签和游玩时长，删掉它就全部恢复默认。',
     en: 'The new name is written into sakura-launcher.md inside the game folder. The folder itself is not renamed and the game is not affected — many of these games look for their assets by path, and renaming the folder stops them opening at all. That file also holds this game’s status, rating, tags and playtime; delete it and everything returns to defaults.'
   },
-  'rename.revert': { zh: '恢复原名', en: 'Use the folder name' },
   'tags.title': { zh: '《{name}》的标签', en: 'Tags for {name}' },
   'tags.placeholder': {
     zh: '用逗号分隔，例如：战棋, 已打汉化补丁',
@@ -1579,6 +1577,8 @@ export const MESSAGES = {
   'match.allSettled': { zh: '都处理完了', en: 'All settled' },
   'match.none': { zh: '都不是，跳过', en: 'None of these — skip' },
   'match.apply': { zh: '采用', en: 'Use this' },
+  /** Adopting fetches the cover and description too, which takes a moment. */
+  'match.applying': { zh: '取资料中…', en: 'Fetching…' },
   'match.skipAll': { zh: '全部跳过', en: 'Skip all' },
   'match.spoilerHidden': { zh: '（{n} 个标签已隐藏）', en: '({n} tags hidden)' },
 

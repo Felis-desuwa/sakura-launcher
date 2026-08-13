@@ -45,7 +45,6 @@ import {
   exeKindLabel,
   isUnder,
   listDirShallow,
-  removeSidecar,
   SIDECAR,
   splitArgs,
   writeSidecar
@@ -537,19 +536,12 @@ function registerIpc(): void {
     return { removed: doomed.length, games: db.getGames(), settings: db.getSettings() }
   })
 
-  ipcMain.handle('game:resetName', (_e, id: string) => {
-    const game = db.findGame(id)
-    if (!game) return { ok: false }
-    if (game.kind === 'installed' && fs.existsSync(game.dir)) {
-      // Drop the whole sidecar rather than just the name line: the user is asking for
-      // the default, and everything else in it is recoverable from the database.
-      removeSidecar(game.dir)
-      db.updateGame(id, { sidecarSyncedAt: undefined })
-    }
-    db.updateGame(id, { renamed: false })
-    rescan()
-    return { ok: true }
-  })
+  /*
+   * "Restore the folder name" is gone, and so is the handler that did it. It deleted the
+   * whole sidecar to drop one line — defensible when the file held a name, a rating and a
+   * playtime, and not defensible now that it holds the tags, the description and the
+   * name of the cover. Reverting a title is `rename` with the folder name typed in.
+   */
 
   /**
    * Every executable in a game folder, named and explained.
