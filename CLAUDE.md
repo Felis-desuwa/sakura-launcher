@@ -190,9 +190,14 @@ These come from user decisions and are load-bearing. Violating one is a bug even
   equivalent to what `scanner.ts` does and is a bug: it would back-date every existing entry to
   today and declare every real save to be somebody else's. An entry without a baseline keeps
   none, and the dialog says so out loud.
-- **A description is only ever fetched alongside a cover**, and there is no "fetch description"
-  action anywhere — the picture and the text are on one catalogue record, so a second button
-  would be a second trip for one answer. The only control is `Settings.onlineSummary`.
+- **One lookup brings back everything.** Tags, cover and description are one catalogue record,
+  so there is one menu entry (`menu.fetchWork`) and one pass — `tagger.computeTags`, which
+  applies the tags and then calls `applyCover`/`applySummary`. There is no "fetch cover" or
+  "fetch description" action anywhere; a second button would be a second trip for one answer,
+  and it left libraries with the tags fetched and the covers not. The sub-switches
+  (`onlineCovers`, `onlineSummary`) decide how much of the record is kept, never how many
+  trips are made. `covers.ts` must not import `tagger.ts` — it takes a settled match and does
+  not search, which is what keeps the two out of an import cycle.
   **Chinese only**, and nothing is translated: a blurb that reads as Japanese is dropped
   (`isChineseText`). A blurb is kept only from the record the work number named, or from the
   one Bangumi row whose name matches the work — never the next row down. The wrong plot summary

@@ -73,7 +73,6 @@ import {
   setTagHidden,
   tagRunActive
 } from './tagger'
-import { cancelCoverRun, coverRunActive, fetchCovers } from './covers'
 import { sanitizeArchiveName, scanPersonalData } from './share-rules'
 import { syncAll, toSidecar as sidecarFrom, writeGameSidecar } from './sidecar-sync'
 import { closeSplash, showSplash, splashStage } from './splash'
@@ -415,51 +414,26 @@ function registerIpc(): void {
   })
 
   /**
-   * Work out the automatic tags.
+   * Look games up: tags, cover and description, in one pass.
    *
-   * Guarded against a second run while one is in flight: the pass writes to every game
-   * record it touches, and two of them interleaving would have each overwriting the
-   * other's work. The renderer disables the button, but a disabled button is a courtesy,
-   * not a lock.
+   * Gated here and not only by hiding the menu entry, so a stale renderer cannot open a
+   * socket the settings say is closed. Guarded against a second run while one is in
+   * flight: the pass writes to every game record it touches, and two of them interleaving
+   * would have each overwriting the other's work. The renderer disables the button, but a
+   * disabled button is a courtesy, not a lock.
    */
-  ipcMain.handle('tags:compute', async (e, ids: string[] | null) => {
-    if (tagRunActive()) return { ok: false, busy: true }
-    const run = await computeTags(ids, (progress) => {
-      if (!e.sender.isDestroyed()) e.sender.send('tags:progress', progress)
-    })
-    mainWindow?.webContents.send('db:changed')
-    return {
-      ok: true,
-      looked: run.looked,
-      matched: run.matched,
-      pending: run.pending,
-      offline: run.offline,
-      cancelled: run.cancelled
+  ipcMain.handle(
+    'tags:compute',
+    async (e, ids: string[] | null, scope: 'single' | 'bulk' = 'bulk') => {
+      if (!db.getSettings().onlineTags) return { ok: false, off: true }
+      if (tagRunActive()) return { ok: false, busy: true }
+      const run = await computeTags(ids, scope, (progress) => {
+        if (!e.sender.isDestroyed()) e.sender.send('tags:progress', progress)
+      })
+      mainWindow?.webContents.send('db:changed')
+      return { ok: true, ...run }
     }
-  })
-
-  /**
-   * Cover art, only ever for the games named.
-   *
-   * Gated on both switches: the catalogue itself, and the sub-switch for image
-   * downloads. Refusing here rather than only hiding the menu entry means a stale
-   * renderer cannot open a socket the settings say is closed.
-   */
-  ipcMain.handle('covers:fetch', async (e, ids: string[], scope: 'single' | 'bulk') => {
-    const settings = db.getSettings()
-    if (!settings.onlineTags || !settings.onlineCovers) return { ok: false, off: true }
-    if (coverRunActive()) return { ok: false, busy: true }
-    const run = await fetchCovers(ids, scope, (progress) => {
-      if (!e.sender.isDestroyed()) e.sender.send('covers:progress', progress)
-    })
-    mainWindow?.webContents.send('db:changed')
-    return { ok: true, ...run }
-  })
-
-  ipcMain.handle('covers:cancel', () => {
-    cancelCoverRun()
-    return true
-  })
+  )
 
   /** How many games a pass would look up, so the button can say so before it is pressed. */
   ipcMain.handle('tags:pendingCount', () => pendingTargets(db.getGames()).length)

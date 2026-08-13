@@ -63,19 +63,19 @@ interface Props {
   onSortChange: (key: SortKey) => void
   onRename: (game: Game) => void
   onEditTags: (game: Game) => void
-  /** Work these games' automatic tags out again. One game, or a whole selection. */
-  onRetag: (games: Game[]) => void
   /**
-   * Fetch cover art for these games from the catalogue each is matched to.
+   * Look these games up: tags, cover and description in one pass.
    *
-   * `scope` travels with it because the two are not the same act: a selection leaves a
-   * hand-picked cover alone, while one game chosen from its own menu replaces it.
+   * One entry rather than one per field, because it is one catalogue record — two menu
+   * items meant two lookups for one answer, and a library where half of what the record
+   * held was fetched and the other half was something you had to know to ask for.
+   *
+   * `scope` travels with it because the two calls are not the same act: a selection
+   * leaves a hand-picked cover alone, while one game chosen from its own menu replaces it.
    */
-  onFetchCovers: (games: Game[], scope: 'single' | 'bulk') => void
+  onFetchWork: (games: Game[], scope: 'single' | 'bulk') => void
   /** Whether the catalogue is switched on at all — no menu entry offers what is refused. */
   onlineTags: boolean
-  /** Whether image downloads are allowed on top of that. */
-  onlineCovers: boolean
   /** Open the match dialog for this one game, search box and all. */
   onMatchWork: (game: Game) => void
   onBlockedLaunch: () => void
@@ -415,15 +415,10 @@ export default function DesktopPage(props: Props): React.JSX.Element {
       ...(game.coverPath ? [{ label: t('menu.clearCover'), onClick: () => props.onClearCover(game.id) }] : []),
       { label: t('menu.rename'), onClick: () => props.onRename(game) },
       { label: t('menu.editTags'), onClick: () => props.onEditTags(game) },
+      // One game, so this replaces a cover the user set: choosing this game out of its own
+      // menu is not ambiguous about which cover is meant.
       ...(props.onlineTags
-        ? [
-            { label: t('tags.computeOne'), onClick: () => props.onRetag([game]) },
-            // Single game, so this one replaces a cover the user set: choosing this game
-            // out of its own menu is not ambiguous about which cover is meant.
-            ...(props.onlineCovers
-              ? [{ label: t('menu.fetchCover'), onClick: () => props.onFetchCovers([game], 'single') }]
-              : [])
-          ]
+        ? [{ label: t('menu.fetchWork'), onClick: () => props.onFetchWork([game], 'single') }]
         : []),
       { label: t('menu.matchWork'), onClick: () => props.onMatchWork(game) }
     )
@@ -502,17 +497,16 @@ export default function DesktopPage(props: Props): React.JSX.Element {
       )
     }
 
-    // Catalogue work over a selection. Both entries carry the count, because each one is
-    // a run of paced network requests and the number is how long it will take.
+    // Catalogue work over a selection. The count is on the label because this is a run of
+    // paced network requests and the number is how long it will take.
     if (props.onlineTags && targets.length > 0) {
-      items.push({ label: t('menu.fetchTagsN', { n: targets.length }), onClick: () => props.onRetag(targets) })
-      if (props.onlineCovers) {
-        items.push({
-          label: t('menu.fetchCoverN', { n: targets.length }),
-          onClick: () => props.onFetchCovers(targets, 'bulk')
-        })
-      }
-      items.push({ type: 'separator' })
+      items.push(
+        {
+          label: t('menu.fetchWorkN', { n: targets.length }),
+          onClick: () => props.onFetchWork(targets, 'bulk')
+        },
+        { type: 'separator' }
+      )
     }
 
     // One archive per game, so the count is worth saying out loud.

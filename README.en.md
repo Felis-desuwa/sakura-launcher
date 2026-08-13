@@ -143,9 +143,12 @@ about a story, and only a catalogue has them.
   Several genres combine as AND — each extra chip narrows further — but **only one year can be
   selected at a time**, since a work is not both 2016 and 2017 and holding two could only ever
   give you an empty shelf
-- **Cover art comes off the same record** — a catalogue keeps the cover and the tags on one
-  work entry, so matching once gets both. **Manual only**: right-click a game for *Fetch cover
-  online*, or **select several and fetch them together** (tags work the same way).
+- **Cover art comes off the same record** — a catalogue keeps the tags, the cover and the
+  description on one work entry, so looking a game up once gets all three. **One entry does
+  it**: right-click a game for *Fetch from catalogue*, or **select several and do them
+  together**. Splitting it into two buttons meant two trips for one answer, and a library
+  where half of what the record held had been fetched and half had not. **Manual only** —
+  scanning, refreshing and launching never go near the network.
   **A cover you set yourself is never overwritten** — a batch skips it and says how many it
   skipped; only picking one game out of its own menu replaces its cover, because that is
   unambiguous about which game is meant. Image downloads have their own switch, so you can

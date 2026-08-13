@@ -285,61 +285,38 @@ export default function App(): React.JSX.Element {
   }, [])
 
   /**
-   * Fetch the genre tags.
+   * Look games up — tags, cover and description together.
    *
-   * Only ever from a button, and only when the user has switched the catalogue on. One
-   * lookup per game, paced — a large library takes minutes, which is why there is a
-   * progress line and a way to stop.
+   * Only ever from a menu entry or the settings button, and only when the user has
+   * switched the catalogue on. One lookup per game, paced: a large library takes minutes,
+   * which is why there is a progress line and a way to stop.
+   *
+   * `null` means the games nobody has asked about yet, which is what the library-wide
+   * button runs.
    */
   const computeTags = useCallback(
-    async (ids: string[] | null): Promise<void> => {
+    async (ids: string[] | null, scope: 'single' | 'bulk' = 'bulk'): Promise<void> => {
+      if (ids && ids.length === 0) return
       setTagProgress({ done: 0, total: ids?.length ?? 0, name: '' })
       try {
-        const result = await window.sakura.computeTags(ids)
-        if (result.busy) return
+        const result = await window.sakura.computeTags(ids, scope)
+        if (result.busy || result.off) return
         await refresh()
         const looked = result.looked ?? 0
         const matched = result.matched ?? 0
         if (result.offline) toast(tr('tags.offline'), true)
-        else if (result.cancelled) toast(tr('tags.stopped', { looked, matched }))
-        else toast(tr('tags.done', { looked, matched }))
-        if (result.pending && result.pending.length > 0) setPendingMatches(result.pending)
-      } finally {
-        setTagProgress(null)
-      }
-    },
-    [refresh, toast, tr]
-  )
-
-  useEffect(() => window.sakura.onTagProgress(setTagProgress), [])
-
-  /**
-   * Fetch cover art for the games named.
-   *
-   * Shares the tag pass's progress line rather than growing a second one: they are the
-   * same kind of wait, over the same catalogues, and only one of them can run at a time.
-   */
-  const fetchCovers = useCallback(
-    async (ids: string[], scope: 'single' | 'bulk'): Promise<void> => {
-      if (ids.length === 0) return
-      setTagProgress({ done: 0, total: ids.length, name: '' })
-      try {
-        const result = await window.sakura.fetchCovers(ids, scope)
-        if (result.busy || result.off) return
-        await refresh()
-        const fetched = result.fetched ?? 0
-        const summaries = result.summaries ?? 0
-        const keptUser = result.keptUser ?? 0
-        const missed = result.missed ?? 0
-        if (result.offline) toast(tr('tags.offline'), true)
-        else if (fetched === 0 && summaries === 0 && keptUser === 0) toast(tr('covers.none'), true)
         else {
-          // One sentence, assembled from what actually happened. A count that says
-          // nothing about the games it left alone is a count that looks like a failure.
-          let line = tr('covers.done', { fetched })
-          if (summaries > 0) line += tr('covers.summaries', { n: summaries })
-          if (keptUser > 0) line += tr('covers.keptUser', { n: keptUser })
-          if (missed > 0) line += tr('covers.missed', { n: missed })
+          // One sentence, assembled from what actually happened. Saying only how many
+          // were matched leaves the covers and the blurbs looking like they failed, and
+          // a count that ignores what it deliberately left alone looks like a fault too.
+          let line = result.cancelled
+            ? tr('tags.stopped', { looked, matched })
+            : tr('tags.done', { looked, matched })
+          if ((result.covers ?? 0) > 0) line += tr('tags.andCovers', { n: result.covers ?? 0 })
+          if ((result.summaries ?? 0) > 0)
+            line += tr('tags.andSummaries', { n: result.summaries ?? 0 })
+          if ((result.keptUser ?? 0) > 0)
+            line += tr('covers.keptUser', { n: result.keptUser ?? 0 })
           toast(line)
         }
         if (result.pending && result.pending.length > 0) setPendingMatches(result.pending)
@@ -350,7 +327,8 @@ export default function App(): React.JSX.Element {
     [refresh, toast, tr]
   )
 
-  useEffect(() => window.sakura.onCoverProgress(setTagProgress), [])
+  useEffect(() => window.sakura.onTagProgress(setTagProgress), [])
+
 
   // Recount whenever the library changes: adding games, or matching some, both move it.
   useEffect(() => {
@@ -725,10 +703,8 @@ export default function App(): React.JSX.Element {
               toast(tr('toast.wishlistNoLaunch'))
             }
             onRename={setRenaming}
-            onRetag={(targets) => void computeTags(targets.map((g) => g.id))}
-            onFetchCovers={(targets, scope) => void fetchCovers(targets.map((g) => g.id), scope)}
+            onFetchWork={(targets, scope) => void computeTags(targets.map((g) => g.id), scope)}
             onlineTags={settings.onlineTags}
-            onlineCovers={settings.onlineCovers}
             // Straight into the dialog with the search box, no lookup first. This is the
             // route for a folder nothing could ever match on its own.
             onMatchWork={(game) =>

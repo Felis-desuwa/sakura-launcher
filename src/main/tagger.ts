@@ -1,16 +1,23 @@
 import path from 'node:path'
 import type { Game, PendingMatch, WorkMatch } from '../shared/types'
+import { applyCover, applySummary } from './covers'
 import * as db from './db'
 import { queryLadder, searchableTitle, STRONG_MATCH, workNoIn } from './tag-rules.ts'
 import type { BangumiWork } from './tag-bangumi.ts'
 import { bangumiSearch, lookupDlsite, searchVndb, vndbById } from './tag-online'
 
 /**
- * Working out what a game is about.
+ * Working out what a game is.
  *
  * Only ever by asking a catalogue, and only when the user has switched that on. Genres —
  * 校园, NTR, 催泪 — are judgements about a story. They are not in the files, and no
  * amount of reading a directory produces them.
+ *
+ * One lookup brings back everything, because it is all one record: the tags, the cover
+ * and the description hang off the same catalogue entry, so they are settled together.
+ * They used to be two menu entries and two passes, which meant asking the same catalogue
+ * the same question twice and a library where the tags were fetched and the covers were
+ * not — the second half being something you had to know to go and ask for.
  *
  * An earlier version also derived tags from the folder itself. Removing that fixed more
  * than it cost: it walked every game directory hunting for save files, synchronously, on
@@ -31,6 +38,12 @@ export interface TagRun {
   looked: number
   /** How many came back with a confident answer. */
   matched: number
+  /** Covers written. */
+  covers: number
+  /** Descriptions brought back. Fewer than the covers, and that is normal — see `covers.ts`. */
+  summaries: number
+  /** Games whose own cover the user had chosen, left alone. */
+  keptUser: number
   /** Title searches too uncertain to adopt, for the user to settle. */
   pending: PendingMatch[]
   /** Every lookup failed, so the UI can say "no network" once instead of per game. */
@@ -109,6 +122,17 @@ async function resolveJapaneseName(name: string): Promise<BangumiWork[]> {
  * from the Chinese one.
  */
 export async function lookupGame(game: Game): Promise<LookupResult> {
+  // A work already settled is not asked about again — straight to the id. Searching for
+  // it a second time can only produce a different answer than the one that was agreed,
+  // and it costs a whole ladder of requests to maybe do so.
+  if (game.work) {
+    const match =
+      game.work.source === 'dlsite'
+        ? await lookupDlsite(game.work.workId)
+        : await vndbById(game.work.workId)
+    if (match) return { match, reached: true }
+  }
+
   const folderName = path.basename(game.dir)
   const workNo = workNoIn(folderName)
 
@@ -223,15 +247,34 @@ export function pendingTargets(games: Game[]): Game[] {
   return games.filter((g) => !g.taggedAt)
 }
 
+/**
+ * Look games up and take everything the record has.
+ *
+ * `ids` names the games; `null` means the ones never asked about, which is what the
+ * library-wide button runs. `scope` says how to treat what is already there — a selection
+ * leaves a hand-picked cover alone, one game chosen from its own menu replaces it.
+ */
 export async function computeTags(
   ids: string[] | null,
+  scope: 'single' | 'bulk',
   onProgress: (progress: TagProgress) => void
 ): Promise<TagRun> {
   const settings = db.getSettings()
   const games = db.getGames()
-  const targets = ids ? games.filter((g) => ids.includes(g.id)) : pendingTargets(games)
+  const targets = ids
+    ? games.filter((g) => ids.includes(g.id) && !g.missing)
+    : pendingTargets(games)
 
-  const empty: TagRun = { looked: 0, matched: 0, pending: [], offline: false, cancelled: false }
+  const empty: TagRun = {
+    looked: 0,
+    matched: 0,
+    covers: 0,
+    summaries: 0,
+    keptUser: 0,
+    pending: [],
+    offline: false,
+    cancelled: false
+  }
   if (!settings.onlineTags || targets.length === 0) return empty
 
   running = true
@@ -239,6 +282,9 @@ export async function computeTags(
   const pending: PendingMatch[] = []
   let matched = 0
   let looked = 0
+  let covers = 0
+  let summaries = 0
+  let keptUser = 0
   let reachedAny = false
 
   try {
@@ -261,6 +307,19 @@ export async function computeTags(
           },
           taggedAt: Date.now()
         })
+
+        // The rest of the same record. Read from the database again rather than from
+        // `game`, because the write above is what tells `applyCover` which file to
+        // replace.
+        const fresh = db.findGame(game.id) ?? game
+        if (settings.onlineCovers) {
+          const outcome = await applyCover(fresh, result.match, scope)
+          if (outcome === 'written') covers++
+          else if (outcome === 'keptUser') keptUser++
+        }
+        if (settings.onlineSummary && settings.onlineCovers) {
+          if (await applySummary(fresh, result.match, scope)) summaries++
+        }
       } else {
         // Records that it was asked, so a second pass does not ask again about a game the
         // catalogue simply does not have.
@@ -279,7 +338,16 @@ export async function computeTags(
 
     onProgress({ done: targets.length, total: targets.length, name: '' })
     db.flush()
-    return { looked, matched, pending, offline: looked > 0 && !reachedAny, cancelled }
+    return {
+      looked,
+      matched,
+      covers,
+      summaries,
+      keptUser,
+      pending,
+      offline: looked > 0 && !reachedAny,
+      cancelled
+    }
   } finally {
     running = false
     cancelled = false

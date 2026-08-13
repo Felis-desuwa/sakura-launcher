@@ -29,36 +29,31 @@ export interface TagProgress {
   name: string
 }
 
+/**
+ * One lookup, everything it found.
+ *
+ * Tags, cover and description come off a single catalogue record, so there is one run and
+ * one result rather than a separate errand per field.
+ */
 export interface TagRunResult {
   ok: boolean
   /** A pass was already running; nothing was started. */
   busy?: boolean
+  /** The catalogue switch is off, so nothing was asked. */
+  off?: boolean
   /** How many games were looked up. */
   looked?: number
   /** How many came back with a confident answer. */
   matched?: number
+  /** Covers written. */
+  covers?: number
+  /** Descriptions brought back. Fewer than the covers, routinely — many works have no Chinese one. */
+  summaries?: number
+  /** Covers left alone because the user had chosen those themselves. */
+  keptUser?: number
   /** Title searches too uncertain to adopt — the user settles these. */
   pending?: PendingMatch[]
   /** Every lookup failed, so the UI can say so once rather than per game. */
-  offline?: boolean
-  cancelled?: boolean
-}
-
-export interface CoverRunResult {
-  ok: boolean
-  /** A run was already going, or the catalogue/cover switch is off. */
-  busy?: boolean
-  off?: boolean
-  /** Covers actually written. */
-  fetched?: number
-  /** Descriptions brought back — counted apart, since a game can get one without the other. */
-  summaries?: number
-  /** Left alone because the user had chosen that cover themselves. */
-  keptUser?: number
-  /** No picture in the catalogue, or the download failed. */
-  missed?: number
-  /** Games nothing could be matched to — these need the manual dialog. */
-  pending?: PendingMatch[]
   offline?: boolean
   cancelled?: boolean
 }
@@ -181,13 +176,17 @@ const api = {
     ipcRenderer.invoke('game:setTags', id, tags),
 
   /**
-   * Work out the automatic tags. Pass `null` for the whole library.
+   * Look games up: tags, cover and description in one pass. `null` means the whole library.
+   *
+   * `scope` is not a hint: `'bulk'` leaves a cover the user chose by hand alone, while
+   * `'single'` replaces it, because picking one game out of its own menu says so.
    *
    * Touches no game folder at all — only a folder's name is read, and only to pull a work
-   * number or a title out of it. Does nothing unless `settings.onlineTags` is on.
+   * number or a title out of it. Does nothing unless `settings.onlineTags` is on; the
+   * cover and the description follow their own sub-switches, checked in the main process.
    */
-  computeTags: (ids: string[] | null): Promise<TagRunResult> =>
-    ipcRenderer.invoke('tags:compute', ids),
+  computeTags: (ids: string[] | null, scope: 'single' | 'bulk' = 'bulk'): Promise<TagRunResult> =>
+    ipcRenderer.invoke('tags:compute', ids, scope),
   /** How many games a pass would look up — everything without a catalogue match yet. */
   pendingTagCount: (): Promise<number> => ipcRenderer.invoke('tags:pendingCount'),
   cancelTags: (): Promise<boolean> => ipcRenderer.invoke('tags:cancel'),
@@ -209,22 +208,6 @@ const api = {
     return () => ipcRenderer.off('tags:progress', handler)
   },
 
-  /**
-   * Fetch cover art for the games named, from the catalogue each is matched to.
-   *
-   * `scope` is not a hint: `'bulk'` leaves a cover the user chose by hand alone, while
-   * `'single'` replaces it, because picking one game out of its own menu says so.
-   * Requires both `settings.onlineTags` and `settings.onlineCovers`; the main process
-   * checks again rather than trusting this side.
-   */
-  fetchCovers: (ids: string[], scope: 'single' | 'bulk'): Promise<CoverRunResult> =>
-    ipcRenderer.invoke('covers:fetch', ids, scope),
-  cancelCovers: (): Promise<boolean> => ipcRenderer.invoke('covers:cancel'),
-  onCoverProgress: (cb: (progress: TagProgress) => void): (() => void) => {
-    const handler = (_e: unknown, progress: TagProgress): void => cb(progress)
-    ipcRenderer.on('covers:progress', handler)
-    return () => ipcRenderer.off('covers:progress', handler)
-  },
   removeTile: (id: string): Promise<{ ok: boolean; name?: string; error?: string }> =>
     ipcRenderer.invoke('game:remove', id),
   unignore: (dir: string): Promise<Settings> => ipcRenderer.invoke('library:unignore', dir),

@@ -1477,17 +1477,21 @@ export const MESSAGES = {
   },
 
   /* ---- working tags out ---- */
-  'tags.compute': { zh: '获取标签', en: 'Fetch tags' },
-  'tags.computeOne': { zh: '重新获取标签', en: 'Fetch tags again' },
+  'tags.compute': { zh: '联网获取资料', en: 'Fetch from catalogue' },
+  'tags.andCovers': { zh: '，取到 {n} 张封面', en: ', {n} covers' },
+  'tags.andSummaries': { zh: '，{n} 条简介', en: ', {n} descriptions' },
   'tags.computing': { zh: '正在获取…', en: 'Fetching…' },
   'tags.cancel': { zh: '停止', en: 'Stop' },
   'tags.progress': { zh: '{done}/{total} · {name}', en: '{done}/{total} · {name}' },
   'tags.needOnline': {
-    zh: '题材标签必须联网获取。先打开上面的开关。',
-    en: 'Genre tags can only come from a catalogue. Turn the switch above on first.'
+    zh: '这些资料只有目录站有。先打开上面的开关。',
+    en: 'None of this is in the files — only a catalogue has it. Turn the switch above on first.'
   },
   'tags.pendingCount': { zh: '{n} 个游戏还没查过', en: '{n} games not looked up yet' },
-  'tags.allDone': { zh: '都查过了', en: 'All looked up' },
+  'tags.allDone': {
+    zh: '都查过了 —— 想补封面和简介就整库重查',
+    en: 'All looked up — run it again to fill in covers and descriptions'
+  },
   'tags.redoAll': { zh: '全部重查', en: 'Look everything up again' },
   'tags.done': {
     zh: '查了 {looked} 个，{matched} 个对上了',
@@ -1529,13 +1533,13 @@ export const MESSAGES = {
   },
   'settings.onlineCovers': { zh: '同时下载封面', en: 'Download cover art too' },
   'settings.onlineCoversNote': {
-    zh: '允许从同一条作品记录里取封面 —— 这会额外向图片主机（t.vndb.org、img.dlsite.jp）请求图片文件，比只发一个标题多一步，所以单独给个开关。即便开着也不会自动取：得右键点「获取封面」。R18 封面照常存下来，跟着上面那个开关打码。',
-    en: 'Lets cover art be taken from the same catalogue record. That means asking an image host (t.vndb.org, img.dlsite.jp) for a file, which is a step beyond sending a title, so it gets its own switch. Even on, nothing is fetched by itself: it takes an explicit "Fetch cover". Adult covers are stored either way and blurred under the switch above.'
+    zh: '取标签的时候一并把封面取回来 —— 同一条作品记录，不多跑一趟。这会额外向图片主机（t.vndb.org、img.dlsite.jp）请求图片文件，比只发一个标题多一步，所以单独给个开关。即便开着也不会自动取：得右键点「联网获取资料」，或者用下面那个按钮。R18 封面照常存下来，跟着上面那个开关打码。',
+    en: 'Takes the cover along with the tags — one catalogue record, no second trip. That means asking an image host (t.vndb.org, img.dlsite.jp) for a file, which is a step beyond sending a title, so it gets its own switch. Even on, nothing is fetched by itself: it takes "Fetch from catalogue" on a tile, or the button below. Adult covers are stored either way and blurred under the switch above.'
   },
   'settings.onlineSummary': { zh: '同时获取简介', en: 'Fetch the description too' },
   'settings.onlineSummaryNote': {
-    zh: '取封面的时候顺手把目录站的简介一起带回来，显示在游戏详情最下面 —— 是同一条作品记录，不多跑一趟。没有单独的「获取简介」按钮，开不开就在这里决定。暂时只要中文：日文简介会被跳过，不会翻译。',
-    en: 'Brings the catalogue\'s description back with the cover and shows it at the bottom of the details panel — same record, no extra trip. There is no separate "fetch description" button anywhere; this switch is the whole decision. Chinese only for now: a Japanese blurb is skipped rather than translated.'
+    zh: '连简介也一起带回来，显示在游戏详情最下面 —— 还是同一条作品记录，不多跑一趟。没有单独的「获取简介」按钮，开不开就在这里决定。暂时只要中文：日文简介会被跳过，不会翻译；不少作品目录站根本没有中文简介，那就宁可空着。',
+    en: 'Brings the description back as well, shown at the bottom of the details panel — still the same record, still no extra trip. There is no separate "fetch description" button anywhere; this switch is the whole decision. Chinese only for now: a Japanese blurb is skipped rather than translated, and plenty of works have no Chinese one at all — those stay empty rather than being filled with something else.'
   },
   'settings.tagsSection': { zh: '题材标签', en: 'Genre tags' },
   'settings.tagsNote': {
@@ -1586,21 +1590,12 @@ export const MESSAGES = {
   'menu.matchWork': { zh: '手动匹配…', en: 'Match manually…' },
 
   /* ---- covers from a catalogue ---- */
-  'menu.fetchCover': { zh: '联网获取封面', en: 'Fetch cover online' },
-  'menu.fetchCoverN': { zh: '联网获取封面（{n} 个）', en: 'Fetch covers online ({n})' },
-  'menu.fetchTagsN': { zh: '获取标签（{n} 个）', en: 'Fetch tags ({n})' },
-  'covers.fetching': { zh: '正在取封面…', en: 'Fetching covers…' },
-  'covers.done': { zh: '取到 {fetched} 张封面', en: 'Got {fetched} covers' },
-  'covers.none': {
-    zh: '没取到封面 —— 目录站没有图，或者没连上',
-    en: 'No cover came back — the catalogue has none, or it could not be reached'
-  },
+  'menu.fetchWork': { zh: '联网获取资料', en: 'Fetch from catalogue' },
+  'menu.fetchWorkN': { zh: '联网获取资料（{n} 个）', en: 'Fetch from catalogue ({n})' },
   'covers.keptUser': {
     zh: '，跳过 {n} 个你自己设的封面',
     en: ', left {n} covers you set yourself alone'
   },
-  'covers.missed': { zh: '，{n} 个没有图', en: ', {n} had no picture' },
-  'covers.summaries': { zh: '，{n} 条简介', en: ', {n} descriptions' },
   'drawer.summary': { zh: '简介', en: 'Description' },
   /** Named, because it is the one paragraph in the drawer this program did not write. */
   'summary.from': { zh: '简介来自 {source}', en: 'Description from {source}' },
