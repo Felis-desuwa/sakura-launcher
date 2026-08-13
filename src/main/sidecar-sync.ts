@@ -5,6 +5,7 @@ import { MAX_SESSIONS, normalizeStatus, TIERS } from '../shared/types'
 import { adoptCover } from './covers'
 import * as db from './db'
 import {
+  displayNameFor,
   findCoverIn,
   isUnder,
   readSidecar,
@@ -127,17 +128,19 @@ export function toSidecar(game: Game): SidecarData {
     autoTags: game.autoTags,
     summary: game.summary,
     summaryFrom: game.summaryFrom,
+    summaryTranslated: game.summaryTranslated,
     cover: coverFor(game)
   }
 }
 
 /** Only fields the file actually carried are applied; the rest keep their stored value. */
 function applySidecar(game: Game, data: SidecarData): void {
-  if (data.name && data.name !== game.name) {
+  if (data.name) {
     game.name = data.name
-    // The sidecar is the source of truth for the title, so the database-only
-    // override that `renamed` represents no longer applies.
-    game.renamed = false
+    // A title in the file is a title somebody wrote, so the scanner must not overwrite it
+    // with the folder's — unless it *is* the folder's, in which case there is nothing to
+    // protect and the naming heuristic should stay free to improve it.
+    game.renamed = data.name !== displayNameFor(game.dir)
   }
 
   // A hand-written path is only honoured if it actually resolves inside the game folder.
@@ -199,6 +202,7 @@ function applySidecar(game: Game, data: SidecarData): void {
     }))
   }
   if (data.summary !== undefined) game.summary = data.summary
+  if (data.summary !== undefined) game.summaryTranslated = data.summaryTranslated
   if (data.summaryFrom === 'dlsite' || data.summaryFrom === 'bangumi') {
     game.summaryFrom = data.summaryFrom
   }

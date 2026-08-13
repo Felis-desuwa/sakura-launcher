@@ -35,6 +35,7 @@ npm run downloader-test  # downloader detection, command lines, completion
 npm run diagnose-test    # launch diagnosis: runtime mapping, mojibake, engine detection, PE parsing
 npm run tag-test         # genre-tag matching: title cleaning, which tags survive, which blurbs do
 npm run cover-test       # cover art: which picture, whether it is adult, what is not an image
+npm run translate-test   # translating a blurb: chunking, both services' shapes, all-or-nothing
 npm run save-test        # locating saves: name matching, engine roots, the download's own save
 npm run share-test       # share exclusion rules
 npm run share-e2e        # calls a real 7-Zip; asserts the source folder is unchanged afterwards
@@ -78,7 +79,8 @@ Always pass `--user-data-dir`; without it this writes to the user's actual
 ### The pure-module convention
 
 `scan-core.ts`, `share-rules.ts`, `save-rules.ts`, `download-core.ts`, `diagnose-rules.ts`,
-`pe-imports.ts`, `tag-rules.ts`, `tag-bangumi.ts`, `cover-rules.ts` **must not import electron**. The `.mts` harnesses load them directly under node, which is what makes the
+`pe-imports.ts`, `tag-rules.ts`, `tag-bangumi.ts`, `cover-rules.ts`, `translate-rules.ts`
+**must not import electron**. The `.mts` harnesses load them directly under node, which is what makes the
 logic testable without a window. They also spell out `.ts` in their relative imports (`from
 './i18n.ts'`) because node has no bundler to fill the extension in — `allowImportingTsExtensions`
 is on in `tsconfig.node.json` for exactly this. If you add an import to one of these files, keep
@@ -223,10 +225,17 @@ These come from user decisions and are load-bearing. Violating one is a bug even
   (`onlineCovers`, `onlineSummary`) decide how much of the record is kept, never how many
   trips are made. `covers.ts` must not import `tagger.ts` — it takes a settled match and does
   not search, which is what keeps the two out of an import cycle.
-  **Chinese only**, and nothing is translated: a blurb that reads as Japanese is dropped
-  (`isChineseText`). A blurb is kept only from the record the work number named, or from the
-  one Bangumi row whose name matches the work — never the next row down. The wrong plot summary
-  is worse than none, because unlike a wrong tag it reads exactly like the truth.
+  **Chinese only on screen.** A blurb that reads as Japanese (`isChineseText`) is
+  machine-translated and **labelled as translated** — `summaryTranslated`, shown in the drawer
+  and written into the sidecar. Dropping those was the original rule and it was wrong in
+  practice: Bangumi carries the Japanese store copy on a great many otherwise Chinese entries,
+  so it left most of a library blank. The label is the part that must not be lost — a sentence
+  a machine produced and one a person wrote read alike and are not worth the same.
+  A blurb is kept only from the record the work number named, or from the one Bangumi row whose
+  name matches the work — **never the next row down**. Translating the right game's Japanese is
+  a quality problem; showing the wrong game's Chinese is a lie, and it reads exactly like the
+  truth. `translate.ts` fails whole: a half-translated blurb reads as a fault in the game's own
+  description, so a failed chunk discards the attempt and the next service starts over.
 - **Diagnosis is read-only** and does not go over the network. It names the missing runtime; it does
   not fetch it.
 - **No hardcoded personal paths anywhere.** Scan roots start empty (`DEFAULT_SETTINGS.roots: []`),

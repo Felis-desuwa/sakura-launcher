@@ -1544,6 +1544,11 @@ export const MESSAGES = {
     zh: '连简介也一起带回来，显示在游戏详情最下面 —— 还是同一条作品记录，不多跑一趟。没有单独的「获取简介」按钮，开不开就在这里决定。暂时只要中文：日文简介会被跳过，不会翻译；不少作品目录站根本没有中文简介，那就宁可空着。',
     en: 'Brings the description back as well, shown at the bottom of the details panel — still the same record, still no extra trip. There is no separate "fetch description" button anywhere; this switch is the whole decision. Chinese only for now: a Japanese blurb is skipped rather than translated, and plenty of works have no Chinese one at all — those stay empty rather than being filled with something else.'
   },
+  'settings.translateSummary': { zh: '简介没有中文时翻译一份', en: 'Translate a description that is not Chinese' },
+  'settings.translateSummaryNote': {
+    zh: '目录站上不少作品只有日文简介 —— 一概不要的话，大半个库都是空的。开着的话会把日文简介机翻成中文，并且**明确标出「机翻」**，免得你把机器写的句子当成人写的。这一步会把那段简介发给翻译服务（translate.googleapis.com，不通就退到 api.mymemory.translated.net）—— 比这个程序其余部分只发一个标题要多，所以单独给个开关。翻译失败就当没有，不会只翻一半。',
+    en: 'Plenty of catalogue entries only have a Japanese description — refusing those left most of a library blank. With this on, one is machine-translated into Chinese and **labelled as machine-translated**, so a sentence a machine wrote is never mistaken for one a person did. It sends that paragraph to a translation service (translate.googleapis.com, falling back to api.mymemory.translated.net), which is more than the title the rest of this sends — hence its own switch. A failed translation means no description rather than half of one.'
+  },
   'settings.tagsSection': { zh: '题材标签', en: 'Genre tags' },
   'settings.tagsNote': {
     zh: '题材（校园、催泪、NTR 这些）不在游戏文件里 —— 那是对故事的判断，只有目录站有。编号能精确对上的直接采用，靠标题搜到的会让你确认。整个过程不碰游戏文件夹，只读文件夹的名字。',
@@ -1604,6 +1609,11 @@ export const MESSAGES = {
   'drawer.summary': { zh: '简介', en: 'Description' },
   /** Named, because it is the one paragraph in the drawer this program did not write. */
   'summary.from': { zh: '简介来自 {source}', en: 'Description from {source}' },
+  /** Said plainly. A machine-written sentence must never pass for one somebody wrote. */
+  'summary.fromTranslated': {
+    zh: '简介来自 {source}，机翻',
+    en: 'Description from {source}, machine-translated'
+  },
   'covers.adultBadge': { zh: 'R18', en: 'R18' },
   'covers.blurred': {
     zh: '这张封面被目录站标为成人向，已打码。设置里可以显示。',

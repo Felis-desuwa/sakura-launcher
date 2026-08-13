@@ -420,7 +420,7 @@ export default function DetailDrawer({
                   ))}
                 </div>
                 <p className="drawer-note dim">
-                  {t('summary.from', {
+                  {t(game.summaryTranslated ? 'summary.fromTranslated' : 'summary.from', {
                     source: SUMMARY_SOURCE_LABEL[game.summaryFrom ?? 'bangumi']
                   })}
                 </p>

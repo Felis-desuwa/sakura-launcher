@@ -523,9 +523,16 @@ check('a blurb that already fits is untouched', tidySummary(ZH_BLURB) === ZH_BLU
  * DLsite answers in the work's own language whatever locale it was asked in, so most of
  * these are Japanese and the interesting case is that they are refused rather than shown.
  */
-eq('a Chinese DLsite blurb is taken', dlsiteIntro({ intro_s: ZH_BLURB }), ZH_BLURB)
-eq('a Japanese one is not', dlsiteIntro({ intro_s: JA_BLURB }), undefined)
-eq('and neither is a missing one', dlsiteIntro({}), undefined)
+/*
+ * The blurb comes back with the one thing the caller has to know — which language it is
+ * in — rather than being dropped here. Refusing Japanese in this module meant it was gone
+ * before anything could translate it, and a library where most descriptions were blank.
+ */
+eq('a Chinese DLsite blurb is Chinese', dlsiteIntro({ intro_s: ZH_BLURB })?.chinese, true)
+eq('and comes back whole', dlsiteIntro({ intro_s: ZH_BLURB })?.text, ZH_BLURB)
+eq('a Japanese one comes back too', dlsiteIntro({ intro_s: JA_BLURB })?.text, JA_BLURB)
+eq('but says it is not Chinese', dlsiteIntro({ intro_s: JA_BLURB })?.chinese, false)
+eq('a missing one is nothing at all', dlsiteIntro({}), undefined)
 eq(
   'the long store-page intro is never read',
   dlsiteIntro({ intro_s: '', intro: ZH_BLURB } as Parameters<typeof dlsiteIntro>[0] & {
@@ -541,7 +548,7 @@ const withIntro = dlsiteWork({
   intro_s: ZH_BLURB,
   genres: [{ name: '校园', name_base: '学園' }]
 })
-eq('a work number carries its own blurb through', withIntro?.summary, ZH_BLURB)
+eq('a work number carries its own blurb through', withIntro?.blurb?.text, ZH_BLURB)
 
 const BGM_ROWS = [
   { name: 'サンプルゲーム', nameCn: '示例游戏', summary: ZH_BLURB },
@@ -550,22 +557,23 @@ const BGM_ROWS = [
 
 eq(
   'the row that is the work gives up its blurb',
-  pickBangumiSummary(BGM_ROWS, ['サンプルゲーム']),
+  pickBangumiSummary(BGM_ROWS, ['サンプルゲーム'])?.text,
   ZH_BLURB
 )
-eq('matching on the Chinese name works too', pickBangumiSummary(BGM_ROWS, ['示例游戏']), ZH_BLURB)
 eq(
-  'a fan disc is not the game',
-  pickBangumiSummary([BGM_ROWS[1]], ['サンプルゲーム']),
-  undefined
+  'matching on the Chinese name works too',
+  pickBangumiSummary(BGM_ROWS, ['示例游戏'])?.text,
+  ZH_BLURB
 )
+eq('a fan disc is not the game', pickBangumiSummary([BGM_ROWS[1]], ['サンプルゲーム']), undefined)
 eq(
-  'a Japanese blurb on the right row is no blurb at all',
-  pickBangumiSummary([{ name: 'サンプルゲーム', summary: JA_BLURB }], ['サンプルゲーム']),
-  undefined
+  'a Japanese blurb on the right row is still that row',
+  pickBangumiSummary([{ name: 'サンプルゲーム', summary: JA_BLURB }], ['サンプルゲーム'])?.chinese,
+  false
 )
 /* The failure this guards against: taking the *next* row's text once the matching row
-   turns out to have nothing usable, which is describing somebody else's game. */
+   turns out to be in the wrong language, which is describing somebody else's game.
+   Translating this one is the caller's business; borrowing another game's is nobody's. */
 eq(
   'and it does not fall through to the row below',
   pickBangumiSummary(
@@ -574,8 +582,8 @@ eq(
       { name: '别的游戏', summary: '另一段介绍。' }
     ],
     ['サンプルゲーム']
-  ),
-  undefined
+  )?.text,
+  JA_BLURB
 )
 eq('nothing to match against, nothing taken', pickBangumiSummary(BGM_ROWS, [undefined, '']), undefined)
 eq('nothing came back, nothing taken', pickBangumiSummary([], ['サンプルゲーム']), undefined)

@@ -335,19 +335,35 @@ export function isChineseText(raw: string | undefined | null): boolean {
 }
 
 /**
- * DLsite's own description of a product, when it happens to be Chinese.
+ * A description, with the one thing the caller has to know about it.
+ *
+ * The language is carried rather than used to refuse the text here, because the two
+ * callers want different things: the drawer wants Chinese, and the translator wants the
+ * Japanese it is there to work on. Deciding that in this module meant Japanese blurbs
+ * were thrown away before anything could be done with them.
+ */
+export interface Blurb {
+  text: string
+  chinese: boolean
+}
+
+function blurbOf(raw: string | undefined | null): Blurb | undefined {
+  const text = tidySummary(raw)
+  return text ? { text, chinese: isChineseText(text) } : undefined
+}
+
+/**
+ * DLsite's own description of a product.
  *
  * `intro_s` is the short blurb; the long `intro` is markup for a store page and is left
  * alone. The catalogue is asked in `zh_CN` and still answers with the work's own language
  * here — the locale governs the genre names, not the copy somebody wrote — so most of
- * these are Japanese and get refused. The ones that survive are the Chinese-language
- * releases, and for those this is the best description obtainable: it is about exactly
- * the work whose number was read out of the folder name, with nothing to match and
- * therefore nothing to get wrong.
+ * these come back Japanese. Either way this is the best description obtainable for the
+ * work: it is about exactly the product whose number was read out of the folder name,
+ * with nothing to match and therefore nothing to get wrong.
  */
-export function dlsiteIntro(product: DlsiteProduct): string | undefined {
-  const text = tidySummary(typeof product.intro_s === 'string' ? product.intro_s : '')
-  return text && isChineseText(text) ? text : undefined
+export function dlsiteIntro(product: DlsiteProduct): Blurb | undefined {
+  return blurbOf(typeof product.intro_s === 'string' ? product.intro_s : '')
 }
 
 /**
@@ -366,7 +382,7 @@ export function dlsiteIntro(product: DlsiteProduct): string | undefined {
 export function pickBangumiSummary(
   rows: { name: string; nameCn?: string; summary?: string }[],
   names: (string | undefined)[]
-): string | undefined {
+): Blurb | undefined {
   const wanted = names.filter((n): n is string => Boolean(n && n.trim()))
   if (wanted.length === 0) return undefined
 
@@ -377,8 +393,10 @@ export function pickBangumiSummary(
         return Math.max(best, ...wanted.map((name) => titleScore(name, candidate)))
       }, 0)
     if (score < STRONG_MATCH) continue
-    const text = tidySummary(row.summary)
-    return text && isChineseText(text) ? text : undefined
+    // The matching row's blurb, whatever language it turned out to be in. Stopping here
+    // either way is the point: a row that is not the work has nothing to offer, and the
+    // next row down is another game.
+    return blurbOf(row.summary)
   }
   return undefined
 }
@@ -550,7 +568,7 @@ export function dlsiteWork(product: DlsiteProduct): WorkMatch | null {
     title,
     released,
     cover: coverFromDlsite(product) ?? undefined,
-    summary: dlsiteIntro(product),
+    blurb: dlsiteIntro(product),
     // Read out of the folder name, so it names exactly one work and cannot be a near miss.
     score: 1,
     tags: [

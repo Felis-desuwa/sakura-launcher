@@ -125,10 +125,22 @@ export function rescan(options: RescanOptions = {}): ScanOutcome {
         prev.mtimeMs === found.mtimeMs &&
         prev.childCount === found.childCount
       ) {
-        // Names still refresh, so improvements to the naming heuristic reach existing entries.
+        // Names still refresh, so improvements to the naming heuristic reach existing
+        // entries — but only over a name that came from the folder in the first place.
+        //
+        // The second half of that test heals records written before the flag meant what
+        // it says: a rename used to clear it, on the grounds that the sidecar had become
+        // authoritative, which left this path with nothing to distinguish a title
+        // somebody typed from one derived a version ago. It costs one small read, and
+        // only for the entries actually at risk — those whose name is not the folder's.
+        let keptName = prev.renamed
+        if (!keptName && prev.name !== found.name && readSidecarName(found.dir) === prev.name) {
+          keptName = true
+        }
         next.push({
           ...prev,
-          name: prev.renamed ? prev.name : found.name,
+          name: keptName ? prev.name : found.name,
+          renamed: keptName || undefined,
           order: orderFor(prev),
           missing: false
         })
@@ -141,14 +153,17 @@ export function rescan(options: RescanOptions = {}): ScanOutcome {
       const pinned = prev?.exePinned && prev.exe && fs.existsSync(prev.exe) ? prev.exe : null
       const exe = pinned ?? found.exe
       const art = resolveArtwork(found.dir, exe)
+      // New or changed, so the sidecar is worth a read here: it may hold a title the
+      // database has never seen (a fresh install, or a library restored elsewhere).
+      const written = prev?.renamed ? null : readSidecarName(found.dir)
+      const name = prev?.renamed ? prev.name : written ?? found.name
       next.push({
         id: prev?.id ?? idFor(found.dir),
-        // New or changed, so the sidecar is worth a read here: it may hold a title the
-        // database has never seen (a fresh install, or a library restored elsewhere).
-        name: prev?.renamed ? prev.name : readSidecarName(found.dir) ?? found.name,
-        // Without this the flag is dropped on any rescan that touches the folder, and
-        // the next one after that resets a hand-picked name back to the folder name.
-        renamed: prev?.renamed,
+        name,
+        // Carried forward, and set when the name came out of the file: without it the
+        // flag is dropped on any rescan that touches the folder, and the next one after
+        // that resets a hand-typed name back to the folder's.
+        renamed: prev?.renamed || name !== found.name || undefined,
         dir: found.dir,
         exe,
         exePinned: pinned ? true : undefined,

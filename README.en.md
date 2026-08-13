@@ -159,18 +159,28 @@ about a story, and only a catalogue has them.
   the same work entry, and asking for them separately would be two trips for one answer — so
   whether it happens is decided once, in the settings. **Chinese only for now**: a Japanese
   blurb is skipped rather than translated, because this program does not put words in a
-  catalogue's mouth. A work reached by its number uses DLsite's own copy, which needs no
-  matching and so cannot be matched wrongly; everything else asks Bangumi once and **takes
-  only the row whose name is the work's**. No match, no description — a wrong one is worse
-  than none, because it reads exactly like the truth
+  catalogue's mouth without saying so. A work reached by its number uses DLsite's own copy,
+  which needs no matching and so cannot be matched wrongly; everything else asks Bangumi once
+  and **takes only the row whose name is the work's**. No match, no description — a wrong one
+  is worse than none, because it reads exactly like the truth
+- **No Chinese description? One is translated, and marked as translated** — plenty of entries
+  only carry the Japanese store copy, and refusing those left most of a library blank. So it is
+  machine-translated, and **always labelled as machine-translated**, in the details panel and in
+  the file beside the game. A sentence a machine produced and one a person wrote read alike and
+  are not worth the same. Translation goes to `translate.googleapis.com`, falling back to
+  `api.mymemory.translated.net`, and it is **all or nothing** — half Japanese and half Chinese
+  reads as a fault in the game's own blurb. There is a switch for it; off means only
+  descriptions that were already Chinese
 - **Only the title ever leaves** — with the feature on, fetching tags sends exactly two kinds
   of thing: **the work number in the folder name**, or **the game's title**. The recipients are
   DLsite, VNDB and Bangumi. Paths, sizes, playtime, ratings, how big your library is — none of
   it is sent, and nothing identifies you or this machine. **Fetching a cover is one step
-  further**: it asks an image host (`t.vndb.org`, `img.dlsite.jp`) for the picture file itself,
-  which is exactly why that has a switch of its own. With the feature off not one byte
-  goes out, and **the whole process never touches the game folder; it only reads the folder's
-  name**
+  further**: it asks an image host (`t.vndb.org`, `img.dlsite.jp`) for the picture file itself.
+  **Translating a description is one step further still**: the catalogue's paragraph goes to a
+  translation service (`translate.googleapis.com`, falling back to
+  `api.mymemory.translated.net`). Those two have switches of their own precisely because they
+  send more than a title. With the feature off not one byte goes out, and **the whole process
+  never touches the game folder; it only reads the folder's name**
 - **What you'd rather not see is hidden by default** — tags VNDB marks as spoilers are
   **hidden by default**, because nobody wants a story spoiled by their own shelf, and **R18
   tags are hidden by default** as well, with a switch in the settings. The tags are fetched and
@@ -381,6 +391,8 @@ npm run tag-test                                  # genre tags: which titles cou
                                                   # or not this game. No network; shapes pinned by real samples
 npm run cover-test                                # covers: which picture is usable, which counts as adult, the
                                                   # error page posing as an image, the user's own cover left alone
+npm run translate-test                            # translating a blurb: chunking, both services' response
+                                                  # shapes, and all-or-nothing assembly
 npm run save-test                                 # locating saves: which folders belong to this game, which merely
                                                   # share a name, and the save that came with the download
 npm run share-test                                # the share exclusion rules (mostly the ones that must NOT hit)

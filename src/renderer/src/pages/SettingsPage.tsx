@@ -367,6 +367,22 @@ export default function SettingsPage({
           </div>
         )}
 
+        {/* Under the description switch, which is the only thing it can act on. */}
+        {settings.onlineTags && settings.onlineCovers && settings.onlineSummary && (
+          <div className="settings-row">
+            <label htmlFor="translateSummary">
+              {t('settings.translateSummary')}
+              <span className="settings-hint">{t('settings.translateSummaryNote')}</span>
+            </label>
+            <button
+              id="translateSummary"
+              type="button"
+              className={`switch${settings.translateSummary ? ' on' : ''}`}
+              onClick={() => onChange({ translateSummary: !settings.translateSummary })}
+            />
+          </div>
+        )}
+
         {/* Only worth asking about once there is something they could reveal. */}
         {settings.onlineTags && (
           <div className="settings-row">

@@ -6,6 +6,7 @@ import * as db from './db'
 import { COVER_BASE, COVER_EXTS, isUnder } from './scan-core'
 import { pickBangumiSummary } from './tag-rules.ts'
 import { bangumiSearch, fetchImage, paceImage } from './tag-online'
+import { translateToChinese } from './translate'
 
 /**
  * What a catalogue record holds besides its tags: the picture, and the blurb.
@@ -172,15 +173,33 @@ export async function applyCover(
  * is a fluent paragraph about a different game and nothing on screen would say so.
  *
  * Plenty of works have no Chinese blurb anywhere — Bangumi routinely carries the Japanese
- * store copy on an otherwise Chinese entry — and those come back with nothing, which is
- * the intended answer and not a failure to report.
+ * store copy on an otherwise Chinese entry. Those are translated, and marked as
+ * translated, which is the only honest way to show a sentence nobody wrote.
  */
 async function fetchSummary(
   match: WorkMatch,
   alsoKnownAs?: string
-): Promise<{ text: string; from: SummarySource } | null> {
-  if (match.summary && match.source === 'dlsite') {
-    return { text: match.summary, from: 'dlsite' }
+): Promise<{ text: string; from: SummarySource; translated?: boolean } | null> {
+  const blurb = await findBlurb(match, alsoKnownAs)
+  if (!blurb) return null
+  if (blurb.chinese) return { text: blurb.text, from: blurb.from }
+
+  // Not Chinese, which on Bangumi is the common case rather than the exception: a great
+  // many entries carry the Japanese store copy. Refusing those left most of a library
+  // with no description at all, including works whose entry had matched perfectly — so
+  // the text is translated and *said to be translated*, on screen and in the file.
+  if (!db.getSettings().translateSummary) return null
+  const zh = await translateToChinese(blurb.text)
+  return zh ? { text: zh, from: blurb.from, translated: true } : null
+}
+
+/** The description on the record, whatever language it turned out to be in. */
+async function findBlurb(
+  match: WorkMatch,
+  alsoKnownAs?: string
+): Promise<{ text: string; chinese: boolean; from: SummarySource } | null> {
+  if (match.blurb && match.source === 'dlsite') {
+    return { ...match.blurb, from: 'dlsite' }
   }
   // The original name rather than the romaji one: Bangumi indexes Japanese and Chinese,
   // and a romaji title finds nothing there.
@@ -191,8 +210,8 @@ async function fetchSummary(
   // box is naming the work, and that name is often the one Bangumi files it under while
   // VNDB's romaji title matches nothing there. It still has to clear the same threshold
   // against a row, so it widens what can be recognised without widening what is accepted.
-  const text = pickBangumiSummary(rows, [match.title, match.altTitle, match.zhTitle, alsoKnownAs])
-  return text ? { text, from: 'bangumi' } : null
+  const found = pickBangumiSummary(rows, [match.title, match.altTitle, match.zhTitle, alsoKnownAs])
+  return found ? { ...found, from: 'bangumi' } : null
 }
 
 /**
@@ -211,6 +230,10 @@ export async function applySummary(
   if (!mayReplaceSummary(Boolean(game.summary), scope)) return false
   const blurb = await fetchSummary(match, game.name)
   if (!blurb) return false
-  db.updateGame(game.id, { summary: blurb.text, summaryFrom: blurb.from })
+  db.updateGame(game.id, {
+    summary: blurb.text,
+    summaryFrom: blurb.from,
+    summaryTranslated: blurb.translated
+  })
   return true
 }

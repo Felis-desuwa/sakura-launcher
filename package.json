@@ -25,7 +25,8 @@
     "cover-test": "node scripts/cover-test.mts",
     "save-test": "node scripts/save-test.mts",
     "share-test": "node scripts/share-test.mts",
-    "share-e2e": "node scripts/share-e2e.mts"
+    "share-e2e": "node scripts/share-e2e.mts",
+    "translate-test": "node scripts/translate-test.mts"
   },
   "dependencies": {
     "resedit": "^3.0.2"

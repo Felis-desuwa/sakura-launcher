@@ -753,6 +753,8 @@ export interface SidecarData {
   summary?: string
   /** Who wrote it — the line under the description says so, here and on screen. */
   summaryFrom?: string
+  /** It was machine-translated. Written down so a reader is never misled about which. */
+  summaryTranslated?: boolean
   cover?: SidecarCover
 }
 
@@ -991,7 +993,8 @@ export function renderSidecar(data: SidecarData): string {
       lines.push('', en ? '### Description' : '### 简介', '')
       if (data.summaryFrom) {
         const label = SOURCE_LABELS[data.summaryFrom] ?? data.summaryFrom
-        lines.push(en ? `> From ${label}` : `> 来自 ${label}`, '')
+        const mark = data.summaryTranslated ? (en ? ' (machine-translated)' : '（机翻）') : ''
+        lines.push(en ? `> From ${label}${mark}` : `> 来自 ${label}${mark}`, '')
       }
       // Somebody else's paragraph, kept as they wrote it — the line breaks in a blurb are
       // the author's and reflowing them here would be editing it.
@@ -1034,7 +1037,10 @@ export function renderSidecar(data: SidecarData): string {
  * The attribution rides in a leading blockquote, which reads as a citation to a person
  * and parses as one line to us.
  */
-function readSection(raw: string, headings: string[]): { text: string; from?: string } | null {
+function readSection(
+  raw: string,
+  headings: string[]
+): { text: string; from?: string; translated?: boolean } | null {
   const lines = raw.split(/\r?\n/)
   const pattern = new RegExp(`^\\s*#{2,4}\\s*(?:${headings.join('|')})\\s*$`, 'i')
   const start = lines.findIndex((line) => pattern.test(line))
@@ -1042,11 +1048,14 @@ function readSection(raw: string, headings: string[]): { text: string; from?: st
 
   const body: string[] = []
   let from: string | undefined
+  let translated = false
   for (const line of lines.slice(start + 1)) {
     if (/^\s*#{1,6}\s/.test(line)) break
     const cite = /^\s*>\s*(?:来自|From)\s+(.+?)\s*$/i.exec(line)
     if (cite) {
-      from = cite[1].trim().toLowerCase()
+      const said = cite[1].trim()
+      translated = /（机翻）|\(machine-translated\)/i.test(said)
+      from = said.replace(/（机翻）|\s*\(machine-translated\)/i, '').trim().toLowerCase()
       continue
     }
     // A hand-editor may or may not keep the quote markers; either way the text is the text.
@@ -1055,7 +1064,11 @@ function readSection(raw: string, headings: string[]): { text: string; from?: st
 
   const text = body.join('\n').replace(/\n{3,}/g, '\n\n').trim()
   if (!text) return null
-  return { text, from: from && SOURCE_LABELS[from] ? from : undefined }
+  return {
+    text,
+    from: from && SOURCE_LABELS[from] ? from : undefined,
+    translated: translated || undefined
+  }
 }
 
 export function parseSidecar(text: string): SidecarData {
@@ -1196,6 +1209,7 @@ export function parseSidecar(text: string): SidecarData {
   if (description) {
     data.summary = description.text
     if (description.from) data.summaryFrom = description.from
+    if (description.translated) data.summaryTranslated = true
   }
 
   const sessions: SidecarSession[] = []

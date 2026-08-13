@@ -403,8 +403,11 @@ function registerIpc(): void {
       db.updateGame(id, { name: trimmed, renamed: true })
       return { ok: true, sidecar: false, error: result.error }
     }
-    // The sidecar is now the source of truth, so drop the database-only override.
-    db.updateGame(id, { name: trimmed, renamed: false, sidecarSyncedAt: result.mtimeMs })
+    // The sidecar is now the source of truth for the *value*, and the flag still has to
+    // stay: it is what tells a rescan the name did not come from the folder. Clearing it
+    // here meant the next scan of an unchanged folder — the path that does not open the
+    // sidecar — reset the title to the folder's own name.
+    db.updateGame(id, { name: trimmed, renamed: true, sidecarSyncedAt: result.mtimeMs })
     return { ok: true, sidecar: true, file: path.join(game.dir, SIDECAR) }
   })
 

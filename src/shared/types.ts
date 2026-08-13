@@ -50,7 +50,14 @@ export const MIN_SESSION_MS = 60_000
 export interface Game {
   id: string
   name: string
-  /** Set once the user renames a tile, so rescans stop overwriting their choice. */
+  /**
+   * The display name did not come from the folder.
+   *
+   * Set by renaming a tile *and* by a title read out of the sidecar — the flag is about
+   * where the name came from, not about which copy of it is authoritative. Rescans read
+   * it to know they must not overwrite the name with the folder's, and the fast path for
+   * an unchanged folder has nothing else to go on: it does not open the sidecar.
+   */
   renamed?: boolean
   /** Folder that holds the game (for archives: folder holding the volumes). */
   dir: string
@@ -135,6 +142,14 @@ export interface Game {
   summary?: string
   /** Which catalogue wrote it. Shown with the text; a paragraph with no author is a rumour. */
   summaryFrom?: SummarySource
+  /**
+   * The description was machine-translated into Chinese.
+   *
+   * Said on screen and written into the sidecar, because a reader has to be able to tell
+   * a sentence somebody wrote from a sentence a machine produced. They read alike and
+   * they are not worth the same.
+   */
+  summaryTranslated?: boolean
   /** The catalogue entry the genre tags came from, once one has been settled on. */
   work?: { source: TagSource; workId: string; title: string }
 
@@ -541,13 +556,13 @@ export interface WorkMatch {
    */
   cover?: { url: string; adult: boolean }
   /**
-   * The catalogue's own description of the work, in Chinese, when it has one.
+   * The catalogue's own description of the work, with the language it is in.
    *
-   * Only ever set where the record itself carries Chinese copy — a work number identifies
-   * one product, so a DLsite blurb belongs to it beyond doubt. Everything reached by
-   * searching a name is resolved separately, in `covers.ts`, and against a stricter test.
+   * Only ever set where the record itself carries copy — a work number identifies one
+   * product, so a DLsite blurb belongs to it beyond doubt. Everything reached by
+   * searching a name is resolved separately, in `covers.ts`, against a stricter test.
    */
-  summary?: string
+  blurb?: { text: string; chinese: boolean }
 }
 
 /**
@@ -751,6 +766,19 @@ export interface Settings {
    * catalogue's mouth.
    */
   onlineSummary: boolean
+  /**
+   * Machine-translate a description that is not in Chinese.
+   *
+   * A sub-switch of `onlineSummary`. It exists because the honest alternative — showing
+   * nothing — turned out to cost most of the library its description: Bangumi carries the
+   * Japanese store copy on a great many otherwise Chinese entries. What is translated is
+   * always **labelled as translated**, here, on screen and in the sidecar.
+   *
+   * It also changes what leaves the machine: the catalogue's paragraph goes to a
+   * translation service, which is more than the title the rest of this sends. Both READMEs
+   * name the hosts.
+   */
+  translateSummary: boolean
 
   /**
    * Where copied-out saves land. `null` means the folder under Documents we suggest.
@@ -790,6 +818,7 @@ export const DEFAULT_SETTINGS: Settings = {
   adultTags: false,
   onlineCovers: true,
   onlineSummary: true,
+  translateSummary: true,
   backupDir: null,
   downloadDir: null,
   downloader: 'idm',

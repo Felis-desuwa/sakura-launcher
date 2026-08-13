@@ -46,7 +46,11 @@ const GAP_MS: Record<string, number> = {
   // The image hosts are separate machines from the APIs and are paced separately: making
   // a picture wait on the API's budget would double how long a batch of covers takes for
   // no benefit to anybody.
-  image: 1_000
+  image: 1_000,
+  // A blurb is several requests in a row, one per chunk, and a free service is being
+  // asked. Half a second between them is courteous without making a description take
+  // longer to fetch than the picture it arrives with.
+  translate: 500
 }
 
 const lastRequestAt: Record<string, number> = {}
@@ -205,6 +209,22 @@ export function fetchImage(url: string): Promise<Buffer | null> {
 /** Pace an image download against the other image downloads. */
 export function paceImage(): Promise<void> {
   return pace('image')
+}
+
+/**
+ * One GET, parsed as JSON.
+ *
+ * Exported so the translator can reach a service without opening a socket of its own —
+ * every request this program makes goes through the one file, which is what keeps the
+ * promise on the front page checkable.
+ */
+export async function getJson<T>(url: string): Promise<T | null> {
+  return request<T>({ method: 'GET', url })
+}
+
+/** Pace a translation request against the other translation requests. */
+export function paceTranslate(): Promise<void> {
+  return pace('translate')
 }
 
 /**
