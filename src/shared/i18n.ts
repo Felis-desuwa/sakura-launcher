@@ -1467,6 +1467,11 @@ export const MESSAGES = {
   'tag.why.dlsite': { zh: 'DLsite 上 {code} 的分类', en: "DLsite's genres for {code}" },
   'tag.why.vndb': { zh: 'VNDB 标签，投票强度 {rating}/3', en: 'VNDB tag, voted {rating}/3' },
   'tag.why.year': { zh: '目录站记载的发售年份', en: 'The release year the catalogue records' },
+  /** Read back out of the game folder's own file, where an earlier lookup wrote it. */
+  'tag.why.sidecar': {
+    zh: '来自游戏文件夹里的 sakura-launcher.md',
+    en: 'From sakura-launcher.md in the game folder'
+  },
 
   /* ---- tag bar and tag filtering ---- */
   'tagbar.clear': { zh: '清除筛选', en: 'Clear' },

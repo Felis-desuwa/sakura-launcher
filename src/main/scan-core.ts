@@ -3,7 +3,7 @@ import path from 'node:path'
 // Extension spelled out: the harnesses in scripts/ import this file straight into node,
 // where nothing fills the extension in for them.
 import type { MessageKey } from '../shared/i18n.ts'
-import { formatDuration, parseDuration, type EngineId } from '../shared/types.ts'
+import { formatDuration, parseDuration, type AutoTag, type EngineId } from '../shared/types.ts'
 import { mainLang, t } from './i18n.ts'
 
 export const MAX_DEPTH = 4
@@ -649,9 +649,74 @@ export const SIDECAR = 'sakura-launcher.md'
 /** v0.1.0 stored only the display name, in a plain-text file. Migrated on first sync. */
 export const LEGACY_SIDECAR = 'sakura-launcher.txt'
 
+/**
+ * What a fetched cover is called, inside the game folder.
+ *
+ * Fixed, so the picture is findable twice over: the sidecar names it, and failing that a
+ * scan can simply look for this. A cover is worth a second route — it is the one piece of
+ * this that took a download, and a file called `sakura-cover.jpg` sitting beside the game
+ * explains itself to a person browsing the folder in a way `a9f3c1.jpg` never would.
+ *
+ * The extension varies with what the catalogue actually sent, which is why the name is
+ * written down rather than assumed.
+ */
+export const COVER_BASE = 'sakura-cover'
+
+/**
+ * Extensions a cover can have, in the order a folder is searched when the file is unnamed.
+ *
+ * Wider than what a download can produce (jpg / png / webp are the only three the byte
+ * sniffer accepts) because a cover the user chose by hand is copied in under whatever
+ * extension it arrived with, and this list is also what finds and tidies those.
+ */
+export const COVER_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif'] as const
+
+/**
+ * The cover sitting in a game folder, if there is one.
+ *
+ * The fallback for a sidecar that never mentioned one — deleted, hand-edited, or written
+ * by a version that did not record it. Returns a file name, not a path, because that is
+ * what everything downstream stores.
+ */
+export function findCoverIn(dir: string): string | null {
+  for (const ext of COVER_EXTS) {
+    const name = `${COVER_BASE}.${ext}`
+    try {
+      if (fs.statSync(path.join(dir, name)).isFile()) return name
+    } catch {
+      /* not this one */
+    }
+  }
+  return null
+}
+
 export interface SidecarSession {
   startedAt: number
   ms: number
+}
+
+/**
+ * The cover, as the file next to the game.
+ *
+ * A **file name**, never a path. The folder it sits in is the folder this sidecar sits
+ * in, so the two travel together: rename the folder, move it to another drive, hand the
+ * whole thing to somebody else — the name still resolves, because it is resolved against
+ * wherever the file was found rather than against where it once was. An absolute path
+ * would be a fact about this machine, and would be wrong the first time anything moved.
+ *
+ * `from` is carried for one reason: a cover the user chose must not be replaced by a
+ * catalogue pass. Without it here, that protection would live only in the database and
+ * would be lost exactly when the sidecar is doing its job.
+ */
+export interface SidecarCover {
+  name: string
+  /**
+   * Absent when nobody knows — a file found sitting in the folder with nothing recorded
+   * about it. Which is not the same claim as "the user chose this", and writing that down
+   * would be inventing a fact. Read back, an unattributed cover is *treated* as the
+   * user's, because that reading protects it and the other one overwrites it.
+   */
+  from?: 'user' | 'dlsite' | 'vndb'
 }
 
 /** Every field is optional: a key missing from the file leaves the database value alone. */
@@ -671,6 +736,24 @@ export interface SidecarData {
   launchCount?: number
   lastLaunchedAt?: number | null
   sessions?: SidecarSession[]
+
+  /* ---- what the catalogue said, so a lookup is not paid for twice ---- */
+
+  /**
+   * The catalogue entry this game was matched to.
+   *
+   * The most valuable line in the file: it is the game's identity in somebody else's
+   * database, and everything below can be fetched again from it in one request. A folder
+   * that turns up on another machine carries it and needs no matching at all.
+   */
+  work?: { source: string; workId: string; title?: string }
+  /** Genre tags, by the name each was shown under. */
+  autoTags?: AutoTag[]
+  /** The catalogue's description, as text. */
+  summary?: string
+  /** Who wrote it — the line under the description says so, here and on screen. */
+  summaryFrom?: string
+  cover?: SidecarCover
 }
 
 /**
@@ -729,7 +812,16 @@ const SIDECAR_FIELDS = {
   args: { zh: '启动参数', en: 'Launch arguments' },
   playtime: { zh: '总时长', en: 'Total playtime' },
   launches: { zh: '启动次数', en: 'Times launched' },
-  last: { zh: '最后游玩', en: 'Last played' }
+  last: { zh: '最后游玩', en: 'Last played' },
+  work: { zh: '作品', en: 'Work' },
+  cover: { zh: '封面', en: 'Cover' },
+  // Three lines rather than one with markers on it. What separates them is not decoration:
+  // the launcher hides the second and third by default, and a file that flattened them
+  // into one list would put an explicit tag back on screen — or spoil an ending — the
+  // first time it was read back.
+  autoTags: { zh: '题材标签', en: 'Genre tags' },
+  adultTags: { zh: 'R18 标签', en: 'Adult tags' },
+  spoilerTags: { zh: '剧透标签', en: 'Spoiler tags' }
 } as const
 
 type SidecarField = keyof typeof SIDECAR_FIELDS
@@ -744,8 +836,22 @@ const SENTINELS = {
   none: { zh: '无', en: 'none' },
   unrated: { zh: '未评分', en: 'unrated' },
   untiered: { zh: '未评级', en: 'no tier' },
-  never: { zh: '从未', en: 'never' }
+  never: { zh: '从未', en: 'never' },
+  /** A cover the user chose, which no catalogue pass may replace. */
+  byHand: { zh: '自己设的', en: 'set by hand' }
 } as const
+
+/**
+ * Catalogue names, written as the catalogues spell themselves.
+ *
+ * Proper nouns, so they are the same in both languages and are not translated. Read back
+ * case-insensitively, since this is a file people edit.
+ */
+const SOURCE_LABELS: Record<string, string> = {
+  dlsite: 'DLsite',
+  vndb: 'VNDB',
+  bangumi: 'Bangumi'
+}
 
 function sentinel(key: keyof typeof SENTINELS): string {
   return SENTINELS[key][mainLang() === 'en' ? 'en' : 'zh']
@@ -850,6 +956,49 @@ export function renderSidecar(data: SidecarData): string {
     }
   }
 
+  // Everything a catalogue said, so that losing the database does not mean paying for the
+  // lookup again — and so that a folder handed to somebody else arrives knowing what it is.
+  const cover = data.cover
+  const tags = data.autoTags ?? []
+  const plain = tags.filter((tag) => !tag.adult && !tag.spoiler)
+  const adult = tags.filter((tag) => tag.adult)
+  const spoiler = tags.filter((tag) => !tag.adult && tag.spoiler)
+  const summary = (data.summary ?? '').trim()
+
+  if (data.work || cover || tags.length > 0 || summary) {
+    lines.push('', en ? '## From the catalogue' : '## 目录站资料', '')
+    if (data.work) {
+      const label = SOURCE_LABELS[data.work.source] ?? data.work.source
+      const title = data.work.title ? ` · ${data.work.title}` : ''
+      lines.push(`- ${fieldLabel('work')}: ${label} ${data.work.workId}${title}`)
+    }
+    if (cover) {
+      const from = !cover.from
+        ? ''
+        : cover.from === 'user'
+          ? ` (${sentinel('byHand')})`
+          : ` (${SOURCE_LABELS[cover.from] ?? cover.from})`
+      lines.push(`- ${fieldLabel('cover')}: ${cover.name}${from}`)
+    }
+    const tagLine = (key: SidecarField, list: AutoTag[]): void => {
+      if (list.length > 0) lines.push(`- ${fieldLabel(key)}: ${list.map((x) => x.label).join(', ')}`)
+    }
+    tagLine('autoTags', plain)
+    tagLine('adultTags', adult)
+    tagLine('spoilerTags', spoiler)
+
+    if (summary) {
+      lines.push('', en ? '### Description' : '### 简介', '')
+      if (data.summaryFrom) {
+        const label = SOURCE_LABELS[data.summaryFrom] ?? data.summaryFrom
+        lines.push(en ? `> From ${label}` : `> 来自 ${label}`, '')
+      }
+      // Somebody else's paragraph, kept as they wrote it — the line breaks in a blurb are
+      // the author's and reflowing them here would be editing it.
+      lines.push(...summary.split('\n'))
+    }
+  }
+
   lines.push('', en ? '## Statistics' : '## 统计', '')
   lines.push(`- ${fieldLabel('playtime')}: ${formatDuration(data.playtimeMs ?? 0, mainLang())}`)
   lines.push(`- ${fieldLabel('launches')}: ${data.launchCount ?? 0}`)
@@ -875,6 +1024,38 @@ export function renderSidecar(data: SidecarData): string {
 
   lines.push('')
   return lines.join('\r\n')
+}
+
+/**
+ * A whole section of prose, rather than one `key: value` line.
+ *
+ * The description is a paragraph somebody else wrote and cannot be squeezed onto a line,
+ * so it gets a heading of its own and everything up to the next heading belongs to it.
+ * The attribution rides in a leading blockquote, which reads as a citation to a person
+ * and parses as one line to us.
+ */
+function readSection(raw: string, headings: string[]): { text: string; from?: string } | null {
+  const lines = raw.split(/\r?\n/)
+  const pattern = new RegExp(`^\\s*#{2,4}\\s*(?:${headings.join('|')})\\s*$`, 'i')
+  const start = lines.findIndex((line) => pattern.test(line))
+  if (start < 0) return null
+
+  const body: string[] = []
+  let from: string | undefined
+  for (const line of lines.slice(start + 1)) {
+    if (/^\s*#{1,6}\s/.test(line)) break
+    const cite = /^\s*>\s*(?:来自|From)\s+(.+?)\s*$/i.exec(line)
+    if (cite) {
+      from = cite[1].trim().toLowerCase()
+      continue
+    }
+    // A hand-editor may or may not keep the quote markers; either way the text is the text.
+    body.push(line.replace(/^\s*>\s?/, ''))
+  }
+
+  const text = body.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  if (!text) return null
+  return { text, from: from && SOURCE_LABELS[from] ? from : undefined }
 }
 
 export function parseSidecar(text: string): SidecarData {
@@ -946,6 +1127,76 @@ export function parseSidecar(text: string): SidecarData {
 
   const last = field('last')
   if (last !== null) data.lastLaunchedAt = parseStamp(last)
+
+  /* ---- what a catalogue said ---- */
+
+  const work = field('work')
+  if (work) {
+    // `VNDB v16044 · サノバウィッチ` — the source, the id, and a title for the reader.
+    const m = /^\s*([A-Za-z]+)\s+(\S+)(?:\s*[·・|-]\s*(.+))?$/.exec(work)
+    if (m && SOURCE_LABELS[m[1].toLowerCase()]) {
+      data.work = {
+        source: m[1].toLowerCase(),
+        workId: m[2],
+        title: m[3]?.trim() || undefined
+      }
+    }
+  }
+
+  const cover = field('cover')
+  if (cover) {
+    // `sakura-cover.jpg (VNDB)`. A name only, never a path: anything with a separator in
+    // it came from somewhere else and cannot be trusted to point inside this folder.
+    const m = /^(.+?)\s*(?:\(([^)]*)\))?\s*$/.exec(cover)
+    const name = (m?.[1] ?? '').trim().replace(/^["']|["']$/g, '')
+    if (name && !/[\\/]/.test(name) && name !== '..') {
+      const from = (m?.[2] ?? '').trim().toLowerCase()
+      // A catalogue names itself. "Set by hand" is the user saying so. Anything else —
+      // a word somebody typed, or no parenthesis at all — leaves the question open, and
+      // an open question is treated as the user's wherever it is used, which is the
+      // reading that protects the file rather than overwriting it.
+      data.cover = {
+        name,
+        from:
+          from === 'dlsite' || from === 'vndb'
+            ? from
+            : isSentinel('byHand', from)
+              ? 'user'
+              : undefined
+      }
+    }
+  }
+
+  const autoTags: AutoTag[] = []
+  const readTags = (key: SidecarField, extra: Partial<AutoTag>): void => {
+    const value = field(key)
+    if (value === null || isSentinel('none', value)) return
+    for (const label of splitList(value)) {
+      // A four-digit label is the release year, which the tag bar treats as its own facet
+      // — one year at a time, because a work does not have two. Reading it back as a
+      // genre would put it in the wrong row and make the filter behave like a genre.
+      const year = /^\d{4}$/.test(label)
+      autoTags.push({
+        id: year ? `year:${label}` : `genre:${label.toLowerCase()}`,
+        facet: year ? 'year' : 'genre',
+        label,
+        // Said plainly rather than repeating the catalogue's own reasoning, which is not
+        // in the file: this tag is here because the file next to the game says so.
+        reasonKey: 'tag.why.sidecar',
+        ...extra
+      })
+    }
+  }
+  readTags('autoTags', {})
+  readTags('adultTags', { adult: true })
+  readTags('spoilerTags', { spoiler: true })
+  if (autoTags.length > 0) data.autoTags = autoTags
+
+  const description = readSection(raw, ['简介', 'Description'])
+  if (description) {
+    data.summary = description.text
+    if (description.from) data.summaryFrom = description.from
+  }
 
   const sessions: SidecarSession[] = []
   for (const line of raw.split(/\r?\n/)) {

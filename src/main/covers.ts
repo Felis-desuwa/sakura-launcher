@@ -3,6 +3,7 @@ import path from 'node:path'
 import type { Game, SummarySource, WorkMatch } from '../shared/types'
 import { acceptCover, coverSourceOf, mayReplaceCover, mayReplaceSummary } from './cover-rules.ts'
 import * as db from './db'
+import { COVER_BASE, COVER_EXTS, isUnder } from './scan-core'
 import { pickBangumiSummary } from './tag-rules.ts'
 import { bangumiSearch, fetchImage, paceImage } from './tag-online'
 
@@ -20,39 +21,110 @@ import { bangumiSearch, fetchImage, paceImage } from './tag-online'
  */
 
 /**
+ * Where a cover for this game should be written.
+ *
+ * **Beside the game**, as `sakura-cover.<ext>`, so it travels with the folder the way the
+ * sidecar does: rename the folder, move it to another disk, hand it to somebody else, and
+ * the picture is still there and still findable — the sidecar names the file, and a scan
+ * can find it by name even if the sidecar is gone. A cover kept under `%APPDATA%` and
+ * pointed at by an absolute path is lost by every one of those moves.
+ *
+ * The app's own folder stays as the fallback, for the cases where there is nowhere to
+ * write: an archive that has no folder of its own, a read-only disc, a share with no
+ * permission. A cover in the wrong place beats no cover.
+ */
+function coverDestination(game: Game, kind: string): { dest: string; portable: boolean } {
+  if (game.kind === 'installed' && !game.missing) {
+    try {
+      fs.accessSync(game.dir, fs.constants.W_OK)
+      return { dest: path.join(game.dir, `${COVER_BASE}.${kind}`), portable: true }
+    } catch {
+      /* not writable — fall through to the app's own folder */
+    }
+  }
+  return { dest: path.join(db.coverDir(), `${game.id}.${kind}`), portable: false }
+}
+
+/**
  * Write one cover to disk.
  *
- * The bytes are sniffed before they land: this file goes into the app's data directory
- * and is handed to the renderer through the asset protocol, and what a server sends is
- * not always what its headers promised. An HTML error page returned with status 200 is
- * the ordinary case, and it must not become `cover.jpg`.
+ * The bytes are sniffed before they land: this file is handed to the renderer through the
+ * asset protocol, and what a server sends is not always what its headers promised. An
+ * HTML error page returned with status 200 is the ordinary case, and it must not become
+ * `sakura-cover.jpg`.
  */
-function writeCover(game: Game, bytes: Buffer, source: string): string | null {
+function writeCover(game: Game, bytes: Buffer): string | null {
   const kind = acceptCover(bytes)
   if (!kind) return null
 
-  const dest = path.join(db.coverDir(), `${game.id}-${source}.${kind}`)
+  const { dest, portable } = coverDestination(game, kind)
   try {
-    fs.mkdirSync(db.coverDir(), { recursive: true })
+    if (!portable) fs.mkdirSync(db.coverDir(), { recursive: true })
     fs.writeFileSync(dest, bytes)
   } catch {
     return null
   }
 
-  // An earlier cover for the same game under a different extension would otherwise sit
-  // there for ever, unreferenced and taking up room.
-  const previous = game.coverPath
-  if (previous && path.resolve(previous) !== path.resolve(dest)) {
-    const inOurs = path.resolve(previous).startsWith(path.resolve(db.coverDir()))
-    if (inOurs) {
-      try {
-        fs.rmSync(previous, { force: true })
-      } catch {
-        /* a cover we could not remove is untidy, not broken */
-      }
+  // Anything left behind: the same cover under another extension, and — after the move
+  // out of the app's data directory — the copy that used to live there.
+  clearStale(game, dest)
+  return dest
+}
+
+/**
+ * Take a cover the user picked and put it where the game is.
+ *
+ * The same place a fetched one goes, for the same reason: a picture chosen by hand is the
+ * one nobody wants to choose twice, and left as a path into somebody's Pictures folder it
+ * survives neither moving the library nor tidying that folder up. Copied rather than
+ * referenced, and recorded in the sidecar as the user's, which is what stops a later pass
+ * over the library replacing it.
+ */
+export function adoptCover(game: Game, source: string): string | null {
+  const ext = path.extname(source).replace(/^\./, '').toLowerCase() || 'jpg'
+  const { dest, portable } = coverDestination(game, ext)
+  try {
+    if (!portable) fs.mkdirSync(db.coverDir(), { recursive: true })
+    fs.copyFileSync(source, dest)
+  } catch {
+    return null
+  }
+  clearStale(game, dest)
+  return dest
+}
+
+/**
+ * Remove the cover file this program put there.
+ *
+ * Only ever ours — the one named `sakura-cover.*` beside the game, or the copy under the
+ * app's own folder. Without this, "clear the cover" would remove it from the database and
+ * the next scan would find the file still sitting in the folder and put it straight back.
+ */
+export function discardCover(game: Game): void {
+  clearStale(game, '')
+}
+
+/** Delete our own leftovers around `keep`, and never a file we did not write. */
+function clearStale(game: Game, keep: string): void {
+  const candidates = [game.coverPath, ...coverNamesIn(game.dir), ...coverNamesIn(db.coverDir(), game.id)]
+  for (const stale of candidates) {
+    if (!stale) continue
+    if (keep && path.resolve(stale) === path.resolve(keep)) continue
+    const ours =
+      isUnder(stale, db.coverDir()) ||
+      path.basename(stale).toLowerCase().startsWith(`${COVER_BASE}.`)
+    if (!ours) continue
+    try {
+      fs.rmSync(stale, { force: true })
+    } catch {
+      /* a cover we could not remove is untidy, not broken */
     }
   }
-  return dest
+}
+
+/** Every name a cover of ours could go by in one folder. */
+function coverNamesIn(dir: string, base = COVER_BASE): string[] {
+  return COVER_EXTS.map((ext) => path.join(dir, `${base}.${ext}`))
 }
 
 /** What became of one game's cover, so a run can say what it did rather than a bare count. */
@@ -75,7 +147,7 @@ export async function applyCover(
 
   await paceImage()
   const bytes = await fetchImage(match.cover.url)
-  const dest = bytes ? writeCover(game, bytes, match.source) : null
+  const dest = bytes ? writeCover(game, bytes) : null
   if (!dest) return 'missed'
 
   db.updateGame(game.id, {

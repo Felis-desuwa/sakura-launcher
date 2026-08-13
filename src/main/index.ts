@@ -74,6 +74,7 @@ import {
   tagRunActive
 } from './tagger'
 import { sanitizeArchiveName, scanPersonalData } from './share-rules'
+import { adoptCover, discardCover } from './covers'
 import { syncAll, toSidecar as sidecarFrom, writeGameSidecar } from './sidecar-sync'
 import { closeSplash, showSplash, splashStage } from './splash'
 import { performUninstall, planUninstall, trashLeftovers } from './uninstaller'
@@ -685,21 +686,34 @@ function registerIpc(): void {
       properties: ['openFile']
     })
     if (res.canceled || res.filePaths.length === 0) return null
-    const src = res.filePaths[0]
-    // Copy into app data so the cover survives the source file moving away.
-    const dest = path.join(db.coverDir(), `${game.id}${path.extname(src)}`)
-    try {
-      fs.copyFileSync(src, dest)
-    } catch {
-      return null
-    }
+    // Copied in beside the game, so it survives the source file being moved or tidied
+    // away — and so it travels with the folder like everything else in the sidecar does.
+    const dest = adoptCover(game, res.filePaths[0])
+    if (!dest) return null
     // Marked as the user's, which is what stops a batch of catalogue covers overwriting it.
-    return db.updateGame(id, { coverPath: dest, coverFrom: 'user', coverAdult: false })
+    const updated = db.updateGame(id, { coverPath: dest, coverFrom: 'user', coverAdult: false })
+    if (updated) writeGameSidecar(updated)
+    return updated
   })
 
-  ipcMain.handle('game:clearCover', (_e, id: string) =>
-    db.updateGame(id, { coverPath: null, coverFrom: undefined, coverAdult: undefined })
-  )
+  /**
+   * Clear the cover.
+   *
+   * Deletes the file as well as the record, and only ever the file this program wrote —
+   * `sakura-cover.*` beside the game, or the copy under the app's own folder. Leaving it
+   * on disk would have the next scan find it sitting there and put it straight back.
+   */
+  ipcMain.handle('game:clearCover', (_e, id: string) => {
+    const game = db.findGame(id)
+    if (game) discardCover(game)
+    const updated = db.updateGame(id, {
+      coverPath: null,
+      coverFrom: undefined,
+      coverAdult: undefined
+    })
+    if (updated) writeGameSidecar(updated)
+    return updated
+  })
 
   ipcMain.handle('uninstall:plan', (_e, id: string) => planUninstall(id))
   ipcMain.handle('uninstall:perform', (_e, id: string) => performUninstall(id))

@@ -3,7 +3,14 @@ import path from 'node:path'
 import type { Game, Tier } from '../shared/types'
 import { MAX_SESSIONS, normalizeStatus, TIERS } from '../shared/types'
 import * as db from './db'
-import { isUnder, readSidecar, SIDECAR, writeSidecarIfChanged, type SidecarData } from './scan-core'
+import {
+  findCoverIn,
+  isUnder,
+  readSidecar,
+  SIDECAR,
+  writeSidecarIfChanged,
+  type SidecarData
+} from './scan-core'
 
 /**
  * Keeping the per-game Markdown files in step with the database.
@@ -58,6 +65,26 @@ function absolutizeArgs(game: Game, args: string[] | undefined): string[] | unde
   })
 }
 
+/**
+ * The cover, as a name to write down — only when the file is in the game folder.
+ *
+ * A cover elsewhere on this machine is a fact about this machine: the sidecar's whole
+ * job is to still be true after the folder moves, and a path into somebody's Pictures
+ * folder would not be. Fetched covers are written into the folder precisely so they can
+ * be recorded here.
+ */
+function coverFor(game: Game): SidecarData['cover'] {
+  if (!game.coverPath) return undefined
+  const resolved = path.resolve(game.coverPath)
+  if (!isUnder(resolved, game.dir)) return undefined
+  const name = path.relative(game.dir, resolved)
+  // Only a file sitting directly in the folder — a name, not a path with steps in it.
+  if (!name || name.includes(path.sep)) return undefined
+  // No source recorded means nobody knows, and the file says so by staying silent rather
+  // than by claiming the user picked it.
+  return { name, from: game.coverFrom }
+}
+
 export function toSidecar(game: Game): SidecarData {
   return {
     name: game.name,
@@ -74,7 +101,16 @@ export function toSidecar(game: Game): SidecarData {
     playtimeMs: game.playtimeMs,
     launchCount: game.launchCount,
     lastLaunchedAt: game.lastLaunchedAt,
-    sessions: game.sessions
+    sessions: game.sessions,
+    // What the catalogue said. Derived, in the sense that it could be fetched again —
+    // but only by somebody with the switch on, a working connection, and the patience for
+    // a paced pass over the library. That is not "derivable" in any sense that helps
+    // whoever has just moved this folder to another machine.
+    work: game.work,
+    autoTags: game.autoTags,
+    summary: game.summary,
+    summaryFrom: game.summaryFrom,
+    cover: coverFor(game)
   }
 }
 
@@ -123,6 +159,45 @@ function applySidecar(game: Game, data: SidecarData): void {
     game.sessions = [...data.sessions]
       .sort((a, b) => b.startedAt - a.startedAt)
       .slice(0, MAX_SESSIONS)
+  }
+
+  /* ---- what a catalogue said, coming back ---- */
+
+  if (data.work && (data.work.source === 'dlsite' || data.work.source === 'vndb')) {
+    game.work = {
+      source: data.work.source,
+      workId: data.work.workId,
+      title: data.work.title ?? data.work.workId
+    }
+    // A game carrying a work has been looked up, whatever this database remembers. Without
+    // this, a folder arriving with a full record would still queue itself for a lookup it
+    // does not need.
+    game.taggedAt = game.taggedAt ?? Date.now()
+  }
+  if (data.autoTags !== undefined) {
+    game.autoTags = data.autoTags.map((tag) => ({
+      ...tag,
+      // The catalogue that named the work also named these, and the drawer says so.
+      source: game.work?.source ?? tag.source
+    }))
+  }
+  if (data.summary !== undefined) game.summary = data.summary
+  if (data.summaryFrom === 'dlsite' || data.summaryFrom === 'bangumi') {
+    game.summaryFrom = data.summaryFrom
+  }
+
+  // The picture is looked for where the file says, and failing that where it would be.
+  // Two routes on purpose: this is the one part of the record that took a download, and
+  // the file naming it is also the file most likely to have been edited by hand.
+  const coverName = data.cover?.name ?? findCoverIn(game.dir)
+  if (coverName) {
+    const resolved = path.resolve(game.dir, coverName)
+    if (isUnder(resolved, game.dir) && fs.existsSync(resolved)) {
+      game.coverPath = resolved
+      // Left unset when the file did not say. `coverSourceOf` reads that as the user's
+      // when it matters, so an unattributed picture is protected without being relabelled.
+      game.coverFrom = data.cover?.from
+    }
   }
 }
 

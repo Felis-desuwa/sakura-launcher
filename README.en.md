@@ -216,6 +216,20 @@ about a story, and only a catalogue has them.
   you edited by hand is read back when you press *Refresh* in the top bar (modification times
   are compared and the newer side wins); the automatic sync at startup deliberately does not do
   this, as it would cost one disk round trip per game
+- **What was looked up goes in there too** — the work number, the genre tags, the description
+  and the cover's file name all live in that same `sakura-launcher.md`, and **the cover itself
+  is written into the game folder** as `sakura-cover.jpg`. So a title you renamed and a lookup
+  you paid for survive **a new version, a new machine, and a folder renamed to
+  `游戏 v2.3 完整版【全CG存档】`** — scan it back in and everything returns without touching the
+  network. What makes that work is recording **a file name rather than a path**: a path is a
+  fact about one machine and stops being true the moment anything moves, while a name is
+  resolved against wherever the sidecar itself was found. Delete the cover line by hand and a
+  scan still finds `sakura-cover.*` sitting in the folder — two routes, either one enough.
+  Adult and spoiler tags are written on **their own lines**, and not for tidiness: flattened
+  into one list, they would come back visible on the shelf
+- **What deliberately stays behind** — which group a game is in, and where its tile sits in the
+  grid, describe *your desktop on this machine* rather than the game. They would mean nothing in
+  somebody else's library, so they stay in the local database
 - **Refresh ≠ rescan** — *Refresh* in the top bar only syncs entries that already exist (name,
   size, sidecar, whether the folder is still there) and never adds anything on its own. When
   you have put new games into a folder, go to Settings and press *Rescan and add* on that

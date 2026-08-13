@@ -90,13 +90,33 @@ the extension and keep electron out.
   debounced writes, `saveNow()` for things worth losing nothing over.
 - `sakura-launcher.md` inside each game folder (`scan-core.ts` parse/write, `sidecar-sync.ts`
   reconcile) — the durable, hand-editable copy that travels with the folder. Paths in it are
-  relative. Touched only at three moments: an explicit scan, and the start and end of a session.
+  relative. Touched at an explicit scan, at the start and end of a session, and after a
+  catalogue lookup settles something (`computeTags`, `applyMatch`, set/clear cover).
   When the two disagree the more recently modified wins; the app records its own write mtime, so a
   newer sidecar can only mean a human edited it.
 
 The sidecar is **bilingual**: written in the current UI language, parsed in both. If you add a field,
 add it to `SIDECAR_FIELDS`/`STATUS_LABELS`/`SENTINELS` with both strings, and remember `header()`
 is a function rather than a const precisely so it cannot freeze the wrong language at import time.
+
+**What a lookup found is written down too** — work id, genre tags, description, and the cover's
+file name. It is nominally derivable, but only by somebody with the switch on, a connection and
+the patience for a paced pass, which is no help to a folder that has just been renamed or moved
+to another machine. Three rules hold it together:
+
+- **A file name, never a path**, resolved against the folder the sidecar was found in. That is
+  what survives renaming the folder to anything at all. `findCoverIn()` is the second route:
+  a scan finds `sakura-cover.*` even when the line naming it was deleted.
+- **Fetched covers are written into the game folder** (`COVER_BASE`), not `%APPDATA%`. The
+  app-data directory is only the fallback for a folder that cannot be written to — archives,
+  read-only media. `game:clearCover` deletes the file, or the next scan finds it and puts it back.
+- **Adult and spoiler tags get their own lines** (`adultTags`/`spoilerTags`). Flattened into one
+  list they come back stripped of the flags that hide them, which puts an explicit tag on the
+  shelf and spoils an ending. Same reasoning as the cover source: an unattributed cover parses
+  back as `undefined` and is *treated* as the user's — protecting it — rather than being
+  relabelled as theirs in the file.
+
+Group membership and tile order stay out: they describe this machine's desktop, not the game.
 
 ### Two folder watchers that must not be merged
 

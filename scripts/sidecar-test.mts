@@ -125,6 +125,80 @@ writeSidecar(legacyDir, { name: '老版本的名字' })
 check('迁移后 .md 存在', fs.existsSync(path.join(legacyDir, SIDECAR)))
 check('迁移后 .txt 已删除', !fs.existsSync(path.join(legacyDir, LEGACY_SIDECAR)))
 
+console.log('\n— 目录站资料 —')
+
+/*
+ * 标签、简介、封面本来只活在 db.json 里：换台机器、换个版本、文件夹改个名，就全没了。
+ * 现在它们跟着游戏文件夹走 —— 而封面记的是**文件名，不是路径**，因为路径是「这台机器上的
+ * 事实」，文件夹一改名就不再成立。
+ */
+const catalogued: SidecarData = {
+  name: '示例游戏',
+  work: { source: 'vndb', workId: 'v1234', title: 'サンプルゲーム' },
+  cover: { name: 'sakura-cover.jpg', from: 'vndb' },
+  autoTags: [
+    { id: 'genre:校园', facet: 'genre', label: '校园', reasonKey: 'tag.why.vndb' },
+    { id: 'year:2016', facet: 'year', label: '2016', reasonKey: 'tag.why.year' },
+    { id: 'genre:凌辱', facet: 'genre', label: '凌辱', reasonKey: 'tag.why.vndb', adult: true },
+    { id: 'genre:结局', facet: 'genre', label: '结局', reasonKey: 'tag.why.vndb', spoiler: true }
+  ],
+  summary: '这是一段简介。\n第二行。\n\n隔一段之后还有一行。',
+  summaryFrom: 'bangumi'
+}
+
+const round = parseSidecar(renderSidecar(catalogued))
+check('作品编号回得来', round.work?.source === 'vndb' && round.work?.workId === 'v1234')
+check('作品名也一起记着', round.work?.title === 'サンプルゲーム')
+check('封面记的是文件名', round.cover?.name === 'sakura-cover.jpg')
+check('封面来源也记着', round.cover?.from === 'vndb')
+check('简介一字不差', round.summary === catalogued.summary, JSON.stringify(round.summary))
+check('简介署名回得来', round.summaryFrom === 'bangumi')
+
+const backTags = round.autoTags ?? []
+check('四个标签都回来了', backTags.length === 4, String(backTags.length))
+check('R18 标签仍然是 R18', backTags.find((t) => t.label === '凌辱')?.adult === true)
+check('剧透标签仍然是剧透', backTags.find((t) => t.label === '结局')?.spoiler === true)
+check('普通标签两样都不是', !backTags.find((t) => t.label === '校园')?.adult)
+/* 年份是另一种筛选：一部作品只有一个年份，读回来必须还是年份，不能变成题材 */
+check('年份读回来还是年份', backTags.find((t) => t.label === '2016')?.facet === 'year')
+check('年份的 id 也对', backTags.find((t) => t.label === '2016')?.id === 'year:2016')
+
+/* 三行分开写不是为了好看：读回来要是混成一行，R18 标签会直接出现在书架上 */
+const rendered = renderSidecar(catalogued)
+check('R18 标签单独一行', /R18 标签: 凌辱/.test(rendered))
+check('剧透标签单独一行', /剧透标签: 结局/.test(rendered))
+check('题材那行不含 R18 也不含剧透', /题材标签: 校园, 2016\r?\n/.test(rendered))
+
+/* 封面那行只准是文件名。写着路径的（手改的、从别的机器抄来的）一律不认 */
+const sneaky = parseSidecar('- 封面: ..\\..\\Windows\\System32\\evil.jpg (VNDB)')
+check('带路径的封面不认', sneaky.cover === undefined)
+const relative = parseSidecar('- 封面: 我自己的图.png')
+/* 没写来源就是不知道，不是「用户设的」—— 用的时候按用户设的对待（不覆盖），但文件里不编。 */
+check('没写来源就不编一个出来', relative.cover?.from === undefined)
+check('文件名带中文也没问题', relative.cover?.name === '我自己的图.png')
+check('不知道来源就不写括号', !/\(/.test(renderSidecar({ cover: { name: 'a.png' } })))
+check(
+  '自己设的会写明',
+  /自己设的/.test(renderSidecar({ cover: { name: 'a.png', from: 'user' } }))
+)
+check(
+  '自己设的也读得回来',
+  parseSidecar('- 封面: a.png (自己设的)').cover?.from === 'user'
+)
+
+/* 还没查过的游戏，文件里不该多出这一节 */
+const bare = renderSidecar({ name: '还没查过的游戏' })
+check('没资料就没有这一节', !/目录站资料|From the catalogue/.test(bare))
+check('也没有简介小节', !/### 简介/.test(bare))
+
+/* 手改的文件：来源大小写随意，署名那行可以不写，引用符号可留可不留 */
+const handWritten = parseSidecar(
+  ['## 目录站资料', '', '- 作品: vndb v999', '', '### 简介', '', '> 手写的一段。', ''].join('\n')
+)
+check('小写的来源也认', handWritten.work?.source === 'vndb')
+check('简介去掉了引用符号', handWritten.summary === '手写的一段。')
+check('没署名就是没署名', handWritten.summaryFrom === undefined)
+
 console.log('\n— 删除 —')
 removeSidecar(dir)
 check('删除后文件不在', !fs.existsSync(path.join(dir, SIDECAR)))

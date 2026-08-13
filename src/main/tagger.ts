@@ -2,6 +2,7 @@ import path from 'node:path'
 import type { Game, PendingMatch, WorkMatch } from '../shared/types'
 import { applyCover, applySummary } from './covers'
 import * as db from './db'
+import { writeGameSidecar } from './sidecar-sync'
 import { queryLadder, searchableTitle, STRONG_MATCH, workNoIn } from './tag-rules.ts'
 import type { BangumiWork } from './tag-bangumi.ts'
 import { bangumiSearch, lookupDlsite, searchVndb, vndbById } from './tag-online'
@@ -320,6 +321,13 @@ export async function computeTags(
         if (settings.onlineSummary && settings.onlineCovers) {
           if (await applySummary(fresh, result.match, scope)) summaries++
         }
+
+        // Straight out to the file beside the game. The alternative is that everything
+        // just fetched lives only in the database until somebody happens to run a scan —
+        // and a lookup that has to be paid for twice is exactly what writing it down is
+        // meant to prevent.
+        const written = db.findGame(game.id)
+        if (written) writeGameSidecar(written)
       } else {
         // Records that it was asked, so a second pass does not ask again about a game the
         // catalogue simply does not have.
@@ -362,11 +370,15 @@ export async function computeTags(
  */
 export function applyMatch(gameId: string, match: WorkMatch): Game | undefined {
   if (!db.findGame(gameId)) return undefined
-  return db.updateGame(gameId, {
+  const updated = db.updateGame(gameId, {
     autoTags: match.tags,
     work: { source: match.source, workId: match.workId, title: match.title },
     taggedAt: Date.now()
   })
+  // Settled by hand, which is the answer least worth losing: written straight out to the
+  // file beside the game rather than waiting for a scan.
+  if (updated) writeGameSidecar(updated)
+  return updated
 }
 
 /**
