@@ -16,13 +16,19 @@ falls behind is worse than none, because it reads as current. Source comments ar
 ## Commands
 
 ```bash
-npm run dev            # electron-vite dev — main, preload and renderer all hot-reload
+npm run dev            # electron-vite dev — the renderer hot-reloads; **main and preload do not**
 npm run typecheck      # both projects: tsconfig.node.json (main+preload+shared) and tsconfig.web.json
 npm run build          # electron-vite build
 npm run dist:all       # NSIS installer + portable exe into release/
 npm run dist:setup     # installer only
 npm run dist:portable  # portable only
 ```
+
+**Restart `dev` after touching `src/main/` or `src/preload/`.** Only the renderer reloads; the
+main process is built once at startup and keeps running. The failure mode is quiet and costly:
+the window picks up every UI change while the process behind it stays on old code, so a feature
+looks half-finished — the tags arrive, the description never does — and the bug being hunted is
+in a build that is no longer on disk.
 
 There is no linter and no test runner. Tests are standalone `.mts` harnesses run straight through
 node's type stripping — each is one suite, there is no filter flag, so "run a single test" means
