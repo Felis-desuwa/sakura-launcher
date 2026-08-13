@@ -1,6 +1,6 @@
 {
   "name": "sakura-launcher",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "A local game library manager for offline single-player games",
   "main": "./out/main/index.js",
   "author": "",
