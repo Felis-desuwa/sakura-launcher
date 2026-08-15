@@ -14,6 +14,11 @@ Thumbs.db
 .vscode/
 .idea/
 
+# The bundled Magpie release. Fetched by `npm run magpie:fetch`, which verifies its
+# SHA-256 — see THIRD-PARTY-NOTICES.md. Never committed: what is shipped has to be
+# provably the unmodified upstream archive, and a checked-in copy proves nothing.
+resources/magpie/
+
 # Local-only config and debug output — never commit personal paths or library data
 *.local.json
 scripts/scan-test-output.*

@@ -254,6 +254,58 @@ check('英文写法的中文名也读得回来', enRound.work?.zhTitle === '示�
 check('英文写法的发售日期也读得回来', enRound.work?.released === '2016-05-27')
 check('英文写法的品牌也读得回来', enRound.work?.developer === 'サンプルソフト')
 
+/* 超分放大：三种答案，外加「没答案」——后者是跟随设置，不能被写成前三种里的任何一种 */
+console.log('\n— 超分放大 —')
+
+check('没设过就一行都不写', !/超分放大/.test(renderSidecar(full)))
+check('没设过读回来还是没设过', parseSidecar(renderSidecar(full)).magpie === undefined)
+
+const withMode = parseSidecar(renderSidecar({ magpie: true, magpieMode: 'Anime4K' }))
+check('指定了模式就写模式名', /- 超分放大: Anime4K/.test(renderSidecar({ magpie: true, magpieMode: 'Anime4K' })))
+check('模式往返', withMode.magpie === true && withMode.magpieMode === 'Anime4K')
+
+/* 用户在 Magpie 自己界面里新建的模式，名字是他起的，这一行必须原样带得走——
+   文件夹换台机器打开时，那边的 Magpie 能不能认出这个名字是那边的事 */
+const own = parseSidecar(renderSidecar({ magpie: true, magpieMode: 'CuNNy-8x32-NVL' }))
+check('自建模式往返', own.magpie === true && own.magpieMode === 'CuNNy-8x32-NVL')
+
+/* 这个字段以前存的是内部 key，早先写出去的 sidecar 现在还在硬盘上 */
+check(
+  '旧 key 写出去时换成模式名',
+  /- 超分放大: Integer Scale 2x/.test(renderSidecar({ magpie: true, magpieMode: 'integer2x' }))
+)
+
+const onOnly = parseSidecar(renderSidecar({ magpie: true }))
+check('开着但没指定模式', onOnly.magpie === true && onOnly.magpieMode === undefined)
+
+const offOnly = parseSidecar(renderSidecar({ magpie: false }))
+check('关掉这一个', offOnly.magpie === false && offOnly.magpieMode === undefined)
+check('关掉写的是「关闭」', /- 超分放大: 关闭/.test(renderSidecar({ magpie: false })))
+
+/* 换过语言的库不能因此失效，模式名两种语言都是 Magpie 自己的写法 */
+check('英文的 on', parseSidecar('- Upscaling: on\n').magpie === true)
+check('英文的 off', parseSidecar('- Upscaling: off\n').magpie === false)
+const enMode = parseSidecar('- Upscaling: Integer Scale 2x\n')
+check('英文写法的模式名', enMode.magpie === true && enMode.magpieMode === 'Integer Scale 2x')
+check('中文字段名配模式名', parseSidecar('- 超分放大: CRT-Geom\n').magpieMode === 'CRT-Geom')
+
+/* 认不出的名字不再当作错误——Magpie 里能新建模式，这边没有名单可查。代价止于
+   「Magpie 找不到这个模式，用它自己的默认」，不会波及同一个文件里别的字段 */
+const unknown = parseSidecar('- 显示名称: 示例游戏\n- 超分放大: Anime8K\n')
+check('没见过的模式名照样带着走', unknown.magpie === true && unknown.magpieMode === 'Anime8K')
+check('...而同一个文件里别的字段照读', unknown.name === '示例游戏')
+check('内置模式大小写随便写', parseSidecar('- 超分放大: anime4k\n').magpieMode === 'Anime4K')
+/* 长到不像名字的一行还是当没写：来路不明的字符串会一路进 db.json 和 Magpie 的配置 */
+const tooLong = parseSidecar(`- 显示名称: 示例游戏\n- 超分放大: ${'x'.repeat(200)}\n`)
+check('长得离谱的当这行不存在', tooLong.magpie === undefined && tooLong.name === '示例游戏')
+
+/* 「这行没写」和「这行写了但读不懂」必须分得开：前者是人删掉这行、明确表示「跟随设置」，
+   要把库里存着的答案清掉；后者只是打错字，什么都不该动。压成同一个值的话，一个笔误就会
+   把这个游戏的设置悄悄重置 */
+check('读不懂的一行留下记号', tooLong.magpieUnreadable === true)
+check('压根没写的不留记号', parseSidecar('- 显示名称: 示例游戏\n').magpieUnreadable === undefined)
+check('读得懂的也不留记号', parseSidecar('- 超分放大: Anime4K\n').magpieUnreadable === undefined)
+
 console.log('\n— 删除 —')
 removeSidecar(dir)
 check('删除后文件不在', !fs.existsSync(path.join(dir, SIDECAR)))

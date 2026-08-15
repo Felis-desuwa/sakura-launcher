@@ -110,6 +110,10 @@ export function toSidecar(game: Game): SidecarData {
     // it into a decision the user appears to have made, and it would come back as one.
     exe: game.exePinned && game.exe ? path.relative(game.dir, game.exe) : undefined,
     launchArgs: game.exePinned ? relativizeArgs(game, game.launchArgs) : undefined,
+    // Passed through as-is, `undefined` and all: that absence is the "follow the setting"
+    // state, and substituting anything for it here would collapse three answers into two.
+    magpie: game.magpie,
+    magpieMode: game.magpieMode,
     wishlist: game.wishlist,
     playing: game.playing,
     played: game.played,
@@ -153,6 +157,23 @@ function applySidecar(game: Game, data: SidecarData): void {
       game.exePinned = true
       game.launchArgs = absolutizeArgs(game, data.launchArgs)
     }
+  }
+
+  // Three answers and the absence of one, carried across in full — including the absence.
+  //
+  // Deleting the line is how a person says "follow the setting" in a file this program
+  // invites them to edit, and by the time this runs the file is the newer copy, which is
+  // the only reason it is being read at all. Skipping the field when the line is gone
+  // would leave the database's old answer standing and write it straight back on the next
+  // sync: the edit reverts, and the third state is reachable from the menu but not from
+  // the file. A line nobody could parse is the one case that changes nothing, because
+  // there the user's intent is not known.
+  if (typeof data.magpie === 'boolean') {
+    game.magpie = data.magpie
+    game.magpieMode = data.magpie ? data.magpieMode : undefined
+  } else if (!data.magpieUnreadable) {
+    game.magpie = undefined
+    game.magpieMode = undefined
   }
 
   const status: Partial<Game> = {}

@@ -3,8 +3,16 @@ import path from 'node:path'
 // Extension spelled out: the harnesses in scripts/ import this file straight into node,
 // where nothing fills the extension in for them.
 import type { MessageKey } from '../shared/i18n.ts'
-import { formatDuration, parseDuration, type AutoTag, type EngineId } from '../shared/types.ts'
+import {
+  formatDuration,
+  normalizeMagpieMode,
+  parseDuration,
+  type AutoTag,
+  type EngineId,
+  type MagpieMode
+} from '../shared/types.ts'
 import { mainLang, t } from './i18n.ts'
+import { modeFromLabel } from './magpie-rules.ts'
 
 export const MAX_DEPTH = 4
 
@@ -726,6 +734,25 @@ export interface SidecarData {
   exe?: string
   /** Arguments it is started with — how a locale-emulator entry is recorded. */
   launchArgs?: string[]
+  /**
+   * Whether Magpie scales this game's window.
+   *
+   * Absent means "follow the setting", which is a third state and not a default — so the
+   * line is left out entirely rather than written with a value standing in for it.
+   */
+  magpie?: boolean
+  /** Which shader, when one was chosen for this game specifically. */
+  magpieMode?: MagpieMode
+  /**
+   * The line was there and could not be read.
+   *
+   * Distinct from the line being absent, and the distinction matters on the way back in:
+   * an absent line is a deliberate "follow the setting" and clears whatever the database
+   * held, while a line that made no sense is not evidence of anything and must leave the
+   * existing answer alone. Without this the two are the same value and a typo would
+   * quietly reset the game.
+   */
+  magpieUnreadable?: boolean
   wishlist?: boolean
   playing?: boolean
   played?: boolean
@@ -821,6 +848,7 @@ const SIDECAR_FIELDS = {
   tags: { zh: '标签', en: 'Tags' },
   exe: { zh: '主程序', en: 'Main program' },
   args: { zh: '启动参数', en: 'Launch arguments' },
+  magpie: { zh: '超分放大', en: 'Upscaling' },
   playtime: { zh: '总时长', en: 'Total playtime' },
   launches: { zh: '启动次数', en: 'Times launched' },
   last: { zh: '最后游玩', en: 'Last played' },
@@ -856,7 +884,13 @@ const SENTINELS = {
   untiered: { zh: '未评级', en: 'no tier' },
   never: { zh: '从未', en: 'never' },
   /** A cover the user chose, which no catalogue pass may replace. */
-  byHand: { zh: '自己设的', en: 'set by hand' }
+  byHand: { zh: '自己设的', en: 'set by hand' },
+  /**
+   * Upscaling turned on for this game with no particular shader named, and turned off for
+   * it outright. Neither stands in for "follow the setting" — that one has no line at all.
+   */
+  on: { zh: '开启', en: 'on' },
+  off: { zh: '关闭', en: 'off' }
 } as const
 
 /**
@@ -972,6 +1006,17 @@ export function renderSidecar(data: SidecarData): string {
     if (data.launchArgs && data.launchArgs.length > 0) {
       lines.push(`- ${fieldLabel('args')}: ${data.launchArgs.map(quoteArg).join(' ')}`)
     }
+  }
+  // No line at all is what "follow the setting" looks like, so a game that has never been
+  // given its own answer stays silent here. The shader name is written as Magpie spells
+  // it, in either language, so that this line and Magpie's own interface can be compared.
+  if (data.magpie !== undefined) {
+    const value = !data.magpie
+      ? sentinel('off')
+      : data.magpieMode
+        ? normalizeMagpieMode(data.magpieMode)
+        : sentinel('on')
+    lines.push(`- ${fieldLabel('magpie')}: ${value}`)
   }
 
   // Everything a catalogue said, so that losing the database does not mean paying for the
@@ -1164,6 +1209,25 @@ export function parseSidecar(text: string): SidecarData {
 
   const args = field('args')
   if (args !== null) data.launchArgs = splitArgs(args)
+
+  // Three ways to say something and one way to say nothing. Any other word is taken as a
+  // mode name and kept as written, because a mode built in Magpie's own interface is
+  // called whatever its author called it and nothing here can know the list. A name for a
+  // mode that turns out not to exist costs the default shader, not the line.
+  const magpie = field('magpie')
+  if (magpie !== null) {
+    if (isSentinel('off', magpie)) data.magpie = false
+    else if (isSentinel('on', magpie)) data.magpie = true
+    else {
+      const mode = modeFromLabel(magpie)
+      if (mode) {
+        data.magpie = true
+        data.magpieMode = mode
+      } else {
+        data.magpieUnreadable = true
+      }
+    }
+  }
 
   const playtime = field('playtime')
   if (playtime !== null) {

@@ -5,6 +5,7 @@ import path from 'node:path'
 import * as db from './db'
 import { t } from './i18n'
 import { watchLaunch } from './launch-watch'
+import { magpieBeforeLaunch } from './magpie'
 import { beginSession } from './playtime'
 
 export interface LaunchResult {
@@ -89,6 +90,12 @@ export async function launchGame(id: string): Promise<LaunchResult> {
   const result = await spawnDetached(game.exe, game.launchArgs ?? [], cwd)
   if (!result.ok) return result
 
+  // Deliberately not awaited. Magpie inspects the foreground window when it starts, so
+  // arriving a moment after the game costs nothing, while making every launch wait on it
+  // is the one delay the user would feel. Anything that goes wrong arrives as a notice.
+  // After the spawn, so that a game which never started does not leave one running.
+  void magpieBeforeLaunch(game, { elevated: false })
+
   // Opens the play session, which is what bumps lastLaunchedAt and launchCount —
   // and closes it again once the game is gone, recording how long it ran.
   beginSession(game)
@@ -122,6 +129,12 @@ export async function launchElevated(id: string): Promise<LaunchResult> {
   const command =
     `Start-Process -FilePath ${ps(game.exe)} -WorkingDirectory ${ps(cwd)} -Verb RunAs` +
     (args.length > 0 ? ` -ArgumentList ${args.map(ps).join(',')}` : '')
+
+  // The one path where this is awaited, and where it has to come first. Scaling an
+  // administrator's window needs an administrator's Magpie, which raises a prompt of its
+  // own — and two UAC prompts arriving together is not something to hand the user. When
+  // the setting says not to elevate, this returns having only said so.
+  await magpieBeforeLaunch(game, { elevated: true })
 
   return new Promise((resolve) => {
     execFile(

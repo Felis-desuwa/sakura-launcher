@@ -1,6 +1,24 @@
+<div align="center">
+
+<img src="build/icon.png" width="104" alt="Sakura Launcher">
+
 # 🌸 Sakura Launcher
 
+**A launcher for game libraries that have no metadata to scrape**<br>
+Every judgement read off the files · never goes online at runtime · Windows
+
+[![Latest release](https://img.shields.io/github/v/release/Felis-desuwa/sakura-launcher?style=flat-square&labelColor=2b1a20&color=e8709b)](https://github.com/Felis-desuwa/sakura-launcher/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/Felis-desuwa/sakura-launcher/total?style=flat-square&labelColor=2b1a20&color=e8709b)](https://github.com/Felis-desuwa/sakura-launcher/releases)
+[![Platform](https://img.shields.io/badge/Windows-10%20%2F%2011-e8709b?style=flat-square&labelColor=2b1a20)](#download)
+[![License](https://img.shields.io/badge/license-MIT-e8709b?style=flat-square&labelColor=2b1a20)](LICENSE)
+
 [简体中文](README.md) · **English**
+
+[Download](#download) · [At a glance](#at-a-glance) · [Features](#features) · [Where your data lives](#where-your-data-lives) · [Changelog](https://github.com/Felis-desuwa/sakura-launcher/releases)
+
+</div>
+
+---
 
 A library manager for offline single-player games that live on your own disk. It turns the
 game folders scattered across your drives into one cherry-blossom-coloured desktop:
@@ -57,6 +75,8 @@ Run anyway*.
   even when on, all that leaves the machine is a title
 - Playtime is measured by *whether any process is running inside the game folder*, which
   survives the very common launcher-exits-immediately case
+- An 800×600 game can be scaled up to fill the screen in real time (Magpie, shipped with the
+  installer, **off by default**) — it comes up with the game and quits after it
 - Backing saves up looks in `%APPDATA%`, `LocalLow` and the root of C: as well — saves are
   very often nowhere near the game — and recognises a completed save that came with the download
 - Packing a game up to share lists your personal traces for review first, and **leaves the
@@ -107,6 +127,37 @@ Run anyway*.
 - **Launch through another program** — Japanese games often need a locale emulator to display
   correctly. You can set it up as "run `game.exe` through `NTLEA.exe`", and that is what a
   double-click on the tile does from then on
+
+### Filling the screen (off by default)
+
+Most of these games have their resolution welded into the engine at 800×600 or 1024×768,
+which is a postage stamp on a modern display — and letting Windows stretch it turns the art
+to mush. Switch this on and launching a game brings Magpie up with it, scaling the game's
+window to fill the screen in real time with a shader. It matches on the main program's path
+and finds the window by itself, and quits a minute or two after the game does.
+
+Seven scaling modes are seeded: Lanczos, FSR, FSRCNNX, CuNNy, Anime4K, CRT-Geom and Integer
+Scale 2x. Settings picks the default; a single game can be given its own from its right-click
+menu, and that choice is written into `sakura-launcher.md` so it travels with the folder.
+Lanczos is the cheapest and runs on anything; Anime4K looks best on anime-style art and costs
+the most GPU.
+
+The finer picture settings — a shader's own parameters, the capture method, the frame limiter,
+cursor scaling — are Magpie's own, and *Picture settings…* on the settings page is the door to
+them. That is also where **scaling modes of your own** are built, out of the hundred-odd
+shaders under `effects\`; one built there appears straight away in this program's dropdown and
+right-click menu, because both list whatever modes Magpie's config actually holds rather than a
+fixed seven. Nothing you change in there is overwritten from here — only the update check, the
+tray icon, elevation and the debug switches are insisted upon. Note that Magpie saves its
+settings when it exits, so quit it from the tray before launching a game.
+
+A few conditions: Windows 10 1903 or newer and a card that supports DirectX 11; the game has
+to be windowed or borderless, as exclusive fullscreen cannot be scaled; and a game started as
+administrator needs Settings to allow an elevated Magpie too (running this launcher as
+administrator is the tidier way). If a game hands off to a different executable once it
+starts, matching by path finds nothing — point *Change main program…* at the right one, which
+fixes the playtime tracking at the same time, or press Alt+Shift+A to scale the current window
+by hand. Scaling failing never stops the game itself from running.
 
 ### Genre tags (the only online feature, off by default)
 
@@ -342,6 +393,8 @@ db.json              games, groups, settings, removed paths
 cache/icons/         icons extracted from executables
 cache/breakdown/     cached directory size breakdowns
 covers/              covers you set yourself
+magpie/              Magpie and its configuration (copied here the first time upscaling
+                     is switched on, about 30 MB)
 ```
 
 Save backups are deliberately not kept here — they go to Documents\Sakura Launcher Saves by
@@ -354,6 +407,16 @@ of the same data.
 
 ## Optional external programs
 
+**Magpie is the only one shipped with the installer**; the rest are "use it if you have it".
+
+- **Magpie** (GPL-3.0, v0.12.1) — the separate program behind upscaling, distributed with
+  the installer and **off by default**. The first time it is switched on it is copied into
+  `%APPDATA%\sakura-launcher\magpie\` and keeps its configuration there — it needs a
+  writable directory, and this also guarantees that a copy you installed yourself is never
+  read or rewritten. What ships is the upstream archive unmodified, verified by SHA-256 at
+  build time. Full licence text and how to obtain the corresponding source are in
+  [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Note that Magpie allows one instance:
+  while your own copy is running this program will not start a second one, and says so
 - **7-Zip** — extracts *Pending install* archive entries and does the packing when sharing.
   Without it those two features are unavailable; everything else is unaffected
 - **Geek Uninstaller** — the second link in the uninstall chain. Without it, a game with no
@@ -385,6 +448,13 @@ npm run dist:setup         # installer only
 npm run dist:portable      # portable only
 ```
 
+All three `dist:*` scripts run `npm run magpie:fetch` first: it **downloads the Magpie
+release from GitHub once and verifies its SHA-256**, unpacking it into `resources/magpie/`
+(not tracked in git). This is the only build step in the project that uses the network, and
+it is a separate matter from the program not using it at runtime — once installed, Magpie's
+own update check is forced off. `npm run dev` works without ever running it; upscaling
+simply reports "not set up yet".
+
 ## Development
 
 ```bash
@@ -404,6 +474,9 @@ npm run diagnose-test                             # launch diagnosis: runtime ma
 npm run tag-test                                  # genre tags: which titles count as a match, which catalogue
                                                   # tags to drop; and which descriptions to refuse — not Chinese,
                                                   # or not this game. No network; shapes pinned by real samples
+npm run magpie-test                               # upscaling: the three-state switch (off wholesale means off),
+                                                  # config merges staying idempotent, and scaling modes looked
+                                                  # up by name rather than by a remembered index
 npm run cover-test                                # covers: which picture is usable, which counts as adult, the
                                                   # error page posing as an image, the user's own cover left alone
 npm run translate-test                            # translating a blurb: chunking, both services' response
@@ -438,4 +511,8 @@ Directory walking and size totals run on a worker thread and do not block the in
 
 ## License
 
-MIT
+The source of this project is [MIT](LICENSE).
+
+The installers additionally bundle [Magpie](https://github.com/Blinue/Magpie) (GPL-3.0,
+unmodified, invoked as a separate process). Its full licence text and how to obtain its
+corresponding source are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

@@ -47,7 +47,7 @@ const CHECKPOINT_MS = 5 * 60_000
 
 const active = new Map<string, Session>()
 let timer: NodeJS.Timeout | null = null
-let notify: ((payload: PlaytimeUpdate) => void) | null = null
+const listeners = new Set<(payload: PlaytimeUpdate) => void>()
 
 export interface PlaytimeUpdate {
   id: string
@@ -55,12 +55,25 @@ export interface PlaytimeUpdate {
   playing: boolean
 }
 
-export function onPlaytimeChange(fn: (payload: PlaytimeUpdate) => void): void {
-  notify = fn
+/**
+ * Be told when a session opens or closes.
+ *
+ * A set rather than the single slot this used to be. For a long time the renderer bridge
+ * was the only subscriber and a lone variable was enough — but a second caller assigning
+ * over it would have silently stopped the play timer updating on screen, which is the
+ * kind of fault that gets blamed on the timer rather than on the thing that displaced it.
+ * Returns an unsubscribe function, matching the `onX` convention the preload bridge uses.
+ */
+export function onPlaytimeChange(fn: (payload: PlaytimeUpdate) => void): () => void {
+  listeners.add(fn)
+  return () => {
+    listeners.delete(fn)
+  }
 }
 
 function emit(game: Game, playing: boolean): void {
-  notify?.({ id: game.id, playtimeMs: game.playtimeMs, playing })
+  const payload: PlaytimeUpdate = { id: game.id, playtimeMs: game.playtimeMs, playing }
+  for (const fn of listeners) fn(payload)
 }
 
 /**

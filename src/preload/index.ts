@@ -8,6 +8,8 @@ import type {
   Game,
   Group,
   LaunchTrouble,
+  MagpieNotice,
+  MagpieStatus,
   PendingDownload,
   RedundantArchive,
   Settings,
@@ -423,6 +425,23 @@ const api = {
     const handler = (_e: unknown, payload: LaunchTroubleEvent): void => cb(payload)
     ipcRenderer.on('launch:trouble', handler)
     return () => ipcRenderer.off('launch:trouble', handler)
+  },
+
+  magpieStatus: (): Promise<MagpieStatus> => ipcRenderer.invoke('magpie:status'),
+  /**
+   * The scaling modes Magpie's own config file holds — the built-in seven, plus anything
+   * the user assembled in its interface. Asked for rather than assumed, because that list
+   * is the one this program offers.
+   */
+  magpieModes: (): Promise<string[]> => ipcRenderer.invoke('magpie:modes'),
+  /** Open Magpie's own window: every scaling control this program does not put a knob on. */
+  openMagpieSettings: (): Promise<boolean> => ipcRenderer.invoke('magpie:open'),
+  revealMagpie: (): Promise<boolean> => ipcRenderer.invoke('magpie:reveal'),
+  /** Carries a message key, not a sentence — see `MagpieNotice`. */
+  onMagpieNotice: (cb: (notice: MagpieNotice) => void): (() => void) => {
+    const handler = (_e: unknown, notice: MagpieNotice): void => cb(notice)
+    ipcRenderer.on('magpie:notice', handler)
+    return () => ipcRenderer.off('magpie:notice', handler)
   }
 }
 

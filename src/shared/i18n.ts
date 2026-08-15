@@ -874,6 +874,63 @@ export const MESSAGES = {
     zh: '双击之后十几秒都没有进程跑起来，就在角落里给一张卡片，点开能看到具体原因 —— 缺哪个运行库、是不是要管理员权限、是不是主程序选错了。关掉之后仍然可以随时右键「启动诊断…」。',
     en: 'When nothing has started a dozen seconds after a double-click, a small card appears in the corner; opening it gives the reason — a missing runtime, a demand for administrator rights, the wrong program picked. With this off you can still run Diagnose launch… from the right-click menu at any time.'
   },
+
+  /* ---- scaling the game's window with Magpie ---- */
+  'settings.magpieSection': { zh: '超分放大', en: 'Upscaling' },
+  'settings.magpieNote': {
+    zh: '用 Magpie 把游戏窗口实时放大到屏幕大小。老游戏常常只有 800×600，在高分屏上是邮票大的一块；这是把它撑开而不糊掉的办法。Magpie 是随本程序一起分发的独立程序（GPLv3），第一次开启时复制到本程序自己的目录，配置也只写在那里，不会碰你自己装的那一份。',
+    en: "Magpie scales the game's window up to fill the screen in real time. These games are often 800×600, which is a postage stamp on a high-resolution display; this is how to fill it without turning it to mush. Magpie is a separate program shipped alongside this one (GPLv3). It is copied into this program's own folder the first time you switch this on, and configured only there — a copy you installed yourself is never touched."
+  },
+  'settings.magpie': { zh: '启用超分放大', en: 'Scale game windows' },
+  'settings.magpieHint': {
+    zh: '关着就是关着：不复制、不起进程，单独设过的游戏也一样不放大。开着时，启动游戏会顺带把 Magpie 起起来，游戏关掉一两分钟后它自己退出。放大不成也不影响游戏照常运行；随时可以按 Alt+Shift+A 手动放大当前窗口。',
+    en: 'Off means off — nothing is copied, nothing runs, and games given their own setting stay unscaled too. When on, launching a game brings Magpie up with it, and it quits a minute or two after the game does. If scaling fails the game still runs; Alt+Shift+A scales the current window by hand at any time.'
+  },
+  'settings.magpieMode': { zh: '默认缩放模式', en: 'Default scaling mode' },
+  'settings.magpieModeHint': {
+    zh: 'Lanczos 最省，什么显卡都跑得动；Anime4K 对动画风格的立绘最好看，也最吃显卡；FSR 是给 3D 游戏做的。单个游戏可以在右键菜单里另选。这里列的是 Magpie 配置里现有的模式 —— 你在它自己的界面里新建的模式也会出现在这里。',
+    en: "Lanczos is the cheapest and runs on anything; Anime4K looks best on anime-style art and costs the most; FSR was made for 3D games. A single game can be given its own in its right-click menu. This list is whatever modes Magpie's config holds, so one you build in its own interface appears here too."
+  },
+  'settings.magpieElevate': {
+    zh: '提权启动的游戏也提权 Magpie',
+    en: 'Elevate Magpie for games run as administrator'
+  },
+  'settings.magpieElevateHint': {
+    zh: 'Windows 不许未提权的程序操作管理员权限的窗口，所以以管理员身份启动的游戏放大不了。开启后会多一次 UAC 询问，而且那个 Magpie 本程序关不掉，要自己从托盘退出。更省事的办法是以管理员身份运行本启动器。',
+    en: "Windows does not let an unelevated program touch an administrator's window, so a game started as administrator cannot be scaled. Turning this on adds a second UAC prompt, and that copy of Magpie cannot be closed from here — you quit it from the tray. The easier route is to run this launcher as administrator."
+  },
+  'settings.magpieUnsupported': {
+    zh: 'Magpie 需要 Windows 10 1903 或更新的版本',
+    en: 'Magpie needs Windows 10 1903 or newer'
+  },
+  'settings.magpieOverrides': {
+    zh: '另有 {n} 个游戏单独设置了',
+    en: '{n} games have their own setting'
+  },
+  // The door to everything this program deliberately does not put a knob on. Named for what
+  // is behind it rather than for the program, so somebody looking for picture quality finds
+  // it without already knowing what Magpie is called.
+  'settings.magpieOpen': { zh: '画质设置…', en: 'Picture settings…' },
+  'settings.magpieOpenHint': {
+    zh: '打开 Magpie 自己的界面：着色器参数、捕获方式、帧率限制、光标缩放，以及新建你自己的缩放模式（effects 目录里有一百多个着色器，本程序只预置了七种组合）。在那里改的东西本程序不会覆盖。注意 Magpie 是退出时才保存设置的，所以调完请从托盘正常退出它，再去启动游戏。',
+    en: "Opens Magpie's own interface: shader parameters, capture method, frame limiter, cursor scaling, and building scaling modes of your own — the effects folder holds well over a hundred shaders and this program seeds only seven combinations of them. Nothing you change there is overwritten from here. Note that Magpie saves its settings when it exits, so quit it from the tray before launching a game."
+  },
+  'settings.magpieFolder': { zh: '打开所在文件夹', en: 'Open its folder' },
+  'settings.magpieNotInstalled': { zh: '尚未复制', en: 'Not set up yet' },
+  'settings.magpieReady': { zh: '已就绪（v{version}）', en: 'Ready (v{version})' },
+  // The one line that answers "is it actually working". Without it the status never moves
+  // off "ready", and a feature whose whole output is on another window is invisible here.
+  'settings.magpieRunning': { zh: '正在运行（v{version}）', en: 'Running (v{version})' },
+  // "Running for", not "scaling" — this program knows which game it started Magpie for,
+  // not whether Magpie's profile actually caught a window. See `MagpieStatus.forGame`.
+  'settings.magpieRunningFor': {
+    zh: '正在为 {name} 运行（v{version}）',
+    en: 'Running for {name} (v{version})'
+  },
+  'settings.magpieForeignShort': {
+    zh: '另一个 Magpie 正在运行，不归启动器管',
+    en: "Another Magpie is running — not the launcher's"
+  },
   'settings.downloadSection': { zh: '下载', en: 'Downloads' },
   'settings.downloadDir': { zh: '默认下载目录', en: 'Download folder' },
   'settings.downloadDirHint': {
@@ -1595,6 +1652,43 @@ export const MESSAGES = {
   'common.quoted': { zh: '《{name}》', en: '{name}' },
   'menu.chooseExe': { zh: '更换主程序…', en: 'Change main program…' },
   'menu.matchWork': { zh: '手动匹配…', en: 'Match manually…' },
+
+  /* ---- upscaling, per game ---- */
+  'menu.magpie': { zh: '超分放大', en: 'Upscaling' },
+  'menu.magpieFollow': { zh: '跟随设置', en: 'Follow settings' },
+  'menu.magpieDefaultMode': { zh: '默认模式（{mode}）', en: 'Default ({mode})' },
+  'menu.magpieNever': { zh: '这个游戏不放大', en: 'Never for this game' },
+  'menu.magpieDisabled': { zh: '先在设置里开启超分放大', en: 'Turn upscaling on in Settings first' },
+  // Said after the fact rather than in the way of the launch: the game has already
+  // started by the time any of these are known, and none of them stop it running.
+  'magpie.foreign': {
+    zh: '已经有一个 Magpie 在运行（{path}）。那一份不归启动器管，这次不会自动放大。退出它之后再启动游戏就好。',
+    en: "Magpie is already running ({path}). That copy is not the launcher's to configure, so nothing will scale automatically. Quit it and launch the game again."
+  },
+  'magpie.installFailed': {
+    zh: '没能把 Magpie 复制过来：{error}。游戏照常启动，只是不放大。',
+    en: 'Could not set Magpie up: {error}. The game starts as usual, just without scaling.'
+  },
+  'magpie.startFailed': {
+    zh: 'Magpie 没能启动，游戏照常运行。',
+    en: 'Magpie did not start. The game runs as usual.'
+  },
+  'magpie.exited': {
+    zh: 'Magpie 一起来就退出了 —— 多半是显卡不满足它的要求（需要 DirectX 11）。游戏照常运行。',
+    en: 'Magpie quit the moment it started — most likely the graphics card does not meet its requirements (DirectX 11). The game runs as usual.'
+  },
+  'magpie.needsElevation': {
+    zh: '这个游戏以管理员身份运行，未提权的 Magpie 放大不了它。设置里可以让 Magpie 也提权。',
+    en: 'This game runs as administrator, and an unelevated Magpie cannot scale it. Settings can elevate Magpie too.'
+  },
+  'magpie.configLocked': {
+    zh: '有一个提权的 Magpie 正在运行，从这里改不了它的设置。等它退出后再试。',
+    en: 'An elevated Magpie is running and its settings cannot be changed from here. Try again once it has quit.'
+  },
+  'magpie.unsupported': {
+    zh: '这台机器的 Windows 版本达不到 Magpie 的要求（需要 Windows 10 1903 或更新）。',
+    en: 'This copy of Windows is older than Magpie needs (Windows 10 1903 or newer).'
+  },
 
   /* ---- covers from a catalogue ---- */
   'menu.fetchWork': { zh: '联网获取资料', en: 'Fetch from catalogue' },

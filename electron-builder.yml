@@ -8,6 +8,16 @@ files:
   - '!**/.vscode/*'
   - '!{.eslintrc,.prettierrc,tsconfig*.json,electron.vite.config.ts}'
   - '!scripts/*'
+# Magpie, fetched by `npm run magpie:fetch` (which the dist scripts run first). It goes in
+# unpacked rather than into the asar: it is a separate program we start, not code we load.
+# The licence is carried separately because the upstream archive does not contain one, and
+# GPLv3 requires the full text to travel with the binary.
+extraResources:
+  - from: resources/magpie
+    to: magpie
+    filter: ['**/*']
+  - from: third-party/magpie-LICENSE.txt
+    to: magpie/LICENSE.txt
 win:
   icon: build/icon.ico
   target:

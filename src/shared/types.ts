@@ -30,6 +30,120 @@ export const TAB_KEYS: TabKey[] = ['all', 'wishlist', 'playing', 'played']
 
 export type GameKind = 'installed' | 'archive'
 
+/**
+ * Which shader Magpie scales a game's window with, held as **the name Magpie's own
+ * `config.json` gives it** — never as the number that file actually stores.
+ *
+ * That number is a *position* in a list the user can reorder from Magpie's interface, so a
+ * stored index quietly means a different shader the moment they do. The name is the stable
+ * thing; `magpie-config.ts` turns it back into an index against whatever list is really on
+ * disk.
+ *
+ * It is a bare string rather than a union of the seven built-ins because Magpie's own
+ * interface can *create* modes — the shipped `effects\` folder holds far more shaders than
+ * the seven default modes use, and a mode combining them is exactly the reason somebody
+ * opens that interface. A closed union would leave anything they built there unselectable
+ * here and unwritable to the sidecar, which is to say invisible to the program that offers
+ * the setting. A name that no longer exists is not an error either: `modeIndexIn` answers
+ * `-1`, which is Magpie's own "use the default".
+ */
+export type MagpieMode = string
+
+/**
+ * The seven modes Magpie creates for itself, in the order its `_SetDefaultScalingModes()`
+ * creates them — and the fallback list to offer before its config file exists to be read.
+ *
+ * Shared rather than kept beside the rest of the Magpie logic because the settings page
+ * and the right-click menu both offer them, and the renderer cannot reach into `src/main`.
+ * `magpie-config.ts` seeds the file with modes of exactly these names.
+ *
+ * Not translated, for the reason `SOURCE_LABELS` keeps DLsite and VNDB as they spell
+ * themselves — only more strongly: these strings are what Magpie's own interface displays,
+ * and translating them would leave the user unable to match what this program shows
+ * against what they are looking at.
+ */
+export const MAGPIE_MODES: MagpieMode[] = [
+  'Lanczos',
+  'FSR',
+  'FSRCNNX',
+  'CuNNy',
+  'Anime4K',
+  'CRT-Geom',
+  'Integer Scale 2x'
+]
+
+/** Longest mode name accepted from a hand-edited sidecar. Magpie's own UI shows these. */
+export const MAX_MAGPIE_MODE = 80
+
+/**
+ * The keys this setting used before it held names, and the name each one meant.
+ *
+ * Kept because they are on disk: in `db.json` for anyone who used the feature, and in the
+ * `sakura-launcher.md` of every game given its own mode. Dropping the mapping would not
+ * fail loudly — `modeIndexIn` would return -1 and every one of those games would quietly
+ * fall back to the default shader.
+ */
+const LEGACY_MAGPIE_MODES: Record<string, MagpieMode> = {
+  lanczos: 'Lanczos',
+  fsr: 'FSR',
+  fsrcnnx: 'FSRCNNX',
+  cunny: 'CuNNy',
+  anime4k: 'Anime4K',
+  crtgeom: 'CRT-Geom',
+  integer2x: 'Integer Scale 2x'
+}
+
+/**
+ * The name to look up in Magpie's config, given whatever is stored.
+ *
+ * Translates an old key and otherwise passes the name through untouched — a mode the user
+ * built is theirs to spell, including the case. Applied at every point that reads the
+ * setting rather than once on upgrade, because the sidecar is a second copy that no
+ * migration pass would ever reach: a folder can arrive from another machine years later.
+ */
+export function normalizeMagpieMode(mode: MagpieMode): MagpieMode {
+  const trimmed = mode.trim()
+  return LEGACY_MAGPIE_MODES[trimmed.toLowerCase()] ?? trimmed
+}
+
+/**
+ * Something worth saying about scaling, after the fact.
+ *
+ * Carried as a key rather than as a sentence because the main process produces these and
+ * the renderer displays them: a message translated where it was raised would be in the
+ * old language when the user has just changed it, which `App.tsx` already goes out of its
+ * way to avoid for toasts.
+ *
+ * None of these stop a game running. By the time any of them is known the game has
+ * already started, and scaling failing is not a reason to interfere with that.
+ */
+export interface MagpieNotice {
+  key: MessageKey
+  vars?: Vars
+}
+
+/** What the settings page shows about the bundled copy. */
+export interface MagpieStatus {
+  /** This machine is new enough for Magpie to run at all. */
+  supported: boolean
+  /** The copy has been laid down under the app's own data directory. */
+  installed: boolean
+  version: string
+  running: boolean
+  /**
+   * The game Magpie is currently up for, when it is up for one.
+   *
+   * Deliberately *not* called "the game being scaled". This program knows which game it
+   * started Magpie for; it cannot see whether Magpie's profile actually matched a window.
+   * A game that hands off to a second executable leaves Magpie running and scaling
+   * nothing, and a status line claiming otherwise would hide exactly the fault the user
+   * needs to notice.
+   */
+  forGame?: string
+  /** Path of a Magpie that is running and is not ours — the case that silently does nothing. */
+  foreign?: string
+}
+
 /** One stretch of time the game was actually running. */
 export interface PlaySession {
   /** Epoch milliseconds the session started. */
@@ -79,6 +193,17 @@ export interface Game {
    * the same protection `renamed` gives a hand-typed title.
    */
   exePinned?: boolean
+  /**
+   * Whether Magpie scales this game's window, overriding the global switch.
+   *
+   * Three states, and the third is the point: absent means *follow the setting*, which is
+   * not the same as either answer. Collapsing it to a boolean would force every game ever
+   * scanned to carry a verdict nobody gave, and the setting could then never change
+   * anything again. `effectiveMagpie()` in `magpie-rules.ts` is the only reader.
+   */
+  magpie?: boolean
+  /** Absent means the mode from Settings. Only meaningful while `magpie !== false`. */
+  magpieMode?: MagpieMode
   kind: GameKind
   /**
    * Which engine the folder was built on, when the layout says so plainly.
@@ -837,6 +962,43 @@ export interface Settings {
   diagnoseOnLaunch: boolean
 
   /**
+   * Scale game windows with Magpie while they run.
+   *
+   * **Off by default**, and the switch means it literally: with this off nothing is
+   * copied out of the installer, no process is started, and a game that was individually
+   * switched on stays off too. That last part is deliberate — a launcher that started a
+   * background process because of a choice made months ago on one tile would leave the
+   * user with no way to answer "why is this running". The per-game field overrides which
+   * games are scaled, never whether the feature exists.
+   *
+   * Magpie is a separate GPLv3 program shipped alongside this one. It is copied into
+   * `%APPDATA%\sakura-launcher\magpie\` the first time this is switched on, and configured
+   * only there, so a copy the user installed themselves is never read or written.
+   */
+  magpie: boolean
+  /**
+   * Which shader to scale with, for games that have not been given their own.
+   *
+   * Lanczos — Magpie's own default — because it runs on anything and cannot make 2D art
+   * look wrong. Anime4K suits this library's material best but costs the most GPU, so it
+   * is offered in the hint rather than chosen on the user's behalf.
+   *
+   * Not restricted to the seven built-ins: the settings page offers whatever modes Magpie's
+   * config file actually holds, so one the user assembled there can be chosen here.
+   */
+  magpieMode: MagpieMode
+  /**
+   * Let Magpie run elevated for a game that was launched as administrator.
+   *
+   * Off by default, and the cost is why. Windows will not let an unelevated program touch
+   * an administrator's window (UIPI), so scaling such a game needs an elevated Magpie —
+   * but an elevated Magpie is one **this program can no longer stop**, and its config can
+   * no longer be rewritten while it lives. That is a bargain the user has to strike
+   * knowingly; running the launcher itself as administrator is the tidier way.
+   */
+  magpieElevate: boolean
+
+  /**
    * Reach a catalogue for genre tags.
    *
    * **Off by default, and the only thing in this program that ever opens a socket.**
@@ -933,6 +1095,9 @@ export const DEFAULT_SETTINGS: Settings = {
   groupingPrompted: [],
   playtimePollSeconds: 15,
   diagnoseOnLaunch: true,
+  magpie: false,
+  magpieMode: 'Lanczos',
+  magpieElevate: false,
   onlineTags: false,
   spoilerTags: false,
   adultTags: false,

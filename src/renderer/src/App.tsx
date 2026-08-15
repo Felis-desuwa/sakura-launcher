@@ -16,7 +16,12 @@ import type {
   TabKey,
   WorkMatch
 } from '../../shared/types'
-import { DEFAULT_SETTINGS, normalizeStatus, toggleTagFilter } from '../../shared/types'
+import {
+  DEFAULT_SETTINGS,
+  MAGPIE_MODES,
+  normalizeStatus,
+  toggleTagFilter
+} from '../../shared/types'
 import { makeT, type MessageKey } from '../../shared/i18n'
 import { setShowAdultArt } from './components/Artwork'
 import BulkUninstallDialog from './components/BulkUninstallDialog'
@@ -65,6 +70,14 @@ export default function App(): React.JSX.Element {
   const [scanning, setScanning] = useState(false)
   /** Games with a live play session, so tiles can show they are running. */
   const [playing, setPlaying] = useState<string[]>([])
+
+  /**
+   * The scaling modes Magpie's config offers, for the per-game submenu.
+   *
+   * Held here rather than fetched by the menu, because a context menu is built during a
+   * right-click and has nowhere to wait. The built-in seven until the file has been read.
+   */
+  const [magpieModes, setMagpieModes] = useState<string[]>(MAGPIE_MODES)
 
   const [disks, setDisks] = useState<DiskInfo[]>([])
   const [toasts, setToasts] = useState<Toast[]>([])
@@ -213,6 +226,10 @@ export default function App(): React.JSX.Element {
       )
     })
     const offTrouble = window.sakura.onLaunchTrouble((payload) => setTrouble(payload))
+    // Translated here rather than where it was raised, so a notice arriving just after a
+    // language change is already in the new one — the same reason `tr` exists at all.
+    // None of these are failures of the launch: the game is running regardless.
+    const offMagpie = window.sakura.onMagpieNotice(({ key, vars }) => toast(tr(key, vars), true))
     const offDb = window.sakura.onDbChanged(() => void refresh())
     const offPlaytime = window.sakura.onPlaytime(({ id, playtimeMs, playing: running }) => {
       setGames((cur) => cur.map((g) => (g.id === id ? { ...g, playtimeMs } : g)))
@@ -227,14 +244,26 @@ export default function App(): React.JSX.Element {
       offDb()
       offPlaytime()
       offTrouble()
+      offMagpie()
     }
-  }, [refresh, toast])
+  }, [refresh, toast, tr])
 
   // A game that turns up late clears its own alarm — the card is about silence, and
   // there is no longer any.
   useEffect(() => {
     if (trouble && playing.includes(trouble.id)) setTrouble(null)
   }, [playing, trouble])
+
+  // Re-read on the way back from the settings page, which is where Magpie's own interface
+  // is opened from: a mode built in there is saved when Magpie exits, and the whole point
+  // of reading the list rather than hard-coding it is that the new one can be chosen
+  // straight away. A file read, no process listing.
+  useEffect(() => {
+    if (!settings.magpie) return
+    void window.sakura.magpieModes().then((m) => {
+      if (m.length > 0) setMagpieModes(m)
+    })
+  }, [settings.magpie, page])
 
   const runScan = useCallback(
     async (announce = true, sync = true): Promise<void> => {
@@ -704,6 +733,9 @@ export default function App(): React.JSX.Element {
             onRename={setRenaming}
             onFetchWork={(targets, scope) => void computeTags(targets.map((g) => g.id), scope)}
             onlineTags={settings.onlineTags}
+            magpieOn={settings.magpie}
+            magpieMode={settings.magpieMode}
+            magpieModes={magpieModes}
             // Straight into the dialog with the search box, no lookup first. This is the
             // route for a folder nothing could ever match on its own.
             onMatchWork={(game) =>
@@ -757,6 +789,7 @@ export default function App(): React.JSX.Element {
             tagProgress={tagProgress}
             pendingCount={pendingTagCount}
             gameCount={games.length}
+            magpieOverrides={games.filter((g) => g.magpie !== undefined).length}
           />
         )}
 

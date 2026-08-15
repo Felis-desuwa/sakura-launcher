@@ -37,6 +37,16 @@ import { diagnoseGame } from './diagnose'
 import { setMainLang, t } from './i18n'
 import { cancelWatch, onLaunchTrouble } from './launch-watch'
 import { launchElevated, launchGame, revealInExplorer, spawnDetached } from './launcher'
+import {
+  magpieModes,
+  magpieSessionsChanged,
+  magpieStatus,
+  onMagpieNotice,
+  openMagpieFolder,
+  openMagpieSettings,
+  shutdownMagpie,
+  warmMagpie
+} from './magpie'
 import { probeExeMeta } from './pe-icon'
 import { onPlaytimeChange, playingIds, runningInDir, shutdownPlaytime } from './playtime'
 import {
@@ -315,7 +325,24 @@ function registerIpc(): void {
     settings: db.getSettings()
   }))
 
-  ipcMain.handle('settings:update', (_e, patch: Partial<Settings>) => db.setSettings(patch))
+  ipcMain.handle('settings:update', (_e, patch: Partial<Settings>) => {
+    const settings = db.setSettings(patch)
+    // Switching upscaling on is the moment to lay the copy down, rather than making the
+    // first launch afterwards wait ten megabytes for it.
+    if (patch.magpie === true) warmMagpie()
+    return settings
+  })
+
+  ipcMain.handle('magpie:status', () => magpieStatus())
+  ipcMain.handle('magpie:modes', () => magpieModes())
+  ipcMain.handle('magpie:open', () => {
+    openMagpieSettings()
+    return true
+  })
+  ipcMain.handle('magpie:reveal', () => {
+    openMagpieFolder()
+    return true
+  })
 
   /**
    * `sync` distinguishes the scan the user asked for from the quiet one at startup.
@@ -1094,6 +1121,13 @@ app.whenReady().then(() => {
   registerIpc()
   splashStage(t('splash.loading'))
   onPlaytimeChange((payload) => mainWindow?.webContents.send('playtime:changed', payload))
+  // A second subscriber, which is why that hook hands out subscriptions rather than
+  // holding one. Magpie is kept only while a scaled game is actually being played.
+  onPlaytimeChange(() => magpieSessionsChanged(playingIds()))
+  onMagpieNotice((n) => mainWindow?.webContents.send('magpie:notice', n))
+  // Only when the feature is on: this both clears up a Magpie a crash left behind and
+  // gets the copying out of the way before the first launch needs it.
+  warmMagpie()
   // Only the fact that something went wrong is pushed. Running the diagnosis costs a PE
   // parse and a registry read, and it belongs behind the user deciding they want it.
   onLaunchTrouble(({ game, trouble, startedAt }) =>
@@ -1133,6 +1167,8 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   // Settle open sessions first: it writes playtime that the flush then commits.
   shutdownPlaytime()
+  // After that, so it sees "nothing is being played" before the hard stop.
+  shutdownMagpie()
   // Stops the watch timers. Downloads themselves keep running in their own process and
   // are picked back up next launch; an extract in flight is cancelled rather than left
   // to write into a folder nothing is tracking any more.

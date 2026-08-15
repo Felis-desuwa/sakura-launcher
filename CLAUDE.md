@@ -19,10 +19,17 @@ falls behind is worse than none, because it reads as current. Source comments ar
 npm run dev            # electron-vite dev — the renderer hot-reloads; **main and preload do not**
 npm run typecheck      # both projects: tsconfig.node.json (main+preload+shared) and tsconfig.web.json
 npm run build          # electron-vite build
+npm run magpie:fetch   # download + SHA-256-verify Magpie into resources/magpie (gitignored)
 npm run dist:all       # NSIS installer + portable exe into release/
 npm run dist:setup     # installer only
 npm run dist:portable  # portable only
 ```
+
+**The three `dist:*` scripts run `magpie:fetch` first, which is the only build step that
+touches the network.** That is separate from the runtime promise and must stay separate in
+both READMEs: the program still does not go online, and the Magpie it installs has
+`autoCheckForUpdates` forced off. `npm run dev` works without it — upscaling just reports
+that nothing has been copied yet.
 
 **Restart `dev` after touching `src/main/` or `src/preload/`.** Only the renderer reloads; the
 main process is built once at startup and keeps running. The failure mode is quiet and costly:
@@ -43,6 +50,7 @@ npm run tag-test         # genre-tag matching: title cleaning, which tags surviv
 npm run cover-test       # cover art: which picture, whether it is adult, what is not an image
 npm run translate-test   # translating a blurb: chunking, both services' shapes, all-or-nothing
 npm run save-test        # locating saves: name matching, engine roots, the download's own save
+npm run magpie-test      # upscaling: the three-state switch, config merges, mode indices by name
 npm run share-test       # share exclusion rules
 npm run share-e2e        # calls a real 7-Zip; asserts the source folder is unchanged afterwards
 ```
@@ -85,7 +93,8 @@ Always pass `--user-data-dir`; without it this writes to the user's actual
 ### The pure-module convention
 
 `scan-core.ts`, `share-rules.ts`, `save-rules.ts`, `download-core.ts`, `diagnose-rules.ts`,
-`pe-imports.ts`, `tag-rules.ts`, `tag-bangumi.ts`, `cover-rules.ts`, `translate-rules.ts`
+`pe-imports.ts`, `tag-rules.ts`, `tag-bangumi.ts`, `cover-rules.ts`, `translate-rules.ts`,
+`magpie-rules.ts`, `magpie-config.ts`
 **must not import electron**. The `.mts` harnesses load them directly under node, which is what makes the
 logic testable without a window. They also spell out `.ts` in their relative imports (`from
 './i18n.ts'`) because node has no bundler to fill the extension in — `allowImportingTsExtensions`
@@ -250,6 +259,14 @@ These come from user decisions and are load-bearing. Violating one is a bug even
   game in another (BGI/Ethornell keep assets in `.dat` in the game root). Rules are bounded by
   location as well as name, and every exclusion is shown to the user before it takes effect.
 - **Refresh ≠ rescan.** The top bar's refresh only syncs existing entries and never adds anything.
+- **The user's own Magpie is never touched.** The bundled copy lives under
+  `%APPDATA%\sakura-launcher\magpie\` and is kept in portable mode by the `config\config.json`
+  written beside it — that file existing is the *only* thing keeping Magpie from reading and,
+  on exit, rewriting `%LOCALAPPDATA%\Magpie\config\v4\config.json`. `startMagpie` refuses to
+  run without it. For the same reason nothing is ever killed by process name: `mayStop()` only
+  admits a path equal to our own copy's, or the user's running Magpie would be ended for them.
+  And the config is **never written while Magpie runs** — it saves over the file from memory
+  when it exits, so a profile written underneath a live Magpie vanishes silently.
 
 ## Git
 

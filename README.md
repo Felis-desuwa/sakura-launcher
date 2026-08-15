@@ -1,6 +1,24 @@
+<div align="center">
+
+<img src="build/icon.png" width="104" alt="Sakura Launcher">
+
 # 🌸 Sakura Launcher
 
+**给「没有元数据」的游戏库用的本地启动器**<br>
+判断全部从文件本身来 · 运行时不联网 · Windows
+
+[![最新版本](https://img.shields.io/github/v/release/Felis-desuwa/sakura-launcher?style=flat-square&labelColor=2b1a20&color=e8709b)](https://github.com/Felis-desuwa/sakura-launcher/releases/latest)
+[![下载量](https://img.shields.io/github/downloads/Felis-desuwa/sakura-launcher/total?style=flat-square&labelColor=2b1a20&color=e8709b&label=%E4%B8%8B%E8%BD%BD)](https://github.com/Felis-desuwa/sakura-launcher/releases)
+[![平台](https://img.shields.io/badge/Windows-10%20%2F%2011-e8709b?style=flat-square&labelColor=2b1a20)](#下载)
+[![许可证](https://img.shields.io/badge/license-MIT-e8709b?style=flat-square&labelColor=2b1a20)](LICENSE)
+
 **简体中文** · [English](README.en.md)
+
+[下载](#下载) · [一眼看完](#一眼看完) · [功能](#功能) · [数据存放](#数据存放) · [更新日志](https://github.com/Felis-desuwa/sakura-launcher/releases)
+
+</div>
+
+---
 
 一个本地离线单机游戏库管理器。把散落在硬盘上的游戏文件夹扫成一张樱花色的桌面：
 双击启动、单击看体积构成、右键管理，起不来的时候告诉你为什么。
@@ -40,6 +58,8 @@
 - 起不来的时候读 PE 导入表，指名道姓地说缺哪个运行库；引擎弹的日文乱码报错框，还原成日文原文
 - 题材标签（校园 / 催泪 / NTR…）从目录站取，**默认关闭**，开着的时候也只发标题
 - 游玩时长按「游戏目录里还有没有进程」算，扛得住启动器自己退出的那类游戏
+- 800×600 的老游戏可以实时超分放大到满屏（Magpie，随包分发，**默认关闭**），
+  启动游戏时自己起、关掉游戏自己退
 - 存档备份会去 `%APPDATA%`、`LocalLow`、C 盘根目录这些地方找 —— 存档常常不在游戏目录里；
   下载包自带的通关存档也会被认出来
 - 分享打包会先列出个人痕迹让你过目，**原文件夹分毫不动**
@@ -79,6 +99,28 @@
   全部本地判定，不联网，也不写游戏文件夹
 - **组合启动** — 日文游戏常要经区域模拟器才能正常显示。可以直接设成
   「用 `NTLEA.exe` 启动 `游戏本体.exe`」，双击磁贴时就是这一串
+
+### 放大到满屏（默认关闭）
+
+这些游戏的分辨率大多被引擎焊死在 800×600 或 1024×768，在今天的屏幕上是邮票大的一块，
+交给系统拉伸又会糊成一片。开启后，启动游戏时会顺带把 Magpie 拉起来，用着色器把游戏窗口
+实时放大到屏幕大小 —— 它按主程序路径自动匹配，不用手动对准窗口，游戏关掉一两分钟后自己退出。
+
+预置七种缩放模式：Lanczos、FSR、FSRCNNX、CuNNy、Anime4K、CRT-Geom、Integer Scale 2x。
+设置里选一个作默认，单个游戏可以在右键菜单里另选，选择写进 `sakura-launcher.md` 跟着文件夹走。
+Lanczos 最省、什么显卡都跑得动；Anime4K 对动画风格的立绘最好看，也最吃显卡。
+
+更细的画质设置 —— 着色器自身的参数、捕获方式、帧率限制、光标缩放 —— 在 Magpie 自己的界面里，
+设置页的「画质设置…」是它的入口。那里还能用 `effects\` 目录下的一百多个着色器**新建自己的缩放模式**，
+新建好的模式会直接出现在本程序的下拉框和右键菜单里：这两处列的就是 Magpie 配置里现有的模式，
+而不是写死的七个。在 Magpie 里改的东西本程序不覆盖（只有自动更新检查、托盘图标、提权和调试开关
+是强制的）。注意 Magpie 是退出时才保存配置的，所以调完请从托盘正常退出它，再去启动游戏。
+
+几个前提：需要 Windows 10 1903 以上、支持 DirectX 11 的显卡；游戏得是窗口化或无边框，
+独占全屏放大不了；以管理员身份启动的游戏要在设置里额外允许 Magpie 也提权（更省事的办法是
+以管理员身份运行本启动器）。如果游戏启动后转交给另一个可执行文件，按路径的自动匹配会落空 ——
+用「更换主程序…」指对即可，这同时也修好时长统计；或者随时按 Alt+Shift+A 手动放大当前窗口。
+放大不成从不影响游戏本身运行。
 
 ### 题材标签（唯一联网的功能，默认关闭）
 
@@ -251,6 +293,7 @@ db.json              游戏、分组、设置、已移除路径
 cache/icons/         从可执行文件提取的图标
 cache/breakdown/     目录体积构成缓存
 covers/              用户自己设置的封面
+magpie/              Magpie 及其配置（第一次开启超分放大时复制过来，约 30 MB）
 ```
 
 存档备份不放在这里，默认写到「文档\Sakura Launcher Saves」，设置里可改 ——
@@ -261,6 +304,14 @@ covers/              用户自己设置的封面
 
 ## 依赖的外部程序（都是可选的）
 
+**Magpie 是唯一随安装包一起分发的**，其余几个都只是「装了就能用，没装也不影响」。
+
+- **Magpie**（GPL-3.0，v0.12.1）— 超分放大用的独立程序，随安装包分发，**默认关闭**。
+  第一次开启时复制到 `%APPDATA%\sakura-launcher\magpie\` 并在那里写自己的配置 ——
+  它需要一个可写的目录，而这样也保证了你自己装的那一份 Magpie 从不被读取或改写。
+  分发的是上游原始压缩包，未经修改，构建时校验 SHA-256。
+  许可证全文与对应源码的取得方式见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+  注意它是单实例的：你自己的 Magpie 开着时，本程序不会再起一个，而是提示你先退出它
 - **7-Zip** — 解压「待安装」的压缩包条目，以及分享时打包。未安装则这两项不可用，
   其余功能不受影响
 - **Geek Uninstaller** — 卸载链的第二级。未安装则没有自带卸载程序的游戏直接走回收站，
@@ -287,6 +338,11 @@ npm run dist:setup         # 只出安装版
 npm run dist:portable      # 只出便携版
 ```
 
+三个 `dist:*` 都会先跑 `npm run magpie:fetch`：**从 GitHub 下载一次 Magpie 的发布包并校验
+SHA-256**，解压到 `resources/magpie/`（不进版本控制）。这是整个项目里唯一会联网的构建步骤，
+和「程序运行时不联网」是两回事 —— 装好之后 Magpie 的自动更新检查被强制关掉。
+没跑过它也能 `npm run dev`，只是超分放大会显示「尚未复制」。
+
 ## 开发
 
 ```bash
@@ -305,6 +361,8 @@ npm run diagnose-test                             # 启动诊断：运行库映�
 npm run tag-test                                  # 题材标签：哪些标题算对上、哪些目录站标签该丢；
                                                   # 以及简介该不该收：不是中文的、名字对不上的一律不要。
                                                   # 不联网，响应形状用真实样本钉住
+npm run magpie-test                               # 超分放大：三态开关（总开关关掉就是真的关掉）、
+                                                  # 配置合并的幂等性、以及缩放模式必须按名字查索引
 npm run cover-test                                # 封面：哪张图能用、哪张算 R18、伪装成图片的
                                                   # 错误页必须被拒，用户自设的封面不许被批量覆盖
 npm run translate-test                            # 翻译简介：怎么切块、两家服务的响应形状、
@@ -337,4 +395,7 @@ PE 图标解析用 [resedit](https://github.com/jet2jet/resedit-js)（纯 JS，�
 
 ## License
 
-MIT
+本项目源码采用 [MIT](LICENSE)。
+
+安装包里另外附带 [Magpie](https://github.com/Blinue/Magpie)（GPL-3.0，未经修改，以独立进程调用），
+许可证全文与对应源码的取得方式见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。

@@ -3,11 +3,18 @@ import type {
   DownloadStatus,
   Game,
   Group,
+  MagpieMode,
   PendingDownload,
   SortKey,
   TabKey
 } from '../../../shared/types'
-import { ARCHIVE_GROUP_ID, matchesQuery, SORT_KEYS, visibleTags } from '../../../shared/types'
+import {
+  ARCHIVE_GROUP_ID,
+  matchesQuery,
+  normalizeMagpieMode,
+  SORT_KEYS,
+  visibleTags
+} from '../../../shared/types'
 import type { MessageKey } from '../../../shared/i18n'
 import { useT } from '../lib/i18n'
 import Artwork from '../components/Artwork'
@@ -76,6 +83,16 @@ interface Props {
   onFetchWork: (games: Game[], scope: 'single' | 'bulk') => void
   /** Whether the catalogue is switched on at all — no menu entry offers what is refused. */
   onlineTags: boolean
+  /** Same idea for upscaling: with the master switch off the submenu explains itself. */
+  magpieOn: boolean
+  /** Named in the menu, so "the default" is never an unlabelled choice. */
+  magpieMode: MagpieMode
+  /**
+   * The modes Magpie's config actually offers — the built-in seven, plus any the user
+   * assembled in its own interface. Read there rather than listed here, so a mode they
+   * built is choosable per game and not only globally.
+   */
+  magpieModes: MagpieMode[]
   /** Open the match dialog for this one game, search box and all. */
   onMatchWork: (game: Game) => void
   onBlockedLaunch: () => void
@@ -393,6 +410,46 @@ export default function DesktopPage(props: Props): React.JSX.Element {
       items.push(
         { label: t('menu.play'), onClick: () => onLaunch(game) },
         { label: t('menu.chooseExe'), onClick: () => props.onChooseExe(game) },
+        // Next to the executable picker because it is the same subject: how this game
+        // gets on screen. Every row stays open — the tick moving is the only confirmation
+        // the choice gets, and comparing two shaders is a second click away.
+        {
+          label: t('menu.magpie'),
+          submenu: props.magpieOn
+            ? [
+                {
+                  label: t('menu.magpieFollow'),
+                  checked: game.magpie === undefined,
+                  keepOpen: true,
+                  onClick: () => onPatch(game.id, { magpie: undefined, magpieMode: undefined })
+                },
+                {
+                  label: t('menu.magpieNever'),
+                  checked: game.magpie === false,
+                  keepOpen: true,
+                  onClick: () => onPatch(game.id, { magpie: false, magpieMode: undefined })
+                },
+                { type: 'separator' as const },
+                {
+                  label: t('menu.magpieDefaultMode', {
+                    mode: normalizeMagpieMode(props.magpieMode)
+                  }),
+                  checked: game.magpie === true && game.magpieMode === undefined,
+                  keepOpen: true,
+                  onClick: () => onPatch(game.id, { magpie: true, magpieMode: undefined })
+                },
+                ...props.magpieModes.map((mode) => ({
+                  label: mode,
+                  checked:
+                    game.magpie === true &&
+                    game.magpieMode !== undefined &&
+                    normalizeMagpieMode(game.magpieMode) === mode,
+                  keepOpen: true,
+                  onClick: () => onPatch(game.id, { magpie: true, magpieMode: mode })
+                }))
+              ]
+            : [{ label: t('menu.magpieDisabled'), disabled: true }]
+        },
         // Sits next to the executable picker on purpose: they are the two answers to
         // the same question, and the picker is where a diagnosis usually sends you.
         {

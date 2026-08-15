@@ -1,8 +1,16 @@
 import { useEffect, useState } from 'react'
 import type { Lang, MessageKey } from '../../../shared/i18n'
 import { LANGS } from '../../../shared/i18n'
-import type { DownloaderKey, Settings, SortKey, TabKey } from '../../../shared/types'
-import { DOWNLOADERS, POLL_CHOICES, SORT_KEYS, TAB_KEYS, THEMES } from '../../../shared/types'
+import type { DownloaderKey, MagpieStatus, Settings, SortKey, TabKey } from '../../../shared/types'
+import {
+  DOWNLOADERS,
+  MAGPIE_MODES,
+  normalizeMagpieMode,
+  POLL_CHOICES,
+  SORT_KEYS,
+  TAB_KEYS,
+  THEMES
+} from '../../../shared/types'
 import { useT } from '../lib/i18n'
 
 interface Props {
@@ -29,6 +37,8 @@ interface Props {
   /** How many games a pass would look up. Drives both the hint and the disabled state. */
   pendingCount: number
   gameCount: number
+  /** Games given their own upscaling answer, so the override is never invisible. */
+  magpieOverrides: number
 }
 
 export default function SettingsPage({
@@ -46,7 +56,8 @@ export default function SettingsPage({
   onCancelTags,
   tagProgress,
   pendingCount,
-  gameCount
+  gameCount,
+  magpieOverrides
 }: Props): React.JSX.Element {
   const t = useT()
   const [has7z, setHas7z] = useState<boolean | null>(null)
@@ -54,10 +65,60 @@ export default function SettingsPage({
   const [detected, setDetected] = useState<string | null | undefined>(undefined)
   /** The suggested backup folder, shown when the user has not named one. */
   const [backupDir, setBackupDir] = useState('')
+  /** null while the probe is still running, so nothing is claimed too early. */
+  const [magpie, setMagpie] = useState<MagpieStatus | null>(null)
+  /** What Magpie's config actually offers. The built-in seven until it can be read. */
+  const [modes, setModes] = useState<string[]>(MAGPIE_MODES)
 
   useEffect(() => {
     window.sakura.has7z().then(setHas7z)
   }, [])
+
+  // Polled, not asked once. Switching the feature on lays the copy down, and Magpie itself
+  // comes and goes with the games it scales — neither of which this page would ever hear
+  // about. A status that cannot change is the same as no status: the user is left watching
+  // a line that says "ready" whether or not anything is working.
+  useEffect(() => {
+    let alive = true
+    // One question at a time. Each status answer costs a process query with a twenty-second
+    // ceiling of its own, so on a loaded machine the next tick can arrive while the last is
+    // still outstanding — and shells would then stack up for as long as the page is open.
+    let asking = false
+    const ask = (): void => {
+      if (asking) return
+      asking = true
+      void window.sakura
+        .magpieStatus()
+        .then((s) => {
+          if (alive) setMagpie(s)
+        })
+        .finally(() => {
+          asking = false
+        })
+      // Asked on the same beat, and for the same reason: a mode the user has just built in
+      // Magpie's own interface is worth nothing if choosing it means restarting this
+      // program. Only a file read, unlike the status above.
+      void window.sakura.magpieModes().then((m) => {
+        if (alive && m.length > 0) setModes(m)
+      })
+    }
+    ask()
+    // Asked once even with the feature off, because `supported` is what disables the switch
+    // on a machine too old for Magpie — and with the switch off the main process answers
+    // that without going near a process query.
+    if (!settings.magpie) {
+      return () => {
+        alive = false
+      }
+    }
+    // Five seconds, not one: each answer costs a PowerShell process query. Slow enough to
+    // be cheap, quick enough that starting a game and tabbing back here shows it.
+    const id = setInterval(ask, 5000)
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
+  }, [settings.magpie])
 
   // Re-asked whenever the choice changes: the answer is "theirs, or the default", so a
   // value cached from before a reset would show the folder they just cleared.
@@ -71,6 +132,9 @@ export default function SettingsPage({
   }, [settings.downloader])
 
   const current = DOWNLOADERS.find((d) => d.key === settings.downloader)
+  // Normalised for display: a setting saved when this field held keys rather than names
+  // would match no option at all, and the control would sit on the wrong one.
+  const chosenMode = normalizeMagpieMode(settings.magpieMode)
 
   return (
     <div className="page">
@@ -313,6 +377,116 @@ export default function SettingsPage({
             onClick={() => onChange({ diagnoseOnLaunch: !settings.diagnoseOnLaunch })}
           />
         </div>
+      </div>
+
+      {/* A card of its own rather than a row under Launch: it carries a paragraph about
+          where Magpie comes from and a line about whether it is there yet, and neither
+          fits in a row. */}
+      <div className="card" style={{ maxWidth: 760 }}>
+        <div className="section-title" style={{ marginTop: 0 }}>
+          {t('settings.magpieSection')}
+        </div>
+        <p className="settings-hint" style={{ marginTop: 0 }}>{t('settings.magpieNote')}</p>
+
+        <div className="settings-row">
+          <label htmlFor="magpie">
+            {t('settings.magpie')}
+            <span className="settings-hint">
+              {magpie && !magpie.supported ? t('settings.magpieUnsupported') : t('settings.magpieHint')}
+            </span>
+          </label>
+          <button
+            id="magpie"
+            type="button"
+            disabled={magpie !== null && !magpie.supported}
+            className={`switch${settings.magpie ? ' on' : ''}`}
+            onClick={() => onChange({ magpie: !settings.magpie })}
+          />
+        </div>
+
+        {settings.magpie && (
+          <>
+            <div className="settings-row">
+              <label htmlFor="magpieMode">
+                {t('settings.magpieMode')}
+                <span className="settings-hint">{t('settings.magpieModeHint')}</span>
+              </label>
+              <select
+                id="magpieMode"
+                className="field"
+                value={chosenMode}
+                onChange={(e) => onChange({ magpieMode: e.target.value })}
+              >
+                {/* A mode chosen before it was deleted from Magpie, or one carried over
+                    from another machine, is still the answer on record — listed so the
+                    control shows what is actually set rather than silently reading as the
+                    first entry. Magpie treats it as "use the default" until it exists. */}
+                {!modes.includes(chosenMode) && <option value={chosenMode}>{chosenMode}</option>}
+                {modes.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {mode}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="settings-row">
+              <label htmlFor="magpieElevate">
+                {t('settings.magpieElevate')}
+                <span className="settings-hint">{t('settings.magpieElevateHint')}</span>
+              </label>
+              <button
+                id="magpieElevate"
+                type="button"
+                className={`switch${settings.magpieElevate ? ' on' : ''}`}
+                onClick={() => onChange({ magpieElevate: !settings.magpieElevate })}
+              />
+            </div>
+
+            <div className="settings-row">
+              {/* Ordered by what the user most needs to know: a foreign instance means
+                  nothing will scale at all, and saying "ready" over that would be a lie. */}
+              <span className="settings-hint">
+                {magpie?.foreign
+                  ? t('settings.magpieForeignShort')
+                  : magpie?.running
+                    ? magpie.forGame
+                      ? t('settings.magpieRunningFor', {
+                          name: t('common.quoted', { name: magpie.forGame }),
+                          version: magpie.version
+                        })
+                      : t('settings.magpieRunning', { version: magpie.version })
+                    : magpie?.installed
+                      ? t('settings.magpieReady', { version: magpie.version })
+                      : t('settings.magpieNotInstalled')}
+                {magpieOverrides > 0 && ` · ${t('settings.magpieOverrides', { n: magpieOverrides })}`}
+              </span>
+              {magpie?.installed && (
+                <button type="button" className="ghost" onClick={() => void window.sakura.revealMagpie()}>
+                  {t('settings.magpieFolder')}
+                </button>
+              )}
+            </div>
+
+            {/* The way out of this page and into the settings this one does not carry.
+                Last, because it leaves: everything above is answerable here. */}
+            <div className="settings-row">
+              <label htmlFor="magpieOpen">
+                {t('settings.magpieOpen')}
+                <span className="settings-hint">{t('settings.magpieOpenHint')}</span>
+              </label>
+              <button
+                id="magpieOpen"
+                type="button"
+                className="btn ghost"
+                disabled={magpie !== null && !magpie.supported}
+                onClick={() => void window.sakura.openMagpieSettings()}
+              >
+                {t('settings.magpieOpen')}
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="card" style={{ maxWidth: 760 }}>

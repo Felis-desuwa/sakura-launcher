@@ -4,6 +4,12 @@
 # The blossom is white on a saturated rose field rather than pink on pink. An icon has
 # to survive being 16 pixels wide in a taskbar, where the only thing that still reads is
 # the silhouette — and a silhouette needs contrast against its own background.
+#
+# Everything inside that silhouette is flat: one solid white flower, one diagonal gradient
+# behind it, nothing else. The earlier version had shading in the petals, a ring of stamens
+# and an amber heart, all of which are invisible below 64 px and, above it, read as an icon
+# from a decade ago. Detail that only exists at one size is not detail, it is noise — and
+# the flower it decorated is the whole subject.
 Add-Type -AssemblyName System.Drawing
 
 $sizes = @(16, 24, 32, 48, 64, 128, 256)
@@ -51,33 +57,22 @@ function New-SakuraBitmap([int]$s) {
   $card.AddArc(0, $s - $d, $d, $d, 90, 90)
   $card.CloseFigure()
 
+  # One diagonal gradient and nothing else. It is the only depth in the icon, which is
+  # what lets the flower be perfectly flat and still not look like a sticker.
   $rect = New-Object System.Drawing.Rectangle 0, 0, $s, $s
   $bg = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
     $rect,
-    [System.Drawing.Color]::FromArgb(255, 255, 150, 187),
-    [System.Drawing.Color]::FromArgb(255, 206, 55, 105),
+    [System.Drawing.Color]::FromArgb(255, 255, 166, 199),
+    [System.Drawing.Color]::FromArgb(255, 219, 74, 130),
     [System.Drawing.Drawing2D.LinearGradientMode]::ForwardDiagonal)
   $g.FillPath($bg, $card)
 
-  # A light bloom in the top-left keeps the field from looking like flat vinyl.
-  if ($s -ge 32) {
-    $glowPath = New-Object System.Drawing.Drawing2D.GraphicsPath
-    $glowPath.AddEllipse([float](-$s * 0.35), [float](-$s * 0.45),
-      [float]($s * 1.15), [float]($s * 1.15))
-    $glow = New-Object System.Drawing.Drawing2D.PathGradientBrush $glowPath
-    $glow.CenterColor = [System.Drawing.Color]::FromArgb(70, 255, 255, 255)
-    $glow.SurroundColors = @([System.Drawing.Color]::FromArgb(0, 255, 255, 255))
-    $oldClip = $g.Clip
-    $g.SetClip($card)
-    $g.FillPath($glow, $glowPath)
-    $g.Clip = $oldClip
-    $glow.Dispose(); $glowPath.Dispose()
-  }
-
   $cx = $s / 2.0
   $cy = $s / 2.0
-  $len = $s * 0.355
-  $halfW = $s * 0.195
+  # Slightly longer and narrower than a round-petalled daisy would be: the proportion is
+  # most of what says "cherry" before the cleft is big enough to be seen.
+  $len = $s * 0.335
+  $halfW = $s * 0.172
   # The cleft shrinks with the icon: at 16 px a proportional notch is sub-pixel mush
   # that splits each petal into two specks, so it flattens out entirely.
   $notch = $len * 0.20
@@ -94,45 +89,22 @@ function New-SakuraBitmap([int]$s) {
     $g.TranslateTransform([float]$offset, 0)
 
     $pp = New-PetalPath $len $halfW $notch
-
-    # White at the rim, warming to pink toward the stem: the flower gets a soft glow at
-    # its heart while every outer edge stays maximally distinct from the background.
-    $pb = New-Object System.Drawing.Drawing2D.PathGradientBrush $pp
-    $pb.CenterPoint = New-Object System.Drawing.PointF ([float]($len * 0.06), [float]0)
-    $pb.CenterColor = [System.Drawing.Color]::FromArgb(255, 255, 205, 227)
-    $pb.SurroundColors = @([System.Drawing.Color]::FromArgb(255, 255, 255, 255))
-    $g.FillPath($pb, $pp)
-
-    $pb.Dispose(); $pp.Dispose()
+    # Solid white, edge to edge. A gradient inside a shape this small is a gradient
+    # nobody sees, and it costs the one thing the shape has: a clean edge.
+    $g.FillPath([System.Drawing.Brushes]::White, $pp)
+    $pp.Dispose()
     $g.Restore($state)
   }
 
-  # Stamens: only where they can be more than one muddy pixel.
-  if ($s -ge 64) {
-    $pen = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(210, 244, 138, 175)), ([float]($s * 0.012))
-    $pen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
-    $pen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
-    for ($i = 0; $i -lt 10; $i++) {
-      $a = ($i * 36.0 + 18.0) * [Math]::PI / 180.0
-      $r1 = $s * 0.055
-      $r2 = $s * 0.135
-      $g.DrawLine($pen,
-        [float]($cx + [Math]::Cos($a) * $r1), [float]($cy + [Math]::Sin($a) * $r1),
-        [float]($cx + [Math]::Cos($a) * $r2), [float]($cy + [Math]::Sin($a) * $r2))
-    }
-    $pen.Dispose()
-  }
+  # The petals are pushed out from the middle so they overlap rather than radiate, which
+  # leaves a small gap where their five points meet. Filled white, because a hole in the
+  # middle of the flower is what the eye finds first — and because it is the alternative
+  # to a stamen, not a place for one.
+  $cr = $s * 0.155
+  $g.FillEllipse([System.Drawing.Brushes]::White,
+    [float]($cx - $cr), [float]($cy - $cr), [float]($cr * 2), [float]($cr * 2))
 
-  # Amber heart.
-  $cr = $s * 0.072
-  $centre = New-Object System.Drawing.Drawing2D.GraphicsPath
-  $centre.AddEllipse([float]($cx - $cr), [float]($cy - $cr), [float]($cr * 2), [float]($cr * 2))
-  $cb = New-Object System.Drawing.Drawing2D.PathGradientBrush $centre
-  $cb.CenterColor = [System.Drawing.Color]::FromArgb(255, 255, 226, 150)
-  $cb.SurroundColors = @([System.Drawing.Color]::FromArgb(255, 246, 179, 61))
-  $g.FillPath($cb, $centre)
-
-  $cb.Dispose(); $centre.Dispose(); $bg.Dispose(); $card.Dispose(); $g.Dispose()
+  $bg.Dispose(); $card.Dispose(); $g.Dispose()
   return $bmp
 }
 
