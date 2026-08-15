@@ -19,13 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-This licence covers the source code of Sakura Launcher only.
-
-The Windows builds published on the releases page also bundle Magpie
-(https://github.com/Blinue/Magpie), an unmodified upstream binary distributed
-under the GNU General Public License v3.0. It is invoked as a separate process,
-never linked into this program. See THIRD-PARTY-NOTICES.md for the full notice
-and for how to obtain its corresponding source.
