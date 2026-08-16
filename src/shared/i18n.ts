@@ -1701,8 +1701,8 @@ export const MESSAGES = {
   /* ---- picking between the cover you set and the one the catalogue has ---- */
   'cover.title': { zh: '这些游戏已经有封面了', en: 'These already have a cover' },
   'cover.intro': {
-    zh: '左边是你自己设的，右边是目录站上的。你自己设的封面在任何情况下都不会被自动替换 —— 所以两张都留着，由你来定。不选就什么都不变。',
-    en: 'Yours on the left, the catalogue’s on the right. A cover you set yourself is never replaced automatically, so both are kept and the choice is yours. Choosing nothing changes nothing.'
+    zh: '左边是磁贴上现在这张，右边是目录站这次拿回来的。只要磁贴上已经有封面就会问你，不管那张原来是哪来的 —— 你一直看着的那张和刚下载的陌生人，哪张更好只有你知道。在你选之前磁盘上什么都没变，不选就什么都不变。两张一模一样时不会问。',
+    en: 'On the left, what is on the tile now; on the right, what this lookup brought back. Any cover already there earns the question, whatever put it there — you have been looking at one of these and the other is a stranger. Nothing on disk changes until you pick, and choosing nothing changes nothing. Identical pictures are not put to you.'
   },
   'cover.mine': { zh: '你现在用的', en: 'On the tile now' },
   'cover.theirs': { zh: '{source} 上的', en: 'From {source}' },
@@ -1715,6 +1715,8 @@ export const MESSAGES = {
   'cover.blurNote': {
     zh: '标了 R18 的封面在这里也打码，跟磁贴上一样；设置里打开就能看清。',
     en: 'Covers marked R18 are blurred here as they are on the tile; the setting shows them.'
+  /** Most covers on a shelf were fetched, so calling this side "yours" would usually lie. */
+  'cover.mineFrom': { zh: '你现在用的（来自 {source}）', en: 'On the tile now (from {source})' },
   },
   'drawer.summary': { zh: '简介', en: 'Description' },
   /** Named, because it is the one paragraph in the drawer this program did not write. */

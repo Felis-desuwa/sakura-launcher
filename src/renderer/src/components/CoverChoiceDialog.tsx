@@ -82,7 +82,11 @@ export default function CoverChoiceDialog({
         </div>
         <span className="cover-side-label">
           {mine
-            ? t('cover.mine')
+            ? // Named where it is known. Most covers on a shelf were fetched too, so
+              // calling this side "yours" would be wrong far more often than right.
+              choice.currentFrom && choice.currentFrom !== 'user'
+              ? t('cover.mineFrom', { source: TAG_SOURCE_LABEL[choice.currentFrom] })
+              : t('cover.mine')
             : t('cover.theirs', { source: TAG_SOURCE_LABEL[choice.candidateFrom] })}
         </span>
         <button

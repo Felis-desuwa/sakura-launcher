@@ -170,16 +170,19 @@ eq('an absurdly large image is refused even though it is an image', acceptCover(
 console.log("\n== a cover the user chose is the user's ==")
 
 /*
- * The rule is no longer "skip it" or "replace it" but "put both up and ask", and the
- * assertion that matters is that the *asking* is unconditional: there is no route — no
- * scope, no menu entry, no batch — on which a cover somebody chose by hand is written
- * over without them seeing the two pictures together first.
+ * The rule is no longer "skip it" or "replace it" but "put both up and ask", and what
+ * matters is that the asking does not depend on where the cover came from. Gating it on
+ * `coverFrom === 'user'` looked careful and was useless: in a real library nearly every
+ * cover has been fetched, so the dialog would almost never appear and a lookup would go
+ * on silently doing the one thing it must not.
  */
-eq('a hand-picked cover is put to the user', coverVerdict('user'), 'ask')
-eq('a VNDB cover is our own data, refreshed', coverVerdict('vndb'), 'replace')
-eq('so is a DLsite one', coverVerdict('dlsite'), 'replace')
-eq('a game with no cover has nothing to ask about', coverVerdict(undefined), 'replace')
-eq('and neither does one with an explicit nothing', coverVerdict(null), 'replace')
+eq('a cover already on the tile is put to the user', coverVerdict(true, false), 'ask')
+eq('a game with no cover has nothing to ask about', coverVerdict(false, false), 'replace')
+// The ordinary result of looking the same game up twice. Asking somebody to choose
+// between two copies of one picture is noise, and it would be the common case.
+eq('the identical picture is left alone', coverVerdict(true, true), 'keep')
+// Nothing there to be identical to; the flag cannot make a no-op out of a first cover.
+eq('sameness is meaningless without a cover', coverVerdict(false, true), 'replace')
 
 /*
  * The library that predates `coverFrom`: a path and no source. Every one of those was set
@@ -198,10 +201,18 @@ eq(
   'dlsite'
 )
 eq('and no cover belongs to nobody', coverSourceOf({ coverPath: null }), undefined)
-eq(
-  'so an old hand-picked cover is never replaced silently either',
-  coverVerdict(coverSourceOf({ coverPath: 'C:\\pics\\a.png' })),
-  'ask'
+/*
+ * `coverSourceOf` still earns its keep, just not here: it decides whether undoing a
+ * lookup may delete the cover file. A picture the user chose is not part of what a
+ * lookup did, so it survives the lookup being taken back.
+ */
+check(
+  "clearing a lookup keeps a cover with no recorded source, reading it as the user's",
+  coverSourceOf({ coverPath: 'C:\\pics\\a.png' }) === 'user'
+)
+check(
+  'and deletes one the catalogue supplied',
+  coverSourceOf({ coverFrom: 'vndb', coverPath: 'C:\\x.jpg' }) !== 'user'
 )
 
 /* -------------------------------------------------------------------------- */

@@ -252,16 +252,27 @@ export function takeCoverCandidate(gameId: string): Game | undefined {
   })
 }
 
+/** Whether the picture already on the tile is byte for byte the one just downloaded. */
+function sameAsFile(file: string, bytes: Buffer): boolean {
+  try {
+    const current = fs.readFileSync(file)
+    return current.length === bytes.length && current.equals(bytes)
+  } catch {
+    return false
+  }
+}
+
 /** What became of one game's cover, so a run can say what it did rather than a bare count. */
-export type CoverOutcome = 'written' | 'asked' | 'missed'
+export type CoverOutcome = 'written' | 'asked' | 'kept' | 'missed'
 
 /**
  * Take the catalogue's picture for a game — or offer it.
  *
- * A cover the user chose by hand is never written over here. The catalogue's picture is
- * downloaded all the same and parked next to the app's own data, and the pair is handed
- * back for somebody to choose between; see `coverVerdict`. Everything else is replaced
- * outright, which is what it always was.
+ * A game that already has a cover is never written over here, whoever put that cover
+ * there. The catalogue's picture is downloaded all the same and parked next to the app's
+ * own data, and the pair is handed back for somebody to choose between; see
+ * `coverVerdict`. The exception is the picture that is already on the tile, byte for byte,
+ * which is what looking the same game up twice produces — that is left exactly as it is.
  */
 export async function applyCover(
   game: Game,
@@ -272,17 +283,19 @@ export async function applyCover(
   await paceImage()
   const bytes = await fetchImage(match.cover.url)
   if (!bytes) return { outcome: 'missed' }
+  const kind = acceptCover(bytes)
+  if (!kind) return { outcome: 'missed' }
 
   // A cover recorded but no longer on disk is nothing to compare against — the file was
   // moved or tidied away, and putting a broken image next to a real one is not a choice.
-  const theirs =
-    coverVerdict(coverSourceOf(game)) === 'ask' &&
-    Boolean(game.coverPath) &&
-    fs.existsSync(game.coverPath as string)
+  const current =
+    game.coverPath && fs.existsSync(game.coverPath) ? (game.coverPath as string) : null
+  const verdict = coverVerdict(current !== null, current !== null && sameAsFile(current, bytes))
 
-  if (theirs) {
-    const kind = acceptCover(bytes)
-    if (!kind) return { outcome: 'missed' }
+  // The same picture is already there. Nothing to write and nothing to ask.
+  if (verdict === 'keep') return { outcome: 'kept' }
+
+  if (verdict === 'ask' && current) {
     const staged = stageCandidate(game.id, bytes, kind)
     if (!staged) return { outcome: 'missed' }
 
@@ -292,8 +305,12 @@ export async function applyCover(
       choice: {
         gameId: game.id,
         gameName: game.name,
-        currentPath: game.coverPath as string,
+        currentPath: current,
         currentAdult: Boolean(game.coverAdult),
+        // Said out loud in the dialog, because "yours" and "the catalogue's" is not the
+        // distinction any more — both sides may well have come from a catalogue, and the
+        // only honest label for the left-hand one is where it came from.
+        currentFrom: coverSourceOf(game),
         candidatePath: staged,
         candidateAdult: match.cover.adult,
         candidateFrom: match.source

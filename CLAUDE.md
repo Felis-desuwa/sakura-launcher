@@ -240,13 +240,19 @@ These come from user decisions and are load-bearing. Violating one is a bug even
   (`onlineCovers`, `onlineSummary`) decide how much of the record is kept, never how many
   trips are made. `covers.ts` must not import `tagger.ts` — it takes a settled match and does
   not search, which is what keeps the two out of an import cycle.
-  **A cover the user chose is never written over — it is put to them.** `coverVerdict`
-  returns `'ask'` for `coverFrom === 'user'` on every route and every scope, and `applyCover`
-  then downloads the catalogue's picture to `covers/candidate-<gameId>.<ext>` under the app's
-  own data directory and returns a `CoverChoice` instead of writing anything. Both halves of
-  the rule this replaced were wrong in the same way: a batch skipped those covers in silence
-  and a single lookup replaced them in silence, and each decided without anybody having seen
-  the two pictures. Three things hold it up: the holding file is **never** written beside the
+  **A cover already on the tile is never written over — it is put to the user.**
+  `coverVerdict` answers on two facts only: is there a cover, and is the new one byte for
+  byte the same. `applyCover` then downloads the catalogue's picture to
+  `covers/candidate-<gameId>.<ext>` under the app's own data directory and returns a
+  `CoverChoice` instead of writing anything. The rule this replaced decided in silence — a
+  batch skipped hand-picked covers, a single lookup replaced them — without anybody having
+  seen the two pictures. **Do not narrow this back to `coverFrom === 'user'`.** That was
+  tried and it is the same bug wearing a rule: in a real library nearly every cover has been
+  fetched, so the dialog never fires and a lookup goes on silently doing the one thing this
+  exists to stop. Where a picture came from says nothing about whether it is the one somebody
+  wants to keep looking at. `coverSourceOf` still decides one thing — whether `clearWorkData`
+  may delete the file — and that is the only question it answers now.
+  Three things hold the rest up: the holding file is **never** written beside the
   game, because a scan finds `sakura-cover.*` there and would adopt the very picture nobody
   has agreed to; the renderer names a game id and a yes or no and **never a path**, so which
   file gets written is known only in the main process; and an offer left unanswered costs

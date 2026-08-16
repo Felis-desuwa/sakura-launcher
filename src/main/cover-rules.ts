@@ -120,29 +120,28 @@ export function acceptCover(bytes: Uint8Array): ImageKind | null {
 }
 
 /** What to do with a cover that is already on the tile. */
-export type CoverVerdict = 'replace' | 'ask'
+export type CoverVerdict = 'replace' | 'ask' | 'keep'
 
 /**
- * Whether a cover may be written over, or has to be put to the user first.
+ * Whether the catalogue's picture may go straight onto the tile, or has to be put to the
+ * user against the one already there.
  *
- * A cover the user chose by hand is their decision about their own library, and the same
- * protection `renamed` gives a hand-typed title applies here: nothing may quietly undo it.
- * But "quietly leave it alone" was not much better — a batch that skipped those covers
- * never said what it had found, so the one case where the catalogue's picture is plainly
- * the better one was the case with no way to act on it, short of clearing the cover by
- * hand and asking all over again.
+ * **Any cover already on the tile earns the question.** An earlier version asked only
+ * about covers the user had set by hand, on the reasoning that a catalogue cover being
+ * refreshed from a catalogue is our own data and nobody's decision. That reasoning was
+ * wrong in the only way that counts: in a real library nearly every cover has been
+ * fetched, so the dialog almost never appeared and a lookup went on doing silently the
+ * exact thing it was built to stop doing. Where a picture came from says nothing about
+ * whether the user prefers it — they have been looking at it on the shelf, and the new
+ * one is a stranger.
  *
- * So neither: the catalogue's picture is fetched and held to one side, and the two are
- * shown side by side for the user to pick. Nothing on disk changes until they do, which
- * is the property the old rule was really protecting. That is also why `scope` is gone
- * from this decision — asking is safe whether it is one game or eighty, and the
- * single-game route used to *replace* a hand-picked cover outright, which is exactly the
- * loss this prevents.
- *
- * A cover a catalogue supplied is our own data being refreshed, and is replaced as before.
+ * `sameAsCurrent` is the one case worth skipping: asking somebody to choose between two
+ * copies of the same picture is noise, and it is the ordinary outcome of looking a game
+ * up twice. Compared as bytes, so "the same picture" means the same picture.
  */
-export function coverVerdict(coverFrom: string | undefined | null): CoverVerdict {
-  return coverFrom === 'user' ? 'ask' : 'replace'
+export function coverVerdict(hasCover: boolean, sameAsCurrent: boolean): CoverVerdict {
+  if (!hasCover) return 'replace'
+  return sameAsCurrent ? 'keep' : 'ask'
 }
 
 /**
@@ -154,10 +153,10 @@ export function coverVerdict(coverFrom: string | undefined | null): CoverVerdict
  * over a selection quietly replace exactly the pictures somebody took the trouble to
  * choose, which is the case the rule below exists for.
  */
-export function coverSourceOf(game: {
-  coverFrom?: string | null
+export function coverSourceOf<T extends string>(game: {
+  coverFrom?: T | null
   coverPath?: string | null
-}): string | undefined {
+}): T | 'user' | undefined {
   return game.coverFrom ?? (game.coverPath ? 'user' : undefined)
 }
 

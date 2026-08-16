@@ -851,12 +851,16 @@ export interface PendingMatch {
 /**
  * A game that already had a cover when the catalogue offered another one.
  *
- * Only ever raised for a cover the user chose themselves — a catalogue cover being
- * refreshed from the same catalogue is not a question worth asking. The picture that
- * came back is written to a holding file under the app's own data directory and nothing
- * else changes, so both paths can be put on screen next to each other and *neither* is
- * committed until somebody says which one they want. Declining, or simply closing the
- * dialog, leaves the library exactly as it was and deletes the holding file.
+ * Raised for **any** cover already on the tile, whoever put it there — the only picture
+ * that goes on without asking is one that lands on a game with no cover at all, or one
+ * that is byte for byte what is already there. Where a cover came from says nothing about
+ * whether it is the one somebody wants to keep looking at.
+ *
+ * The picture that came back is written to a holding file under the app's own data
+ * directory and nothing else changes, so both paths can be put on screen next to each
+ * other and *neither* is committed until somebody says which one they want. Declining, or
+ * simply closing the dialog, leaves the library exactly as it was and deletes the holding
+ * file.
  */
 export interface CoverChoice {
   gameId: string
@@ -864,6 +868,14 @@ export interface CoverChoice {
   /** The cover on the tile right now. */
   currentPath: string
   currentAdult: boolean
+  /**
+   * Where the one on the tile came from, when that is known.
+   *
+   * Shown, because "yours" against "the catalogue's" stopped being the distinction the
+   * moment any cover could be questioned: both sides are usually a catalogue's, and the
+   * only honest label for the left-hand picture is where it actually came from.
+   */
+  currentFrom?: 'user' | TagSource
   /** The catalogue's picture, downloaded but not adopted. */
   candidatePath: string
   candidateAdult: boolean
