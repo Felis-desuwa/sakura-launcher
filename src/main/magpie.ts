@@ -293,11 +293,34 @@ async function ensureInstalled(): Promise<{ ok: true } | { ok: false; error: str
   }
 }
 
-/** Start our copy, and notice if it dies on the spot. */
-function startMagpie(elevated: boolean): Promise<void> {
+/**
+ * Magpie's own switch for starting into the notification area without its interface.
+ *
+ * It is honoured only when the tray icon is on, which is why `buildConfig` forces
+ * `showNotifyIcon` — the two are one decision, not two.
+ *
+ * Reaching for this rather than hiding the window from outside is not a matter of taste.
+ * A process started with `SW_HIDE` in its `STARTUPINFO` still *creates* its main window
+ * and merely leaves it unshown, and Magpie's own "show me" path then finds a window it
+ * believes is already open and does nothing further — so a Magpie started that way could
+ * never be brought on screen again by any means this program has. With `-t` no window is
+ * made at all, and the first request for one produces a real, visible window.
+ */
+const TRAY_ONLY = '-t'
+
+/**
+ * Start our copy, and notice if it dies on the spot.
+ *
+ * `showWindow` is the difference between the two reasons this program starts Magpie. A
+ * game wants none: an interface opening over a game that is still loading, taking the
+ * focus with it, is a worse fault than no scaling at all. The settings button wants one,
+ * because the window is the entire point of the click.
+ */
+function startMagpie(elevated: boolean, showWindow: boolean): Promise<void> {
   return new Promise((resolve) => {
     const dir = installDir()
     const exe = ourExe()
+    const args = showWindow ? [] : [TRAY_ONLY]
 
     // The guarantee that this copy will not touch the user's own configuration. If the
     // marker is somehow gone, not starting is the only safe answer.
@@ -310,13 +333,14 @@ function startMagpie(elevated: boolean): Promise<void> {
       // Only PowerShell's `runas` verb raises the prompt; a plain spawn inherits our token
       // and would be refused. Single-quoted with doubled quotes, as in `launcher.ts`.
       const ps = (s: string): string => `'${s.replace(/'/g, "''")}'`
+      const list = args.length > 0 ? ` -ArgumentList ${args.map(ps).join(',')}` : ''
       execFile(
         'powershell.exe',
         [
           '-NoProfile',
           '-NonInteractive',
           '-Command',
-          `Start-Process -FilePath ${ps(exe)} -WorkingDirectory ${ps(dir)} -Verb RunAs`
+          `Start-Process -FilePath ${ps(exe)} -WorkingDirectory ${ps(dir)} -Verb RunAs${list}`
         ],
         { windowsHide: true, timeout: 120_000 },
         (err) => {
@@ -330,7 +354,10 @@ function startMagpie(elevated: boolean): Promise<void> {
 
     let proc: ChildProcess
     try {
-      proc = spawn(exe, [], { cwd: dir, stdio: 'ignore', windowsHide: true })
+      // No `windowsHide`: Magpie is a GUI program with no console to suppress, so the flag
+      // buys nothing and costs the `SW_HIDE` described above — which is exactly how this
+      // went wrong the first time. What it shows is decided by `args`, and only by `args`.
+      proc = spawn(exe, args, { cwd: dir, stdio: 'ignore' })
     } catch {
       notice('magpie.startFailed')
       return resolve()
@@ -373,18 +400,22 @@ function startMagpie(elevated: boolean): Promise<void> {
 /**
  * Ask the Magpie that is already running to show its window.
  *
- * A second process is started for the single-instance handler to notice; it exits on the
- * spot, by design, having done its job. So it is deliberately **not** tracked: writing it
- * into `child` would throw away the handle for the Magpie that is actually running — every
- * later stop would then kill an object that had already exited, wait out the timeout and
- * report failure — and watching it exit would report a crash that did not happen.
+ * A second process is started and exits on the spot, by design: Magpie's single-instance
+ * check posts `WM_MAGPIE_SHOWME` to the copy already holding the lock, which answers by
+ * bringing its main window up. That is Magpie's own published route, and the reason
+ * `startMagpie` is careful to keep the running copy in a state where it still works —
+ * see `TRAY_ONLY`.
+ *
+ * Deliberately **not** tracked: writing it into `child` would throw away the handle for
+ * the Magpie that is actually running — every later stop would then kill an object that
+ * had already exited, wait out the timeout and report failure — and watching it exit
+ * would report a crash that did not happen.
  */
 function surfaceMagpieWindow(): void {
   try {
     const proc = spawn(ourExe(), [], {
       cwd: installDir(),
       stdio: 'ignore',
-      windowsHide: true,
       detached: true
     })
     proc.once('error', () => notice('magpie.startFailed'))
@@ -419,11 +450,17 @@ async function stopMagpie(): Promise<boolean> {
     const exe = ourExe()
     const proc = child
 
-    // Asked to close before being ended. Magpie writes its configuration when it exits, so
-    // `TerminateProcess` — which is all `ChildProcess.kill` is on Windows — throws away
-    // whatever the user changed in its own interface since it started, including from the
-    // Picture settings… button this program offers. `taskkill` without `/F` posts WM_CLOSE
-    // and lets that save happen.
+    // Asked to close before being ended. `taskkill` without `/F` posts WM_CLOSE, which is
+    // the polite form and the only one available from outside.
+    //
+    // It has been measured not to end this program's Magpie, and cannot: closing Magpie's
+    // main window hides it to the notification area rather than quitting, and a copy
+    // started with `TRAY_ONLY` has no main window for the message to reach in the first
+    // place. So the wait below always runs its course and the force branch always fires.
+    // Kept because it costs a bounded wait and would be the right thing if that ever
+    // changed — and it is no longer load-bearing: Magpie's own settings are saved the
+    // moment they are changed, not at exit, so ending it outright loses nothing the user
+    // did in its interface.
     await psStop(exe, false)
 
     // The close it was asked for, then the one it is not asked about. Waiting on the child
@@ -607,7 +644,9 @@ export function magpieBeforeLaunch(game: Game, opts: { elevated: boolean }): Pro
       writeAtomic(path.join(installDir(), OWNED_FILE), JSON.stringify(result.owned, null, 2))
     }
 
-    if ((await verdict())?.kind === 'none') await startMagpie(wantElevated)
+    // Into the notification area, not onto the screen: the game is what the user is
+    // waiting for, and Magpie's interface has nothing to say at this moment.
+    if ((await verdict())?.kind === 'none') await startMagpie(wantElevated, false)
   })
 }
 
@@ -656,9 +695,8 @@ export function warmMagpie(): void {
  *
  * A hard end, unlike `stopMagpie`: `before-quit` is not a place to wait two seconds on
  * another process, and a Magpie that ignored the close would hold the launcher's own exit
- * open. The cost is that a Magpie running at the moment the launcher quits does not save
- * its configuration — which is why the settings page tells the user to quit it from the
- * tray after changing anything in its interface.
+ * open. Nothing is lost by it — Magpie writes each setting as it is changed rather than at
+ * exit, so its own interface has already saved whatever was done there.
  */
 export function shutdownMagpie(): void {
   const proc = child
@@ -744,9 +782,9 @@ export function openMagpieSettings(): void {
     }
 
     if (before.kind === 'ours') {
-      // Already up, so there is nothing to install or write: the file belongs to that
-      // process until it exits. Magpie allows one instance and the one holding the mutex
-      // shows its window when a second is started, which is how the window is asked for.
+      // Already up — brought up for a game, most likely, and therefore sitting in the
+      // notification area with no window at all. Nothing to install or write: the file
+      // belongs to that process until it exits. Only the window has to be asked for.
       surfaceMagpieWindow()
       return
     }
@@ -778,7 +816,8 @@ export function openMagpieSettings(): void {
       writeAtomic(path.join(installDir(), OWNED_FILE), JSON.stringify(result.owned, null, 2))
     }
 
-    await startMagpie(false)
+    // The one place Magpie is started with its window on screen: it is what was clicked for.
+    await startMagpie(false, true)
   })
 }
 

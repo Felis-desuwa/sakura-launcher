@@ -8,10 +8,10 @@ import type { MagpieProfile } from './magpie-rules.ts'
  * This is a **merge**, never a fresh write, and the distinction is the whole reason this
  * file exists as a pure module:
  *
- *  - Magpie rewrites this file from memory when it exits — window position, its own
- *    normalisation of the scaling-mode list, whatever fields a future version adds. A
- *    wholesale overwrite would silently undo all of it, including anything the user
- *    changed in Magpie's own interface, on every launch.
+ *  - Magpie rewrites this file from memory whenever any of its own settings changes —
+ *    window position, its own normalisation of the scaling-mode list, whatever fields a
+ *    future version adds. A wholesale overwrite would silently undo all of it, including
+ *    anything the user changed in Magpie's own interface, on every launch.
  *  - A profile's `scalingMode` is an **index** into a list the user can reorder, so the
  *    meaning of the number has to be read back out of the file rather than assumed.
  *  - Whether the file needs rewriting at all decides whether Magpie has to be stopped and

@@ -912,8 +912,8 @@ export const MESSAGES = {
   // it without already knowing what Magpie is called.
   'settings.magpieOpen': { zh: '画质设置…', en: 'Picture settings…' },
   'settings.magpieOpenHint': {
-    zh: '打开 Magpie 自己的界面：着色器参数、捕获方式、帧率限制、光标缩放，以及新建你自己的缩放模式（effects 目录里有一百多个着色器，本程序只预置了七种组合）。在那里改的东西本程序不会覆盖。注意 Magpie 是退出时才保存设置的，所以调完请从托盘正常退出它，再去启动游戏。',
-    en: "Opens Magpie's own interface: shader parameters, capture method, frame limiter, cursor scaling, and building scaling modes of your own — the effects folder holds well over a hundred shaders and this program seeds only seven combinations of them. Nothing you change there is overwritten from here. Note that Magpie saves its settings when it exits, so quit it from the tray before launching a game."
+    zh: '打开 Magpie 自己的界面：着色器参数、捕获方式、帧率限制、光标缩放，以及新建你自己的缩放模式（effects 目录里有一百多个着色器，本程序只预置了七种组合）。在那里改的东西本程序不会覆盖，改完即时生效，不用手动退出它。新建的模式会直接出现在上面的下拉框和右键菜单里。',
+    en: "Opens Magpie's own interface: shader parameters, capture method, frame limiter, cursor scaling, and building scaling modes of your own — the effects folder holds well over a hundred shaders and this program seeds only seven combinations of them. Nothing you change there is overwritten from here, and it is saved as you go, so there is no need to quit it afterwards. A mode you build there appears in the list above and in the right-click menu."
   },
   'settings.magpieFolder': { zh: '打开所在文件夹', en: 'Open its folder' },
   'settings.magpieNotInstalled': { zh: '尚未复制', en: 'Not set up yet' },

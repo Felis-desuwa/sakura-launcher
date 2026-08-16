@@ -43,7 +43,7 @@ export const MAGPIE_VERSION = '0.12.1'
  *
  * Profiles are written for *every* enabled game at once rather than for the one being
  * launched, because rewriting the file is the dangerous half of this feature: Magpie must
- * be stopped first, and it overwrites the file from memory when it exits. Covering the
+ * be stopped first, or its next save overwrites the file from memory. Covering the
  * whole library means the desired config is nearly always the config already on disk, so
  * the stop-write-start dance happens a handful of times in a library's life instead of
  * on every launch. The cap keeps a two-thousand-game library from producing a config file

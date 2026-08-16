@@ -265,8 +265,19 @@ These come from user decisions and are load-bearing. Violating one is a bug even
   on exit, rewriting `%LOCALAPPDATA%\Magpie\config\v4\config.json`. `startMagpie` refuses to
   run without it. For the same reason nothing is ever killed by process name: `mayStop()` only
   admits a path equal to our own copy's, or the user's running Magpie would be ended for them.
-  And the config is **never written while Magpie runs** — it saves over the file from memory
-  when it exits, so a profile written underneath a live Magpie vanishes silently.
+  And the config is **never written while Magpie runs** — it saves the whole file over from
+  memory the moment any of its own settings changes, so a profile written underneath a live
+  Magpie vanishes silently. That immediacy is also why ending it outright is safe: there is
+  no unsaved state to lose, and `stopMagpie`'s polite WM_CLOSE is measured never to end it
+  (closing Magpie's window hides it to the tray, and a `-t` copy has no window at all).
+- **Magpie is started with `-t` for a game and without it for the settings button.** That
+  flag is Magpie's own way of coming up in the notification area, and it is the only one
+  that works. Hiding the window from outside — `windowsHide` on the spawn, which is
+  `SW_HIDE` in the `STARTUPINFO` — leaves Magpie believing its main window is open, and it
+  then ignores the `WM_MAGPIE_SHOWME` that a second instance broadcasts to raise it. The
+  window can never be brought back for the rest of that process's life. Never pass
+  `windowsHide` when spawning Magpie; it is a GUI program with no console to suppress, so
+  the flag has nothing to offer and this to cost.
 
 ## Git
 
