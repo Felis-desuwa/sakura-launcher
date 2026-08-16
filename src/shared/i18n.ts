@@ -1693,9 +1693,28 @@ export const MESSAGES = {
   /* ---- covers from a catalogue ---- */
   'menu.fetchWork': { zh: '联网获取资料', en: 'Fetch from catalogue' },
   'menu.fetchWorkN': { zh: '联网获取资料（{n} 个）', en: 'Fetch from catalogue ({n})' },
-  'covers.keptUser': {
-    zh: '，跳过 {n} 个你自己设的封面',
-    en: ', left {n} covers you set yourself alone'
+  'covers.toChoose': {
+    zh: '，{n} 个游戏的封面等你挑',
+    en: ', {n} covers for you to choose between'
+  },
+
+  /* ---- picking between the cover you set and the one the catalogue has ---- */
+  'cover.title': { zh: '这些游戏已经有封面了', en: 'These already have a cover' },
+  'cover.intro': {
+    zh: '左边是你自己设的，右边是目录站上的。你自己设的封面在任何情况下都不会被自动替换 —— 所以两张都留着，由你来定。不选就什么都不变。',
+    en: 'Yours on the left, the catalogue’s on the right. A cover you set yourself is never replaced automatically, so both are kept and the choice is yours. Choosing nothing changes nothing.'
+  },
+  'cover.mine': { zh: '你现在用的', en: 'On the tile now' },
+  'cover.theirs': { zh: '{source} 上的', en: 'From {source}' },
+  'cover.keep': { zh: '保留这张', en: 'Keep this one' },
+  'cover.take': { zh: '换成这张', en: 'Use this one' },
+  'cover.taking': { zh: '替换中…', en: 'Replacing…' },
+  'cover.allSettled': { zh: '都挑完了', en: 'All settled' },
+  'cover.keepAll': { zh: '剩下的都保留原样', en: 'Keep the rest as they are' },
+  /** Said out loud: a picture that is blurred here is blurred because of a setting. */
+  'cover.blurNote': {
+    zh: '标了 R18 的封面在这里也打码，跟磁贴上一样；设置里打开就能看清。',
+    en: 'Covers marked R18 are blurred here as they are on the tile; the setting shows them.'
   },
   'drawer.summary': { zh: '简介', en: 'Description' },
   /** Named, because it is the one paragraph in the drawer this program did not write. */

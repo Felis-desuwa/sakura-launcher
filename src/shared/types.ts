@@ -848,6 +848,28 @@ export interface PendingMatch {
   suggestion?: string
 }
 
+/**
+ * A game that already had a cover when the catalogue offered another one.
+ *
+ * Only ever raised for a cover the user chose themselves — a catalogue cover being
+ * refreshed from the same catalogue is not a question worth asking. The picture that
+ * came back is written to a holding file under the app's own data directory and nothing
+ * else changes, so both paths can be put on screen next to each other and *neither* is
+ * committed until somebody says which one they want. Declining, or simply closing the
+ * dialog, leaves the library exactly as it was and deletes the holding file.
+ */
+export interface CoverChoice {
+  gameId: string
+  gameName: string
+  /** The cover on the tile right now. */
+  currentPath: string
+  currentAdult: boolean
+  /** The catalogue's picture, downloaded but not adopted. */
+  candidatePath: string
+  candidateAdult: boolean
+  candidateFrom: TagSource
+}
+
 export interface Group {
   id: string
   name: string

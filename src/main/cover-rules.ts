@@ -119,20 +119,30 @@ export function acceptCover(bytes: Uint8Array): ImageKind | null {
   return sniffImage(bytes)
 }
 
+/** What to do with a cover that is already on the tile. */
+export type CoverVerdict = 'replace' | 'ask'
+
 /**
- * Whether a cover may be written over.
+ * Whether a cover may be written over, or has to be put to the user first.
  *
  * A cover the user chose by hand is their decision about their own library, and the same
- * protection `renamed` gives a hand-typed title applies here: a pass over many games must
- * never quietly undo it. One game, picked deliberately from its own menu, is a different
- * act — that is somebody asking for this game's cover to be replaced, and it is honoured.
+ * protection `renamed` gives a hand-typed title applies here: nothing may quietly undo it.
+ * But "quietly leave it alone" was not much better — a batch that skipped those covers
+ * never said what it had found, so the one case where the catalogue's picture is plainly
+ * the better one was the case with no way to act on it, short of clearing the cover by
+ * hand and asking all over again.
+ *
+ * So neither: the catalogue's picture is fetched and held to one side, and the two are
+ * shown side by side for the user to pick. Nothing on disk changes until they do, which
+ * is the property the old rule was really protecting. That is also why `scope` is gone
+ * from this decision — asking is safe whether it is one game or eighty, and the
+ * single-game route used to *replace* a hand-picked cover outright, which is exactly the
+ * loss this prevents.
+ *
+ * A cover a catalogue supplied is our own data being refreshed, and is replaced as before.
  */
-export function mayReplaceCover(
-  coverFrom: string | undefined | null,
-  scope: 'single' | 'bulk'
-): boolean {
-  if (coverFrom !== 'user') return true
-  return scope === 'single'
+export function coverVerdict(coverFrom: string | undefined | null): CoverVerdict {
+  return coverFrom === 'user' ? 'ask' : 'replace'
 }
 
 /**

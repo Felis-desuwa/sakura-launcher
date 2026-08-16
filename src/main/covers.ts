@@ -1,7 +1,13 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { Game, SummarySource, WorkMatch } from '../shared/types'
-import { acceptCover, coverSourceOf, mayReplaceCover, mayReplaceSummary } from './cover-rules.ts'
+import type { CoverChoice, Game, SummarySource, TagSource, WorkMatch } from '../shared/types'
+import {
+  acceptCover,
+  coverSourceOf,
+  coverVerdict,
+  mayReplaceSummary,
+  type ImageKind
+} from './cover-rules.ts'
 import * as db from './db'
 import { COVER_BASE, COVER_EXTS, isUnder } from './scan-core'
 import { pickBangumiSummary } from './tag-rules.ts'
@@ -91,6 +97,9 @@ export function adoptCover(game: Game, source: string): string | null {
     return null
   }
   clearStale(game, dest)
+  // Somebody choosing a picture themselves has answered any question the catalogue was
+  // waiting on, and the answer is "mine".
+  dropCoverCandidates([game.id])
   return dest
 }
 
@@ -103,6 +112,8 @@ export function adoptCover(game: Game, source: string): string | null {
  */
 export function discardCover(game: Game): void {
   clearStale(game, '')
+  // The cover an offer was to be compared against is gone, so the comparison is too.
+  dropCoverCandidates([game.id])
 }
 
 /** Delete our own leftovers around `keep`, and never a file we did not write. */
@@ -128,35 +139,177 @@ function coverNamesIn(dir: string, base = COVER_BASE): string[] {
   return COVER_EXTS.map((ext) => path.join(dir, `${base}.${ext}`))
 }
 
-/** What became of one game's cover, so a run can say what it did rather than a bare count. */
-export type CoverOutcome = 'written' | 'keptUser' | 'missed'
+/* ---------- the picture that is offered rather than taken ---------- */
 
 /**
- * Take the catalogue's picture for a game.
+ * Covers downloaded but not adopted, by game id.
  *
- * `scope` decides what happens to a cover that is already there. A pass over a selection
- * leaves a cover the user chose alone and says so; one game picked out of its own menu
- * replaces it, because that is unambiguous about which cover was meant.
+ * Kept here rather than handed to the renderer and handed back, because what comes back
+ * would be a file path to write from — and nothing in the main process takes a path from
+ * the renderer. The renderer gets an id and a yes or a no; this map holds everything else.
+ *
+ * It lives for the session. A dialog closed without answering leaves the holding files
+ * behind, which is why `sweepCoverCandidates()` runs at startup.
+ */
+const candidates = new Map<string, { path: string; adult: boolean; from: TagSource }>()
+
+/**
+ * The holding files sit under the app's own data directory, never beside the game.
+ *
+ * A game folder is the durable copy that travels with the library, and a picture nobody
+ * has agreed to yet has no business being in it — a scan would find `sakura-cover.*` and
+ * adopt it, which is precisely the silent replacement this whole path exists to avoid.
+ * The prefix keeps them out of the way of `clearStale`, which only ever knows the two
+ * names a *settled* cover goes by.
+ */
+const CANDIDATE_PREFIX = 'candidate-'
+
+function candidateNamesIn(gameId: string): string[] {
+  return COVER_EXTS.map((ext) => path.join(db.coverDir(), `${CANDIDATE_PREFIX}${gameId}.${ext}`))
+}
+
+/** Write the catalogue's picture to one side, without touching what is on the tile. */
+function stageCandidate(gameId: string, bytes: Buffer, kind: ImageKind): string | null {
+  const dest = path.join(db.coverDir(), `${CANDIDATE_PREFIX}${gameId}.${kind}`)
+  try {
+    fs.mkdirSync(db.coverDir(), { recursive: true })
+    // Any earlier offer for this game is stale the moment a new one arrives.
+    dropCoverCandidates([gameId])
+    fs.writeFileSync(dest, bytes)
+    return dest
+  } catch {
+    return null
+  }
+}
+
+/** Forget these offers and delete the files behind them. Nothing else is touched. */
+export function dropCoverCandidates(gameIds: string[]): void {
+  for (const id of gameIds) {
+    candidates.delete(id)
+    for (const stale of candidateNamesIn(id)) {
+      try {
+        fs.rmSync(stale, { force: true })
+      } catch {
+        /* a holding file we could not remove is untidy, not broken */
+      }
+    }
+  }
+}
+
+/**
+ * Clear out holding files left by a previous run.
+ *
+ * The map is empty at startup, so anything still on disk belongs to a dialog that was
+ * closed — or to a session that ended — and there is no longer anybody who could say yes
+ * to it. Deleting them here is what keeps the app's data directory from accumulating one
+ * unanswered cover per lookup, forever.
+ */
+export function sweepCoverCandidates(): void {
+  let names: string[]
+  try {
+    names = fs.readdirSync(db.coverDir())
+  } catch {
+    return
+  }
+  for (const name of names) {
+    if (!name.startsWith(CANDIDATE_PREFIX)) continue
+    try {
+      fs.rmSync(path.join(db.coverDir(), name), { force: true })
+    } catch {
+      /* as above */
+    }
+  }
+}
+
+/**
+ * Adopt the picture that was held to one side.
+ *
+ * Goes through `writeCover` like any other cover rather than being moved into place, so
+ * the bytes are sniffed a second time, the file lands beside the game where a settled
+ * cover belongs, and the one it replaces is cleared up by the same rule that clears up
+ * every other cover of ours.
+ */
+export function takeCoverCandidate(gameId: string): Game | undefined {
+  const offer = candidates.get(gameId)
+  const game = db.findGame(gameId)
+  if (!offer || !game) return undefined
+
+  let bytes: Buffer
+  try {
+    bytes = fs.readFileSync(offer.path)
+  } catch {
+    dropCoverCandidates([gameId])
+    return undefined
+  }
+
+  const dest = writeCover(game, bytes)
+  dropCoverCandidates([gameId])
+  if (!dest) return undefined
+  return db.updateGame(gameId, {
+    coverPath: dest,
+    coverFrom: offer.from,
+    coverAdult: offer.adult
+  })
+}
+
+/** What became of one game's cover, so a run can say what it did rather than a bare count. */
+export type CoverOutcome = 'written' | 'asked' | 'missed'
+
+/**
+ * Take the catalogue's picture for a game — or offer it.
+ *
+ * A cover the user chose by hand is never written over here. The catalogue's picture is
+ * downloaded all the same and parked next to the app's own data, and the pair is handed
+ * back for somebody to choose between; see `coverVerdict`. Everything else is replaced
+ * outright, which is what it always was.
  */
 export async function applyCover(
   game: Game,
-  match: WorkMatch,
-  scope: 'single' | 'bulk'
-): Promise<CoverOutcome> {
-  if (!mayReplaceCover(coverSourceOf(game), scope)) return 'keptUser'
-  if (!match.cover) return 'missed'
+  match: WorkMatch
+): Promise<{ outcome: CoverOutcome; choice?: CoverChoice }> {
+  if (!match.cover) return { outcome: 'missed' }
 
   await paceImage()
   const bytes = await fetchImage(match.cover.url)
-  const dest = bytes ? writeCover(game, bytes) : null
-  if (!dest) return 'missed'
+  if (!bytes) return { outcome: 'missed' }
+
+  // A cover recorded but no longer on disk is nothing to compare against — the file was
+  // moved or tidied away, and putting a broken image next to a real one is not a choice.
+  const theirs =
+    coverVerdict(coverSourceOf(game)) === 'ask' &&
+    Boolean(game.coverPath) &&
+    fs.existsSync(game.coverPath as string)
+
+  if (theirs) {
+    const kind = acceptCover(bytes)
+    if (!kind) return { outcome: 'missed' }
+    const staged = stageCandidate(game.id, bytes, kind)
+    if (!staged) return { outcome: 'missed' }
+
+    candidates.set(game.id, { path: staged, adult: match.cover.adult, from: match.source })
+    return {
+      outcome: 'asked',
+      choice: {
+        gameId: game.id,
+        gameName: game.name,
+        currentPath: game.coverPath as string,
+        currentAdult: Boolean(game.coverAdult),
+        candidatePath: staged,
+        candidateAdult: match.cover.adult,
+        candidateFrom: match.source
+      }
+    }
+  }
+
+  const dest = writeCover(game, bytes)
+  if (!dest) return { outcome: 'missed' }
 
   db.updateGame(game.id, {
     coverPath: dest,
     coverFrom: match.source,
     coverAdult: match.cover.adult
   })
-  return 'written'
+  return { outcome: 'written' }
 }
 
 /**

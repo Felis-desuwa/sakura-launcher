@@ -30,6 +30,13 @@ export default function FolderWindow({
   const t = useT()
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // A key pressed inside a text field belongs to that field. Escape there is
+      // cancelling whatever the field is part of — the rename box opened from this
+      // window's own title bar, say — and closing the window underneath it as well
+      // would take away the thing being renamed. Backspace is worse: it would navigate
+      // up a level instead of deleting a character.
+      const target = e.target as HTMLElement | null
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
       if (e.key === 'Escape') onClose()
       if (e.key === 'Backspace' && canGoBack && onBack) onBack()
     }

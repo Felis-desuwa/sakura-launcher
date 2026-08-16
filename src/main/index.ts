@@ -83,7 +83,13 @@ import {
   tagRunActive
 } from './tagger'
 import { sanitizeArchiveName, scanPersonalData } from './share-rules'
-import { adoptCover, discardCover } from './covers'
+import {
+  adoptCover,
+  discardCover,
+  dropCoverCandidates,
+  sweepCoverCandidates,
+  takeCoverCandidate
+} from './covers'
 import { syncAll, toSidecar as sidecarFrom, writeGameSidecar } from './sidecar-sync'
 import { closeSplash, showSplash, splashStage } from './splash'
 import { performUninstall, planUninstall, trashLeftovers } from './uninstaller'
@@ -737,6 +743,33 @@ function registerIpc(): void {
     return updated
   })
 
+  /**
+   * Settle a cover the catalogue offered against one the user had chosen.
+   *
+   * `take` is the whole message: the renderer never names a file. Which picture was held
+   * to one side is known here and only here, so a stale or malicious renderer can ask for
+   * this game's offer to be taken or dropped and nothing else.
+   *
+   * Either answer ends the offer. Taking it writes the picture beside the game and out to
+   * the sidecar, the same as any other settled cover; declining deletes the holding file
+   * and leaves the library untouched.
+   */
+  ipcMain.handle('covers:choose', (_e, gameId: string, take: boolean) => {
+    if (!take) {
+      dropCoverCandidates([gameId])
+      return db.findGame(gameId)
+    }
+    const updated = takeCoverCandidate(gameId)
+    if (updated) writeGameSidecar(updated)
+    return updated
+  })
+
+  /** Close the dialog on the rest: nothing chosen means nothing changes. */
+  ipcMain.handle('covers:drop', (_e, gameIds: string[]) => {
+    dropCoverCandidates(gameIds)
+    return true
+  })
+
   ipcMain.handle('uninstall:plan', (_e, id: string) => planUninstall(id))
   ipcMain.handle('uninstall:perform', (_e, id: string) => performUninstall(id))
   ipcMain.handle('uninstall:leftovers', (_e, id: string) => trashLeftovers(id))
@@ -1145,6 +1178,10 @@ app.whenReady().then(() => {
   // Downloads outlive the app: one still running belongs to another process, so pick
   // the watch back up rather than starting the job over.
   resumeDownloads()
+
+  // Covers offered in a previous session and never answered. The map that knew what they
+  // were died with that session, so the files are all that is left of the question.
+  sweepCoverCandidates()
 
   // Ensure the built-in bucket for not-yet-installed archives always exists.
   const groups = db.getGroups()

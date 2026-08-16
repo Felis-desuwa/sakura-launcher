@@ -1,5 +1,5 @@
 import path from 'node:path'
-import type { Game, PendingMatch, WorkMatch } from '../shared/types'
+import type { CoverChoice, Game, PendingMatch, WorkMatch } from '../shared/types'
 import { workRecordOf } from '../shared/types'
 import { applyCover, applySummary } from './covers'
 import * as db from './db'
@@ -45,8 +45,14 @@ export interface TagRun {
   covers: number
   /** Descriptions brought back. Fewer than the covers, and that is normal — see `covers.ts`. */
   summaries: number
-  /** Games whose own cover the user had chosen, left alone. */
-  keptUser: number
+  /**
+   * Games that already had a cover of the user's own when the catalogue offered another.
+   *
+   * Nothing has been written for these — both pictures exist and the user picks. Collected
+   * over the whole run and put up once at the end, for the same reason `pending` is: a
+   * pass over eighty games must not stop eighty times to ask a question.
+   */
+  coverChoices: CoverChoice[]
   /** Title searches too uncertain to adopt, for the user to settle. */
   pending: PendingMatch[]
   /** Every lookup failed, so the UI can say "no network" once instead of per game. */
@@ -272,8 +278,10 @@ export function pendingTargets(games: Game[]): Game[] {
  * Look games up and take everything the record has.
  *
  * `ids` names the games; `null` means the ones never asked about, which is what the
- * library-wide button runs. `scope` says how to treat what is already there — a selection
- * leaves a hand-picked cover alone, one game chosen from its own menu replaces it.
+ * library-wide button runs. `scope` says how to treat a description already on file — one
+ * game asked about deliberately is asked again, a selection is not. Covers no longer take
+ * it: a cover the user chose is never written over on either route, it is offered against
+ * the catalogue's and left for them to settle (`TagRun.coverChoices`).
  */
 export async function computeTags(
   ids: string[] | null,
@@ -291,7 +299,7 @@ export async function computeTags(
     matched: 0,
     covers: 0,
     summaries: 0,
-    keptUser: 0,
+    coverChoices: [],
     pending: [],
     offline: false,
     cancelled: false
@@ -301,11 +309,11 @@ export async function computeTags(
   running = true
   cancelled = false
   const pending: PendingMatch[] = []
+  const coverChoices: CoverChoice[] = []
   let matched = 0
   let looked = 0
   let covers = 0
   let summaries = 0
-  let keptUser = 0
   let reachedAny = false
 
   try {
@@ -330,9 +338,9 @@ export async function computeTags(
         // replace.
         const fresh = db.findGame(game.id) ?? game
         if (settings.onlineCovers) {
-          const outcome = await applyCover(fresh, result.match, scope)
+          const { outcome, choice } = await applyCover(fresh, result.match)
           if (outcome === 'written') covers++
-          else if (outcome === 'keptUser') keptUser++
+          else if (choice) coverChoices.push(choice)
         }
         if (settings.onlineSummary && settings.onlineCovers) {
           if (await applySummary(fresh, result.match, scope)) summaries++
@@ -372,7 +380,7 @@ export async function computeTags(
       matched,
       covers,
       summaries,
-      keptUser,
+      coverChoices,
       pending,
       offline: looked > 0 && !reachedAny,
       cancelled
@@ -389,8 +397,11 @@ export async function computeTags(
  * Replaces wholesale rather than merging: the user has just said this game is a different
  * work than we thought, and tags from the work it is not have no claim to stay.
  */
-export async function applyMatch(gameId: string, match: WorkMatch): Promise<Game | undefined> {
-  if (!db.findGame(gameId)) return undefined
+export async function applyMatch(
+  gameId: string,
+  match: WorkMatch
+): Promise<{ game?: Game; coverChoice?: CoverChoice }> {
+  if (!db.findGame(gameId)) return {}
   const settings = db.getSettings()
   db.updateGame(gameId, {
     autoTags: match.tags,
@@ -406,7 +417,14 @@ export async function applyMatch(gameId: string, match: WorkMatch): Promise<Game
   // again. `'single'` because this is one game, named deliberately.
   const scope = 'single' as const
   const game = db.findGame(gameId)
-  if (game && settings.onlineCovers) await applyCover(game, match, scope)
+  // A cover the user chose is put to them rather than replaced, exactly as in a run —
+  // naming the work is not the same act as agreeing to a different picture, and this is
+  // the route a game reaches when nothing could be matched automatically, so it is the
+  // one most likely to already carry a cover somebody set by hand.
+  let coverChoice: CoverChoice | undefined
+  if (game && settings.onlineCovers) {
+    coverChoice = (await applyCover(game, match)).choice
+  }
   if (game && settings.onlineCovers && settings.onlineSummary) {
     await applySummary(game, match, scope)
   }
@@ -416,7 +434,7 @@ export async function applyMatch(gameId: string, match: WorkMatch): Promise<Game
   const updated = db.findGame(gameId)
   if (updated) writeGameSidecar(updated)
   db.flush()
-  return updated
+  return { game: updated, coverChoice }
 }
 
 /**

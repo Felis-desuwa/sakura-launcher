@@ -22,6 +22,37 @@ interface Props {
   themeKey: string
 }
 
+/**
+ * How often the petals are redrawn while the window is not the one being used.
+ *
+ * A launcher spends most of its life behind the game it launched. `requestAnimationFrame`
+ * only throttles itself when the window is *hidden* — minimised, or on another virtual
+ * desktop — and a window that is merely unfocused, or fully covered by a fullscreen game,
+ * keeps getting sixty frames a second of canvas work for something nobody is looking at.
+ *
+ * Eight frames a second is enough that glancing back at a partly visible window does not
+ * catch the petals frozen, and it is an eighth of the work. It costs nothing in
+ * appearance because the motion is integrated against elapsed time rather than counted in
+ * frames: at any rate the petals fall at the same speed, they are simply drawn in fewer
+ * places along the way.
+ */
+const BLURRED_FPS = 8
+
+/**
+ * The largest step a single frame may integrate, in 60fps frames.
+ *
+ * Coming back from anything that stalled the loop — a long garbage collection, a window
+ * left minimised — the gap since the last draw can be arbitrarily long, and multiplying
+ * the fall by it would teleport every petal down the screen at once. Clamping turns that
+ * into a slightly short step instead, which nobody can see.
+ *
+ * It has to stay above `60 / BLURRED_FPS`, or the throttled rate would be clamped by it
+ * and the petals would quietly fall slower whenever the window was not in front — the
+ * exact thing integrating against elapsed time is here to avoid. A sixth of a second
+ * leaves room for the jitter in a timer that is only approximately on schedule.
+ */
+const MAX_STEP = 10
+
 /** Ambient falling petals. Deliberately faint and pausable — it must never fight the tiles. */
 export default function PetalCanvas({ enabled, themeKey }: Props): React.JSX.Element | null {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -89,17 +120,51 @@ export default function PetalCanvas({ enabled, themeKey }: Props): React.JSX.Ele
     resize()
     petals = Array.from({ length: petalCount() }, spawn)
 
-    const draw = (): void => {
+    /*
+     * Whether anybody is looking.
+     *
+     * Tracked with a listener rather than read from `document.hasFocus()` each frame,
+     * because reading it per frame is the sort of thing that forces layout work on some
+     * builds, and the answer changes a handful of times an hour. Started from the live
+     * value so a window that opened unfocused — restored from the tray, say — is throttled
+     * from the first frame rather than after the first click somewhere else.
+     */
+    let focused = document.hasFocus()
+    const onFocus = (): void => {
+      focused = true
+    }
+    const onBlur = (): void => {
+      focused = false
+    }
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('blur', onBlur)
+
+    /** Timestamp of the last frame actually drawn, so both the step and the skip use it. */
+    let last = performance.now()
+
+    const draw = (now: number): void => {
+      raf = requestAnimationFrame(draw)
+
+      const elapsed = now - last
+      // Unfocused, the loop still runs — it is the cheapest way to notice focus coming
+      // back — but almost every frame returns here without touching the canvas.
+      if (!focused && elapsed < 1000 / BLURRED_FPS) return
+      last = now
+
+      // Motion in 60fps frames' worth of time, so the fall does not slow down when the
+      // frames are further apart. `MAX_STEP` covers coming back from a long stall.
+      const step = Math.min(elapsed / (1000 / 60), MAX_STEP)
+
       const w = canvas.clientWidth
       const h = canvas.clientHeight
       ctx.clearRect(0, 0, w, h)
       ctx.fillStyle = petalColor
       for (const p of petals) {
-        p.y += p.vy
-        p.sway += 0.012
-        p.x += p.vx + Math.sin(p.sway) * 0.4
-        p.angle += p.spin
-        p.flip += p.flipSpeed
+        p.y += p.vy * step
+        p.sway += 0.012 * step
+        p.x += (p.vx + Math.sin(p.sway) * 0.4) * step
+        p.angle += p.spin * step
+        p.flip += p.flipSpeed * step
         if (p.y > h + 24) Object.assign(p, spawn(), { y: -24 })
         // Wrap sideways rather than letting a petal drift off and leave a bare column.
         if (p.x < -24) p.x = w + 24
@@ -116,14 +181,15 @@ export default function PetalCanvas({ enabled, themeKey }: Props): React.JSX.Ele
         ctx.fill()
         ctx.restore()
       }
-      raf = requestAnimationFrame(draw)
     }
 
-    draw()
+    raf = requestAnimationFrame(draw)
     window.addEventListener('resize', resize)
     return () => {
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', resize)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('blur', onBlur)
     }
   }, [enabled, themeKey])
 

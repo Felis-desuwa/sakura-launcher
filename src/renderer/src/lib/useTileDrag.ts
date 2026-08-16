@@ -3,9 +3,40 @@ import { createDragProxy, type DragProxy } from './dragProxy'
 
 export type DropHint = 'before' | 'after' | 'into'
 
+/**
+ * What was picked up.
+ *
+ * Folders are dragged by the same gesture as tiles and by almost the same code, but they
+ * are not interchangeable with them: a folder is only ever reordered among folders. It
+ * cannot go inside another folder, cannot merge with a game, and does not take the
+ * selection along, because a folder is never *in* the selection. Keeping the kind on the
+ * gesture is what lets one hook answer both without either question leaking into the
+ * other's answer.
+ */
+export type DragKind = 'game' | 'group'
+
 export type DropTarget =
+  /** Between, or onto, a game tile. */
   | { kind: 'tile'; id: string; hint: DropHint }
+  /** Into a folder — only ever reached while dragging games. */
   | { kind: 'group'; id: string }
+  /** Between folders — only ever reached while dragging a folder. */
+  | { kind: 'folder'; id: string; hint: 'before' | 'after' }
+
+/** How each kind of tile is found in the DOM, and where it keeps its id. */
+function nodeSelector(kind: DragKind, id?: string): string {
+  const base = kind === 'game' ? '.tile[data-game-id' : '.group-tile[data-group-id'
+  return id === undefined ? `${base}]` : `${base}="${CSS.escape(id)}"]`
+}
+
+function idOf(el: HTMLElement, kind: DragKind): string {
+  return (kind === 'game' ? el.dataset.gameId : el.dataset.groupId) as string
+}
+
+/** The drop target a slot between two items of this kind resolves to. */
+function slotTarget(kind: DragKind, id: string, hint: 'before' | 'after'): DropTarget {
+  return kind === 'game' ? { kind: 'tile', id, hint } : { kind: 'folder', id, hint }
+}
 
 /**
  * Pointer-driven tile dragging, the way a phone home screen does it.
@@ -45,8 +76,13 @@ const MERGE_LEAVE = [0.28, 0.72]
 const MERGE_DWELL_MS = 260
 const SIDE_HYSTERESIS = 0.06
 
-/** Which half of the tile the pointer is in, biased towards keeping its current answer. */
-function sideFor(ratio: number, previous: DropHint | null): DropHint {
+/**
+ * Which half of the tile the pointer is in, biased towards keeping its current answer.
+ *
+ * Never 'into' — a side is a side. Saying so in the type is what lets a folder drag, which
+ * has no merge to offer, use this without having to rule the third answer out again.
+ */
+function sideFor(ratio: number, previous: DropHint | null): 'before' | 'after' {
   if (previous === 'before' && ratio < 0.5 + SIDE_HYSTERESIS) return 'before'
   if (previous === 'after' && ratio > 0.5 - SIDE_HYSTERESIS) return 'after'
   return ratio < 0.5 ? 'before' : 'after'
@@ -59,9 +95,15 @@ function sideFor(ratio: number, previous: DropHint | null): DropHint {
  * when placing something *between* two tiles. Resolving them to the nearest slot is
  * what keeps such a drop from falling through to "no target" and going to the end.
  */
-function nearestSlot(grid: HTMLElement, x: number, y: number, exclude: Set<string>): DropTarget | null {
-  const items = [...grid.querySelectorAll<HTMLElement>(':scope > .tile[data-game-id]')]
-    .map((el) => ({ id: el.dataset.gameId as string, rect: el.getBoundingClientRect() }))
+function nearestSlot(
+  grid: HTMLElement,
+  x: number,
+  y: number,
+  exclude: Set<string>,
+  kind: DragKind
+): DropTarget | null {
+  const items = [...grid.querySelectorAll<HTMLElement>(`:scope > ${nodeSelector(kind)}`)]
+    .map((el) => ({ id: idOf(el, kind), rect: el.getBoundingClientRect() }))
     .filter((i) => !exclude.has(i.id))
   if (items.length === 0) return null
 
@@ -77,16 +119,16 @@ function nearestSlot(grid: HTMLElement, x: number, y: number, exclude: Set<strin
   }
   const sameRow = items.filter((i) => Math.abs(i.rect.top - row.rect.top) < 4)
   for (const item of sameRow) {
-    if (x < item.rect.left + item.rect.width / 2) return { kind: 'tile', id: item.id, hint: 'before' }
+    if (x < item.rect.left + item.rect.width / 2) return slotTarget(kind, item.id, 'before')
   }
-  return { kind: 'tile', id: sameRow[sameRow.length - 1].id, hint: 'after' }
+  return slotTarget(kind, sameRow[sameRow.length - 1].id, 'after')
 }
 
 function sameTarget(a: DropTarget | null, b: DropTarget | null): boolean {
   if (a === null || b === null) return a === b
-  if (a.kind !== b.kind) return false
-  if (a.kind === 'group' || b.kind === 'group') return a.id === b.id
-  return a.id === b.id && a.hint === b.hint
+  if (a.kind !== b.kind || a.id !== b.id) return false
+  if (a.kind === 'group' || b.kind === 'group') return true
+  return a.hint === b.hint
 }
 
 interface Options {
@@ -102,6 +144,12 @@ interface Options {
 export interface TileDrag {
   /** Tiles currently lifted out of the grid — rendered as holes. */
   dragIds: string[]
+  /**
+   * What `dragIds` are ids *of*. Game ids and folder ids are drawn by different
+   * components, so the page has to know which list is being held before it can decide
+   * anything is missing from it.
+   */
+  dragKind: DragKind
   /** Where the drop would land right now. */
   target: DropTarget | null
   /**
@@ -112,7 +160,7 @@ export interface TileDrag {
    */
   insertion: DropTarget | null
   /** Begin tracking a press. Call from a tile's `onPointerDown`. */
-  start: (e: React.PointerEvent, gameId: string) => void
+  start: (e: React.PointerEvent, id: string, kind?: DragKind) => void
   /**
    * True for the click that a just-finished drag is about to produce.
    *
@@ -125,15 +173,21 @@ export interface TileDrag {
 
 export function useTileDrag({ scrollRef, selectedIds, canGroup, onDrop }: Options): TileDrag {
   const [dragIds, setDragIds] = useState<string[]>([])
+  const [dragKind, setDragKind] = useState<DragKind>('game')
   const [target, setTarget] = useState<DropTarget | null>(null)
   const [insertion, setInsertion] = useState<DropTarget | null>(null)
 
   /** A press that has not moved far enough to be a drag yet. */
-  const press = useRef<{ ids: string[]; startX: number; startY: number; grid: HTMLElement } | null>(
-    null
-  )
+  const press = useRef<{
+    ids: string[]
+    kind: DragKind
+    startX: number
+    startY: number
+    grid: HTMLElement
+  } | null>(null)
   const drag = useRef<{
     ids: string[]
+    kind: DragKind
     exclude: Set<string>
     grid: HTMLElement
     proxy: DragProxy
@@ -161,7 +215,7 @@ export function useTileDrag({ scrollRef, selectedIds, canGroup, onDrop }: Option
     // was instead of closing the hole and reopening it the moment the pointer drifts.
     if (
       next !== null &&
-      next.kind === 'tile' &&
+      next.kind !== 'group' &&
       next.hint !== 'into' &&
       !sameTarget(insertionRef.current, next)
     ) {
@@ -178,11 +232,45 @@ export function useTileDrag({ scrollRef, selectedIds, canGroup, onDrop }: Option
     if (!state) return
 
     const under = document.elementFromPoint(x, y)
+
+    /*
+     * A folder answers a much shorter question than a tile does.
+     *
+     * There is no merge band and no "into", because a folder cannot hold a folder, and
+     * game tiles are not targets at all — dragging a folder over the games below simply
+     * resolves to the slot after the last folder, which is where it would go anyway.
+     * Handled first and returned from, so none of the tile logic below can see a folder
+     * drag and offer it something a folder cannot do.
+     */
+    if (state.kind === 'group') {
+      const folder = under?.closest<HTMLElement>(nodeSelector('group'))
+      if (folder) {
+        const id = idOf(folder, 'group')
+        if (!state.exclude.has(id)) {
+          const rect = folder.getBoundingClientRect()
+          const ratio = (x - rect.left) / rect.width
+          if (state.hoverId !== id) {
+            state.hoverId = id
+            state.hoverHint = null
+          }
+          const hint = sideFor(ratio, state.hoverHint === 'into' ? null : state.hoverHint)
+          state.hoverHint = hint
+          setTargetIfChanged({ kind: 'folder', id, hint })
+          return
+        }
+      }
+      state.hoverId = null
+      state.hoverHint = null
+      const home = under?.closest<HTMLElement>('.grid') ?? state.grid
+      setTargetIfChanged(nearestSlot(home, x, y, state.exclude, 'group'))
+      return
+    }
+
     // Tiles being dragged are hidden, so they are never returned here and cannot
     // become their own drop target.
-    const tile = under?.closest<HTMLElement>('.tile[data-game-id]')
+    const tile = under?.closest<HTMLElement>(nodeSelector('game'))
     if (tile) {
-      const id = tile.dataset.gameId as string
+      const id = idOf(tile, 'game')
       if (!state.exclude.has(id)) {
         const rect = tile.getBoundingClientRect()
         const ratio = (x - rect.left) / rect.width
@@ -232,9 +320,9 @@ export function useTileDrag({ scrollRef, selectedIds, canGroup, onDrop }: Option
     state.hoverHint = null
     state.coreSince = 0
 
-    const groupTile = under?.closest<HTMLElement>('.group-tile[data-group-id]')
+    const groupTile = under?.closest<HTMLElement>(nodeSelector('group'))
     if (groupTile) {
-      setTargetIfChanged({ kind: 'group', id: groupTile.dataset.groupId as string })
+      setTargetIfChanged({ kind: 'group', id: idOf(groupTile, 'group') })
       return
     }
 
@@ -242,7 +330,7 @@ export function useTileDrag({ scrollRef, selectedIds, canGroup, onDrop }: Option
     // nearest slot of whichever grid the pointer is over, falling back to the one the
     // drag started in so a drop past the last row still lands somewhere sensible.
     const grid = under?.closest<HTMLElement>('.grid') ?? state.grid
-    setTargetIfChanged(nearestSlot(grid, x, y, state.exclude))
+    setTargetIfChanged(nearestSlot(grid, x, y, state.exclude, 'game'))
   }, [])
 
   /** One rAF loop drives both edge scrolling and re-testing the target under it. */
@@ -310,16 +398,14 @@ export function useTileDrag({ scrollRef, selectedIds, canGroup, onDrop }: Option
       try {
         if (merging) {
           const el = document.querySelector<HTMLElement>(
-            landing.kind === 'group'
-              ? `.group-tile[data-group-id="${CSS.escape(landing.id)}"]`
-              : `.tile[data-game-id="${CSS.escape(landing.id)}"]`
+            nodeSelector(landing.kind === 'group' ? 'group' : 'game', landing.id)
           )
           if (el) await state.proxy.absorbInto(el.getBoundingClientRect())
         } else {
           // The hole: the dragged tile is still rendered, just invisible, and by now it
           // sits where the drop put it. Hidden elements still report a layout box.
           const hole = document.querySelector<HTMLElement>(
-            `.tile[data-game-id="${CSS.escape(state.ids[0])}"]`
+            nodeSelector(state.kind, state.ids[0])
           )
           if (hole) await state.proxy.settleInto(hole.getBoundingClientRect())
         }
@@ -343,7 +429,7 @@ export function useTileDrag({ scrollRef, selectedIds, canGroup, onDrop }: Option
 
       const grid = pending.grid
       const nodes = pending.ids
-        .map((id) => grid.querySelector<HTMLElement>(`.tile[data-game-id="${CSS.escape(id)}"]`))
+        .map((id) => grid.querySelector<HTMLElement>(nodeSelector(pending.kind, id)))
         .filter((el): el is HTMLElement => el !== null)
       if (nodes.length === 0) return
 
@@ -357,6 +443,7 @@ export function useTileDrag({ scrollRef, selectedIds, canGroup, onDrop }: Option
 
       drag.current = {
         ids: pending.ids,
+        kind: pending.kind,
         exclude: new Set(pending.ids),
         grid,
         proxy,
@@ -368,6 +455,7 @@ export function useTileDrag({ scrollRef, selectedIds, canGroup, onDrop }: Option
         coreSince: 0
       }
       document.body.classList.add('tiles-dragging')
+      setDragKind(pending.kind)
       setDragIds(pending.ids)
       if (loop.current === null) loop.current = requestAnimationFrame(tick)
     },
@@ -423,14 +511,17 @@ export function useTileDrag({ scrollRef, selectedIds, canGroup, onDrop }: Option
     }
   }, [begin, cleanup, finishDrag])
 
-  const start = useCallback((e: React.PointerEvent, gameId: string): void => {
+  const start = useCallback((e: React.PointerEvent, id: string, kind: DragKind = 'game'): void => {
     if (e.button !== 0 || drag.current) return
     const grid = (e.currentTarget as HTMLElement).closest<HTMLElement>('.grid')
     if (!grid) return
-    // Grabbing a tile inside the selection takes the whole selection along.
+    // Grabbing a tile inside the selection takes the whole selection along. A folder
+    // never does: the selection is made of games, and a folder that happened to share an
+    // id with one would drag them off with it.
     const { selectedIds: ids } = latest.current
     press.current = {
-      ids: ids.includes(gameId) && ids.length > 1 ? ids : [gameId],
+      ids: kind === 'game' && ids.includes(id) && ids.length > 1 ? ids : [id],
+      kind,
       startX: e.clientX,
       startY: e.clientY,
       grid
@@ -439,5 +530,5 @@ export function useTileDrag({ scrollRef, selectedIds, canGroup, onDrop }: Option
 
   const didDrag = useCallback(() => dragged.current, [])
 
-  return { dragIds, target, insertion, start, didDrag }
+  return { dragIds, dragKind, target, insertion, start, didDrag }
 }

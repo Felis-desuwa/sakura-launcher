@@ -2544,6 +2544,75 @@ select.field {
   white-space: nowrap;
 }
 
+/* ---- your cover against the catalogue's ---- */
+
+/*
+ * Two equal columns, always. The whole point of this dialog is that the pictures are
+ * compared rather than described, so neither side may be given more room than the other
+ * — an unequal pair reads as a recommendation before a word has been said.
+ */
+.cover-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: start;
+  /* Pulled together in the middle rather than spread to the modal's edges: two pictures
+     with a hand's width of empty dialog between them are not being compared. */
+  max-width: 440px;
+  margin: 0 auto;
+}
+
+.cover-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+/*
+ * Portrait, like the tile the picture is destined for — and sized by its *height*.
+ *
+ * Filling the column width instead is the obvious way to write this and it is wrong: the
+ * dialog is as wide as the modal, so each picture came out taller than the window and one
+ * game filled the whole list. Comparing two covers means seeing them at once, and
+ * comparing two *games* means seeing more than one row, so the height is what is pinned
+ * and the width follows from it.
+ */
+.cover-shot {
+  position: relative;
+  height: clamp(150px, 26vh, 230px);
+  aspect-ratio: 3 / 4;
+  max-width: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+
+.cover-shot img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* The same blur the tiles use, for the same reason and under the same switch. */
+.cover-shot.blurred img {
+  filter: blur(16px) saturate(0.85);
+  transform: scale(1.08);
+}
+
+.cover-side-label {
+  font-size: 12px;
+  color: var(--ink-soft);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
 /* ---- executable picker ---- */
 
 .exe-lede {

@@ -240,6 +240,18 @@ These come from user decisions and are load-bearing. Violating one is a bug even
   (`onlineCovers`, `onlineSummary`) decide how much of the record is kept, never how many
   trips are made. `covers.ts` must not import `tagger.ts` — it takes a settled match and does
   not search, which is what keeps the two out of an import cycle.
+  **A cover the user chose is never written over — it is put to them.** `coverVerdict`
+  returns `'ask'` for `coverFrom === 'user'` on every route and every scope, and `applyCover`
+  then downloads the catalogue's picture to `covers/candidate-<gameId>.<ext>` under the app's
+  own data directory and returns a `CoverChoice` instead of writing anything. Both halves of
+  the rule this replaced were wrong in the same way: a batch skipped those covers in silence
+  and a single lookup replaced them in silence, and each decided without anybody having seen
+  the two pictures. Three things hold it up: the holding file is **never** written beside the
+  game, because a scan finds `sakura-cover.*` there and would adopt the very picture nobody
+  has agreed to; the renderer names a game id and a yes or no and **never a path**, so which
+  file gets written is known only in the main process; and an offer left unanswered costs
+  nothing, because closing the dialog drops it and `sweepCoverCandidates()` clears at startup
+  whatever a killed session left behind.
   **Chinese only on screen.** A blurb that reads as Japanese (`isChineseText`) is
   machine-translated and **labelled as translated** — `summaryTranslated`, shown in the drawer
   and written into the sidecar. Dropping those was the original rule and it was wrong in

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ImportPreview, LaunchTroubleEvent } from '../../preload/index'
 import type { Lang } from '../../shared/i18n'
 import type {
+  CoverChoice,
   DiskInfo,
   ExeChoices,
   Game,
@@ -26,6 +27,7 @@ import { makeT, type MessageKey } from '../../shared/i18n'
 import { setShowAdultArt } from './components/Artwork'
 import BulkUninstallDialog from './components/BulkUninstallDialog'
 import ConfirmDialog from './components/ConfirmDialog'
+import CoverChoiceDialog from './components/CoverChoiceDialog'
 import DetailDrawer from './components/DetailDrawer'
 import DiagnoseDialog from './components/DiagnoseDialog'
 import ExeChooserDialog from './components/ExeChooserDialog'
@@ -103,6 +105,15 @@ export default function App(): React.JSX.Element {
   )
   /** Title matches the launcher would not settle on its own. */
   const [pendingMatches, setPendingMatches] = useState<PendingMatch[] | null>(null)
+  /**
+   * Games that had a cover of their own and were offered the catalogue's.
+   *
+   * Nothing has been written for these — both pictures are on disk and the choice is
+   * still open — so this list is the only thing keeping the offers alive. Dropping it
+   * without answering is handled by the dialog, which tells the main process to throw the
+   * downloaded pictures away rather than leaving them to accumulate.
+   */
+  const [coverChoices, setCoverChoices] = useState<CoverChoice[] | null>(null)
   /** How many games a pass would look up. Kept in step with the library, not guessed. */
   const [pendingTagCount, setPendingTagCount] = useState(0)
   /** Game being examined for why it would not start. */
@@ -343,11 +354,16 @@ export default function App(): React.JSX.Element {
           if ((result.covers ?? 0) > 0) line += tr('tags.andCovers', { n: result.covers ?? 0 })
           if ((result.summaries ?? 0) > 0)
             line += tr('tags.andSummaries', { n: result.summaries ?? 0 })
-          if ((result.keptUser ?? 0) > 0)
-            line += tr('covers.keptUser', { n: result.keptUser ?? 0 })
+          if ((result.coverChoices?.length ?? 0) > 0)
+            line += tr('covers.toChoose', { n: result.coverChoices?.length ?? 0 })
           toast(line)
         }
         if (result.pending && result.pending.length > 0) setPendingMatches(result.pending)
+        // Raised after the run rather than during it, so a pass over a large selection is
+        // never interrupted — and after the match dialog is queued, since settling a match
+        // can add one more of these.
+        if (result.coverChoices && result.coverChoices.length > 0)
+          setCoverChoices(result.coverChoices)
       } finally {
         setTagProgress(null)
       }
@@ -817,10 +833,28 @@ export default function App(): React.JSX.Element {
           showSpoilers={settings.spoilerTags}
           showAdult={settings.adultTags}
           onApply={async (gameId, match: WorkMatch) => {
-            const updated = await window.sakura.applyMatch(gameId, match)
-            if (updated) setGames((cur) => cur.map((g) => (g.id === gameId ? updated : g)))
+            const { game, coverChoice } = await window.sakura.applyMatch(gameId, match)
+            if (game) setGames((cur) => cur.map((g) => (g.id === gameId ? game : g)))
+            // This game already had a cover somebody chose. Added to the list rather than
+            // raised now — it waits until this dialog is closed, since the user is in the
+            // middle of settling the next game in it.
+            if (coverChoice) setCoverChoices((cur) => [...(cur ?? []), coverChoice])
           }}
           onClose={() => setPendingMatches(null)}
+        />
+      )}
+
+      {/* Held back while the match dialog is up. Settling a match adds cover choices to
+          this same list, so raising them one at a time on top of the dialog that is
+          producing them would put a second question over the one being answered — and
+          the natural order is the other way round anyway: first what a game *is*, then
+          which picture of it to keep. */}
+      {!pendingMatches && coverChoices && coverChoices.length > 0 && (
+        <CoverChoiceDialog
+          choices={coverChoices}
+          showAdult={settings.adultTags}
+          onSettled={(game) => setGames((cur) => cur.map((g) => (g.id === game.id ? game : g)))}
+          onClose={() => setCoverChoices(null)}
         />
       )}
 

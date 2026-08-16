@@ -200,10 +200,17 @@ about a story, and only a catalogue has them.
   together**. Splitting it into two buttons meant two trips for one answer, and a library
   where half of what the record held had been fetched and half had not. **Manual only** —
   scanning, refreshing and launching never go near the network.
-  **A cover you set yourself is never overwritten** — a batch skips it and says how many it
-  skipped; only picking one game out of its own menu replaces its cover, because that is
-  unambiguous about which game is meant. Image downloads have their own switch, so you can
-  keep the tags without them
+  Image downloads have their own switch, so you can keep the tags without them
+- **A cover you set yourself is never replaced automatically — but you get to see the other
+  one** — when a game already carries a cover you chose and the catalogue has one too, both
+  are kept and a dialog puts them **side by side** at the end of the run for you to pick.
+  Nothing on disk changes before you do: the catalogue's picture is only parked in the app's
+  own data directory, and keeping yours — or simply closing the dialog — deletes it and
+  leaves the library exactly as it was. It used to be two rules and both were wrong the same
+  way: a batch skipped those covers silently and a single lookup replaced them silently, and
+  each decided **without anybody having seen the two pictures**. Adopting a work from the
+  manual search box takes the same route. A picture marked R18 is blurred here too, under
+  the same switch as the tiles
 - **What the work is, noted down while it is there** — the same record also carries the
   **original Japanese name, the Chinese name, the release date and the brand or circle**. They
   are kept, shown under *The work* in the details panel, and the work number is a link that
@@ -272,6 +279,11 @@ about a story, and only a catalogue has them.
   only dropping on a tile's **centre** merges the two into a group. Group tiles are drawn as
   folders and **open on double-click**. Groups only affect the arrangement inside the launcher
   and **never move a single file on disk**
+- **Folders can be dragged and renamed too** — pick a folder tile up and carry it to reorder
+  the folders among themselves; nothing else on the shelf moves, because this is rearranging
+  the shelf rather than what is on it. Renaming is on a folder's right-click menu, and on the
+  title bar once the folder is open — which is where you are standing when you decide the name
+  is wrong. The built-in *Not installed* folder can be moved but not renamed or dissolved
 - **Sorting** — manual / name / size / installed·modified time / last played / playtime,
   switchable from the top bar. Under manual sorting, drag tiles wherever you want them
 - **Search knows the other names** — besides the name on the tile, the search box answers to
@@ -371,6 +383,13 @@ about a story, and only a catalogue has them.
 - **Themes** — Sakura (default) / Night Sakura (dark) / Miku / Matcha / Sea Salt / Lavender.
   All driven by CSS custom properties, so switching themes recolours even the generated
   placeholder tiles and the falling petals
+- **The petals drop to 8fps when the window is not in front** — a launcher spends most of its
+  life behind the game it launched. A browser only throttles itself when a window is *hidden*
+  (minimised, or on another virtual desktop); merely losing focus, or being covered by a
+  fullscreen game, still buys sixty canvas frames a second for something nobody is looking at.
+  The petals move against **elapsed time** rather than frame count, so throttling does not
+  change how fast they fall — only how many places they are drawn along the way — and full
+  rate returns the moment you come back
 - **Chinese and English** — the interface, launch errors, diagnosis findings and the sidecar
   written into the game folder all follow the language you pick. The sidecar is parsed in both
   languages, so a file written before you switched does not stop working

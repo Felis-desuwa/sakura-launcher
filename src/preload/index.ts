@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   Breakdown,
+  CoverChoice,
   Diagnosis,
   DiskInfo,
   DownloaderKey,
@@ -51,8 +52,13 @@ export interface TagRunResult {
   covers?: number
   /** Descriptions brought back. Fewer than the covers, routinely — many works have no Chinese one. */
   summaries?: number
-  /** Covers left alone because the user had chosen those themselves. */
-  keptUser?: number
+  /**
+   * Games that had a cover of the user's own and were offered another.
+   *
+   * Nothing was written for these: both pictures exist and the user picks between them.
+   * Collected across the run and put up once, like `pending`.
+   */
+  coverChoices?: CoverChoice[]
   /** Title searches too uncertain to adopt — the user settles these. */
   pending?: PendingMatch[]
   /** Every lookup failed, so the UI can say so once rather than per game. */
@@ -199,7 +205,16 @@ const api = {
    * match on its own.
    */
   searchWorks: (query: string): Promise<WorkMatch[]> => ipcRenderer.invoke('tags:search', query),
-  applyMatch: (gameId: string, match: WorkMatch): Promise<Game | undefined> =>
+  /**
+   * Adopt the work the user picked, and everything on its record.
+   *
+   * Comes back with a cover choice when this game already had one somebody set by hand:
+   * naming the work is not the same act as agreeing to a different picture.
+   */
+  applyMatch: (
+    gameId: string,
+    match: WorkMatch
+  ): Promise<{ game?: Game; coverChoice?: CoverChoice }> =>
     ipcRenderer.invoke('tags:applyMatch', gameId, match),
   setTagHidden: (gameId: string, tagId: string, hidden: boolean): Promise<Game | undefined> =>
     ipcRenderer.invoke('tags:setHidden', gameId, tagId, hidden),
@@ -251,6 +266,19 @@ const api = {
   breakdown: (dir: string): Promise<Breakdown | null> => ipcRenderer.invoke('game:breakdown', dir),
   setCover: (id: string): Promise<Game | undefined | null> => ipcRenderer.invoke('game:setCover', id),
   clearCover: (id: string): Promise<Game | undefined> => ipcRenderer.invoke('game:clearCover', id),
+
+  /**
+   * Settle one cover the catalogue offered against the one already on the tile.
+   *
+   * `take` is the entire message — the picture being offered is known in the main process
+   * and never named from here, so this cannot be talked into writing an arbitrary file
+   * over somebody's cover. Either answer ends the offer and deletes the holding file.
+   */
+  chooseCover: (gameId: string, take: boolean): Promise<Game | undefined> =>
+    ipcRenderer.invoke('covers:choose', gameId, take),
+  /** Walk away from the rest of them: nothing chosen means nothing changes. */
+  dropCoverChoices: (gameIds: string[]): Promise<boolean> =>
+    ipcRenderer.invoke('covers:drop', gameIds),
 
   planUninstall: (id: string): Promise<UninstallPlan | null> =>
     ipcRenderer.invoke('uninstall:plan', id),

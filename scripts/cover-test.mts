@@ -4,7 +4,7 @@ import {
   coverFromDlsite,
   coverFromVndb,
   coverSourceOf,
-  mayReplaceCover,
+  coverVerdict,
   mayReplaceSummary,
   sniffImage,
   MAX_COVER_BYTES
@@ -169,10 +169,17 @@ eq('an absurdly large image is refused even though it is an image', acceptCover(
 /* -------------------------------------------------------------------------- */
 console.log("\n== a cover the user chose is the user's ==")
 
-check('a batch leaves a hand-picked cover alone', mayReplaceCover('user', 'bulk') === false)
-check('but one game picked from its own menu replaces it', mayReplaceCover('user', 'single') === true)
-check('a catalogue cover is replaceable in a batch', mayReplaceCover('vndb', 'bulk') === true)
-check('so is a game with no cover at all', mayReplaceCover(undefined, 'bulk') === true)
+/*
+ * The rule is no longer "skip it" or "replace it" but "put both up and ask", and the
+ * assertion that matters is that the *asking* is unconditional: there is no route — no
+ * scope, no menu entry, no batch — on which a cover somebody chose by hand is written
+ * over without them seeing the two pictures together first.
+ */
+eq('a hand-picked cover is put to the user', coverVerdict('user'), 'ask')
+eq('a VNDB cover is our own data, refreshed', coverVerdict('vndb'), 'replace')
+eq('so is a DLsite one', coverVerdict('dlsite'), 'replace')
+eq('a game with no cover has nothing to ask about', coverVerdict(undefined), 'replace')
+eq('and neither does one with an explicit nothing', coverVerdict(null), 'replace')
 
 /*
  * The library that predates `coverFrom`: a path and no source. Every one of those was set
@@ -191,9 +198,10 @@ eq(
   'dlsite'
 )
 eq('and no cover belongs to nobody', coverSourceOf({ coverPath: null }), undefined)
-check(
-  'so an old hand-picked cover survives a batch',
-  mayReplaceCover(coverSourceOf({ coverPath: 'C:\\pics\\a.png' }), 'bulk') === false
+eq(
+  'so an old hand-picked cover is never replaced silently either',
+  coverVerdict(coverSourceOf({ coverPath: 'C:\\pics\\a.png' })),
+  'ask'
 )
 
 /* -------------------------------------------------------------------------- */

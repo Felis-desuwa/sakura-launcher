@@ -677,9 +677,40 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     onReorder(ids)
   }
 
+  /**
+   * Put the dragged folders before or after `targetId`, and renumber every group.
+   *
+   * Renumbering rather than nudging one value keeps the stored order dense and total, so
+   * the next drag has no gaps to reason about — and the groups not on screen (an empty
+   * one has no tile) keep their place in the sequence rather than being pushed to the end
+   * by a number nobody could see.
+   */
+  const reorderGroups = (
+    sourceIds: string[],
+    targetId: string,
+    position: 'before' | 'after'
+  ): void => {
+    const all = [...groups].sort((a, b) => a.order - b.order)
+    const moving = all.filter((g) => sourceIds.includes(g.id))
+    if (moving.length === 0) return
+    const rest = all.filter((g) => !sourceIds.includes(g.id))
+    let to = rest.findIndex((g) => g.id === targetId)
+    if (to < 0) return // dropped onto one of the folders being dragged
+    if (position === 'after') to += 1
+    rest.splice(to, 0, ...moving)
+    onGroupsChange(rest.map((group, i) => ({ ...group, order: i })))
+  }
+
   /** Apply the drop the pointer landed on. Runs before the tile animates into place. */
   const commitDrop = (sourceIds: string[], landing: DropTarget | null): void => {
     if (sourceIds.length === 0 || landing === null) return
+
+    // A folder was dragged. Nothing about the games moves — this is the shelf being
+    // rearranged, not anything about what is on it.
+    if (landing.kind === 'folder') {
+      reorderGroups(sourceIds, landing.id, landing.hint)
+      return
+    }
 
     if (landing.kind === 'group') {
       sourceIds.forEach((id) => onPatch(id, { groupId: landing.id }))
@@ -739,7 +770,10 @@ export default function DesktopPage(props: Props): React.JSX.Element {
    * dragged tile now occupies, drawn as a hole, is the gap opening up.
    */
   const project = (list: Game[]): Game[] => {
-    if (drag.dragIds.length === 0) return list
+    // A folder in flight rearranges the folder row and nothing else; the games below it
+    // must sit perfectly still, or the whole grid appears to react to a drag that is not
+    // about them.
+    if (drag.dragIds.length === 0 || drag.dragKind !== 'game') return list
     // Nothing has been aimed at yet — the tile has only just been lifted, and the grid
     // should sit still until the pointer asks for room somewhere.
     const landing = drag.insertion
@@ -762,7 +796,25 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     return [...rest.slice(0, index), ...moving, ...rest.slice(index)]
   }
 
+  /** The same trick as `project`, for the folders across the top of the grid. */
+  const projectGroups = (
+    list: { group: Group; members: Game[] }[]
+  ): { group: Group; members: Game[] }[] => {
+    if (drag.dragIds.length === 0 || drag.dragKind !== 'group') return list
+    const landing = drag.insertion
+    if (landing === null || landing.kind !== 'folder') return list
+
+    const held = new Set(drag.dragIds)
+    const rest = list.filter((g) => !held.has(g.group.id))
+    const at = rest.findIndex((g) => g.group.id === landing.id)
+    if (at < 0) return rest
+    const moving = list.filter((g) => held.has(g.group.id))
+    const index = landing.hint === 'after' ? at + 1 : at
+    return [...rest.slice(0, index), ...moving, ...rest.slice(index)]
+  }
+
   const mainList = project(ungrouped)
+  const shownGroups = projectGroups(groupsWithMembers)
   const openMembers = openGroup
     ? project(groupsWithMembers.find((g) => g.group.id === openGroup)?.members ?? [])
     : []
@@ -773,7 +825,7 @@ export default function DesktopPage(props: Props): React.JSX.Element {
    * game leaving the tab it was filtered into.
    */
   const layoutKey = mainList.map((g) => g.id).join(',')
-  useFlip(gridRef, `${groupsWithMembers.length}:${layoutKey}`)
+  useFlip(gridRef, `${shownGroups.map((g) => g.group.id).join(',')}:${layoutKey}`)
   useFlip(drawerRef, openMembers.map((g) => g.id).join(','))
 
   const renderTile = (game: Game): React.JSX.Element => (
@@ -827,13 +879,15 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     >
 
       <div className="grid" ref={gridRef} style={{ ['--tile' as string]: `${tileSize}px` }}>
-        {groupsWithMembers.map(({ group, members }) => (
+        {shownGroups.map(({ group, members }) => (
           <GroupTile
             key={group.id}
             group={group}
             members={members}
             open={openGroup === group.id}
             highlighted={drag.target?.kind === 'group' && drag.target.id === group.id}
+            hole={drag.dragKind === 'group' && drag.dragIds.includes(group.id)}
+            onPointerDown={(e) => drag.start(e, group.id, 'group')}
             onToggle={() => setOpenGroup(openGroup === group.id ? null : group.id)}
             onContextMenu={(e) => {
               e.preventDefault()
@@ -856,19 +910,34 @@ export default function DesktopPage(props: Props): React.JSX.Element {
               subtitle={t('desk.gamesInGroup', { n: members.length })}
               onClose={() => setOpenGroup(null)}
               actions={
-                <button
-                  type="button"
-                  className="btn ghost"
-                  style={{ padding: '5px 12px', fontSize: 12 }}
-                  onClick={() => {
-                    members.forEach((m) => onPatch(m.id, { groupId: null }))
-                    onGroupsChange(groups.filter((g) => g.id !== group.id))
-                    setOpenGroup(null)
-                  }}
-                  disabled={group.builtin}
-                >
-                  {t('menu.dissolveGroup')}
-                </button>
+                <>
+                  {/* Renaming is also on the folder's own right-click menu. It is here as
+                      well because this is where somebody is when they decide the name is
+                      wrong — they have just opened the folder and are looking at what is
+                      in it, which is the thing the name is supposed to describe. */}
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    style={{ padding: '5px 12px', fontSize: 12 }}
+                    onClick={() => setGroupPrompt({ mode: 'rename', group })}
+                    disabled={group.builtin}
+                  >
+                    {t('menu.renameGroup')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    style={{ padding: '5px 12px', fontSize: 12 }}
+                    onClick={() => {
+                      members.forEach((m) => onPatch(m.id, { groupId: null }))
+                      onGroupsChange(groups.filter((g) => g.id !== group.id))
+                      setOpenGroup(null)
+                    }}
+                    disabled={group.builtin}
+                  >
+                    {t('menu.dissolveGroup')}
+                  </button>
+                </>
               }
             >
               <div
@@ -1045,6 +1114,9 @@ interface GroupTileProps {
   members: Game[]
   open: boolean
   highlighted: boolean
+  /** Lifted out of the grid by a drag: drawn as the hole it will drop back into. */
+  hole: boolean
+  onPointerDown: (e: React.PointerEvent) => void
   onToggle: () => void
   onContextMenu: (e: React.MouseEvent) => void
 }
@@ -1054,19 +1126,33 @@ function GroupTile({
   members,
   open,
   highlighted,
+  hole,
+  onPointerDown,
   onToggle,
   onContextMenu
 }: GroupTileProps): React.JSX.Element {
   const t = useT()
   const shown = members.slice(0, 4)
+  const classes = [
+    'tile',
+    'group-tile',
+    highlighted ? 'drop-target' : '',
+    hole ? 'dragging' : '',
+    open ? 'selected' : ''
+  ]
+    .filter(Boolean)
+    .join(' ')
   return (
     <button
       type="button"
-      className={`tile group-tile${highlighted ? ' drop-target' : ''}${open ? ' selected' : ''}`}
+      className={classes}
       // The drag hook hit-tests against these attributes rather than listening for
-      // dragover, so a group can take a drop without any handlers of its own.
+      // dragover, so a group can take a drop without any handlers of its own — and,
+      // since the same attribute is how a folder is found when it is the thing being
+      // carried, be dragged without any either.
       data-group-id={group.id}
       data-flip-id={`group-${group.id}`}
+      onPointerDown={onPointerDown}
       onDoubleClick={onToggle}
       onContextMenu={onContextMenu}
       title={t('group.tileTitle', { name: group.name })}
