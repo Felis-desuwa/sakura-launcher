@@ -81,6 +81,14 @@ interface Props {
    * leaves a hand-picked cover alone, while one game chosen from its own menu replaces it.
    */
   onFetchWork: (games: Game[], scope: 'single' | 'bulk') => void
+  /**
+   * Throw away what a catalogue said about these games — the work record, the genre tags,
+   * the description, and a cover it supplied — and keep everything the user put there.
+   *
+   * For the case a lookup cannot fix: the catalogue answered, the answer was wrong, and
+   * there is no right answer to be had. Offered only where `hasFetchedData` is true.
+   */
+  onClearWork: (games: Game[]) => void
   /** Whether the catalogue is switched on at all — no menu entry offers what is refused. */
   onlineTags: boolean
   /** Same idea for upscaling: with the master switch off the submenu explains itself. */
@@ -116,6 +124,22 @@ type MenuState =
   | { kind: 'blank'; x: number; y: number }
   | { kind: 'group'; x: number; y: number; group: Group }
   | null
+
+/**
+ * Whether a catalogue has ever put anything on this game.
+ *
+ * Gates the entry that takes it all back, so that entry never appears on a game there is
+ * nothing to take back from. A cover counts only when the catalogue supplied it — one the
+ * user chose is not part of what a lookup did and is not part of what undoing one removes.
+ */
+function hasFetchedData(game: Game): boolean {
+  return (
+    Boolean(game.work) ||
+    (game.autoTags?.length ?? 0) > 0 ||
+    Boolean(game.summary) ||
+    Boolean(game.coverPath && game.coverFrom && game.coverFrom !== 'user')
+  )
+}
 
 function sortGames(games: Game[], key: SortKey): Game[] {
   const list = [...games]
@@ -456,23 +480,37 @@ export default function DesktopPage(props: Props): React.JSX.Element {
           label: t('menu.diagnose'),
           disabled: game.missing,
           onClick: () => props.onDiagnose(game)
-        }
+        },
+        { type: 'separator' }
       )
     }
+
+    // What this game is called and what it is known to be. Everything in this block edits
+    // a label rather than a file: the name, the tags, the picture, the record behind them.
     items.push(
-      { label: t('menu.browse'), onClick: () => props.onBrowse(game) },
-      { label: t('menu.setCover'), onClick: () => props.onSetCover(game.id) },
-      ...(game.coverPath ? [{ label: t('menu.clearCover'), onClick: () => props.onClearCover(game.id) }] : []),
       { label: t('menu.rename'), onClick: () => props.onRename(game) },
       { label: t('menu.editTags'), onClick: () => props.onEditTags(game) },
-      // One game, so this replaces a cover the user set: choosing this game out of its own
-      // menu is not ambiguous about which cover is meant.
+      { label: t('menu.setCover'), onClick: () => props.onSetCover(game.id) },
+      ...(game.coverPath
+        ? [{ label: t('menu.clearCover'), onClick: () => props.onClearCover(game.id) }]
+        : []),
+      // The three catalogue entries run together and in this order: ask, ask differently,
+      // and take it all back. The last one is only offered when there is something to take
+      // back, so it never sits there as a trap on a game that was never looked up.
       ...(props.onlineTags
         ? [{ label: t('menu.fetchWork'), onClick: () => props.onFetchWork([game], 'single') }]
         : []),
-      { label: t('menu.matchWork'), onClick: () => props.onMatchWork(game) }
+      { label: t('menu.matchWork'), onClick: () => props.onMatchWork(game) },
+      ...(hasFetchedData(game)
+        ? [{ label: t('menu.clearWork'), onClick: () => props.onClearWork([game]) }]
+        : []),
+      { type: 'separator' }
     )
 
+    // Things that go and touch files. `browse` belongs here and not up among the labels —
+    // it opens the folder, which is the same subject as packing it up or copying a save
+    // out of it.
+    items.push({ label: t('menu.browse'), onClick: () => props.onBrowse(game) })
     // Archives are already a file you can send; a missing folder has nothing to pack.
     if (game.kind !== 'archive') {
       items.push(
@@ -489,12 +527,11 @@ export default function DesktopPage(props: Props): React.JSX.Element {
         }
       )
     }
+    items.push({ type: 'separator' })
 
+    // Where the tile sits. Same order as the selection menu — move first, then leave.
     if (useGroups) {
       const targets = groups.filter((g) => g.id !== game.groupId && g.id !== ARCHIVE_GROUP_ID)
-      if (game.groupId) {
-        items.push({ label: t('menu.leaveGroup'), onClick: () => onPatch(game.id, { groupId: null }) })
-      }
       if (targets.length > 0) {
         items.push({
           label: t('menu.moveToGroup'),
@@ -504,10 +541,13 @@ export default function DesktopPage(props: Props): React.JSX.Element {
           }))
         })
       }
+      if (game.groupId) {
+        items.push({ label: t('menu.leaveGroup'), onClick: () => onPatch(game.id, { groupId: null }) })
+      }
+      if (targets.length > 0 || game.groupId) items.push({ type: 'separator' })
     }
 
     items.push(
-      { type: 'separator' },
       { label: t('menu.removeTile'), onClick: () => props.onRemoveTile([game]) },
       { label: t('menu.uninstall'), danger: true, onClick: () => onUninstall([game]) }
     )
@@ -548,15 +588,24 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     }
 
     // Catalogue work over a selection. The count is on the label because this is a run of
-    // paced network requests and the number is how long it will take.
-    if (props.onlineTags && targets.length > 0) {
-      items.push(
-        {
+    // paced network requests and the number is how long it will take. Undoing one costs
+    // no requests at all, so its count is there for the opposite reason: to say how much
+    // is about to be thrown away.
+    const fetched = targets.filter(hasFetchedData)
+    if ((props.onlineTags && targets.length > 0) || fetched.length > 0) {
+      if (props.onlineTags && targets.length > 0) {
+        items.push({
           label: t('menu.fetchWorkN', { n: targets.length }),
           onClick: () => props.onFetchWork(targets, 'bulk')
-        },
-        { type: 'separator' }
-      )
+        })
+      }
+      if (fetched.length > 0) {
+        items.push({
+          label: t('menu.clearWorkN', { n: fetched.length }),
+          onClick: () => props.onClearWork(fetched)
+        })
+      }
+      items.push({ type: 'separator' })
     }
 
     // One archive per game, so the count is worth saying out loud.
@@ -595,6 +644,7 @@ export default function DesktopPage(props: Props): React.JSX.Element {
       }
       items.push({ type: 'separator' })
     }
+
 
     items.push(
       { label: t('menu.removeTileN', { n: targets.length }), onClick: () => props.onRemoveTile(targets) },

@@ -218,6 +218,17 @@ const api = {
     ipcRenderer.invoke('tags:applyMatch', gameId, match),
   setTagHidden: (gameId: string, tagId: string, hidden: boolean): Promise<Game | undefined> =>
     ipcRenderer.invoke('tags:setHidden', gameId, tagId, hidden),
+
+  /**
+   * Undo a lookup: drop the work record, the genre tags, the description and a cover the
+   * catalogue supplied, and leave everything the user put there.
+   *
+   * For a game the catalogue got wrong and has no right answer for. Returns the games as
+   * they now stand. The games stay marked as already-asked, so a library-wide pass will
+   * not simply fetch the same wrong record again.
+   */
+  clearWorkData: (gameIds: string[]): Promise<Game[]> =>
+    ipcRenderer.invoke('tags:clearWork', gameIds),
   onTagProgress: (cb: (progress: TagProgress) => void): (() => void) => {
     const handler = (_e: unknown, progress: TagProgress): void => cb(progress)
     ipcRenderer.on('tags:progress', handler)

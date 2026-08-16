@@ -1693,6 +1693,16 @@ export const MESSAGES = {
   /* ---- covers from a catalogue ---- */
   'menu.fetchWork': { zh: '联网获取资料', en: 'Fetch from catalogue' },
   'menu.fetchWorkN': { zh: '联网获取资料（{n} 个）', en: 'Fetch from catalogue ({n})' },
+  /** Only ever offered on a game a catalogue has actually put something on. */
+  'menu.clearWork': { zh: '清除获取的资料', en: 'Clear fetched details' },
+  'menu.clearWorkN': {
+    zh: '清除获取的资料（{n} 个）',
+    en: 'Clear fetched details ({n})'
+  },
+  'toast.workCleared': {
+    zh: '已清除 {n} 个游戏获取来的资料 —— 题材标签、简介、作品信息和目录站封面。你自己打的标签、名字、评分和时长都还在。这些游戏不会再被「整库获取」自动查一遍，想重查就单独右键。',
+    en: 'Cleared the fetched details on {n} game(s) — genre tags, description, work record and the catalogue’s cover. Your own tags, name, rating and playtime are untouched. A library-wide pass will not look these up again; ask from the tile’s own menu if you want it retried.'
+  },
   'covers.toChoose': {
     zh: '，{n} 个游戏的封面等你挑',
     en: ', {n} covers for you to choose between'
@@ -1705,6 +1715,8 @@ export const MESSAGES = {
     en: 'On the left, what is on the tile now; on the right, what this lookup brought back. Any cover already there earns the question, whatever put it there — you have been looking at one of these and the other is a stranger. Nothing on disk changes until you pick, and choosing nothing changes nothing. Identical pictures are not put to you.'
   },
   'cover.mine': { zh: '你现在用的', en: 'On the tile now' },
+  /** Most covers on a shelf were fetched, so calling this side "yours" would usually lie. */
+  'cover.mineFrom': { zh: '你现在用的（来自 {source}）', en: 'On the tile now (from {source})' },
   'cover.theirs': { zh: '{source} 上的', en: 'From {source}' },
   'cover.keep': { zh: '保留这张', en: 'Keep this one' },
   'cover.take': { zh: '换成这张', en: 'Use this one' },
@@ -1715,8 +1727,6 @@ export const MESSAGES = {
   'cover.blurNote': {
     zh: '标了 R18 的封面在这里也打码，跟磁贴上一样；设置里打开就能看清。',
     en: 'Covers marked R18 are blurred here as they are on the tile; the setting shows them.'
-  /** Most covers on a shelf were fetched, so calling this side "yours" would usually lie. */
-  'cover.mineFrom': { zh: '你现在用的（来自 {source}）', en: 'On the tile now (from {source})' },
   },
   'drawer.summary': { zh: '简介', en: 'Description' },
   /** Named, because it is the one paragraph in the drawer this program did not write. */

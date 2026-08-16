@@ -76,6 +76,7 @@ import {
 import {
   applyMatch,
   cancelTagRun,
+  clearWorkData,
   computeTags,
   pendingTargets,
   searchWorks,
@@ -489,6 +490,15 @@ function registerIpc(): void {
   ipcMain.handle('tags:setHidden', (_e, gameId: string, tagId: string, hidden: boolean) =>
     setTagHidden(gameId, tagId, hidden)
   )
+
+  /**
+   * Throw away what a catalogue said about these games and keep everything else.
+   *
+   * Takes a list because the tile menu and the selection menu are the same act at two
+   * sizes, and doing it here rather than looping in the renderer means one flush and one
+   * `db:changed` for the whole batch.
+   */
+  ipcMain.handle('tags:clearWork', (_e, gameIds: string[]) => clearWorkData(gameIds))
 
   /**
    * Remove a tile from the library without touching anything on disk.

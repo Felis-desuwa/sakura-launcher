@@ -1,7 +1,8 @@
 import path from 'node:path'
 import type { CoverChoice, Game, PendingMatch, WorkMatch } from '../shared/types'
 import { workRecordOf } from '../shared/types'
-import { applyCover, applySummary } from './covers'
+import { coverSourceOf } from './cover-rules.ts'
+import { applyCover, applySummary, discardCover, dropCoverCandidates } from './covers'
 import * as db from './db'
 import { writeGameSidecar } from './sidecar-sync'
 import { displayNameFor } from './scan-core'
@@ -435,6 +436,62 @@ export async function applyMatch(
   if (updated) writeGameSidecar(updated)
   db.flush()
   return { game: updated, coverChoice }
+}
+
+/**
+ * Put a game back to knowing nothing about what work it is.
+ *
+ * The case this exists for: the catalogue answered, the answer was wrong, and there is no
+ * right answer to be had — a doujin release nothing indexes, a folder whose name matched
+ * some other studio's game. Until now the only way out was to strike the tags out one at a
+ * time, clear the cover separately, and leave the description standing, because nothing
+ * could remove a description at all.
+ *
+ * **Only what a catalogue supplied comes off.** The tags the user typed, the name, the
+ * rating, the status flags, the playtime and a cover they chose themselves all stay: none
+ * of them came from the record that was wrong. That is also why the cover is checked
+ * against `coverSourceOf` rather than simply deleted — a hand-picked picture has nothing
+ * to do with the lookup being a mistake.
+ *
+ * **`taggedAt` deliberately stays set.** It records that this game has been asked about,
+ * and a library-wide pass looks up exactly the games that have not been. Clearing it would
+ * mean the next such pass fetches the same wrong record straight back — the user would
+ * have to undo this every time. The game can still be looked up on purpose from its own
+ * menu, which is the route somebody takes when they think the answer will be different.
+ *
+ * Written out to the sidecar at once: the file beside the game is where a lookup was
+ * recorded, so leaving it there would have the next sync read the record back in.
+ */
+export function clearWorkData(gameIds: string[]): Game[] {
+  const out: Game[] = []
+  for (const id of gameIds) {
+    const game = db.findGame(id)
+    if (!game) continue
+
+    // An offer waiting to be answered was made by the record being thrown out.
+    dropCoverCandidates([id])
+
+    const theirs = Boolean(game.coverPath) && coverSourceOf(game) !== 'user'
+    if (theirs) discardCover(game)
+
+    const updated = db.updateGame(id, {
+      autoTags: [],
+      // Strikeouts only ever applied to the tags above. Left behind they would silently
+      // hide a tag that came back from some later, correct lookup, on the strength of a
+      // decision the user made about a different work entirely.
+      hiddenTags: [],
+      work: undefined,
+      summary: undefined,
+      summaryFrom: undefined,
+      summaryTranslated: undefined,
+      ...(theirs ? { coverPath: null, coverFrom: undefined, coverAdult: undefined } : {})
+    })
+    if (!updated) continue
+    writeGameSidecar(updated)
+    out.push(updated)
+  }
+  db.flush()
+  return out
 }
 
 /**

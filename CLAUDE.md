@@ -258,6 +258,13 @@ These come from user decisions and are load-bearing. Violating one is a bug even
   file gets written is known only in the main process; and an offer left unanswered costs
   nothing, because closing the dialog drops it and `sweepCoverCandidates()` clears at startup
   whatever a killed session left behind.
+  **Undoing a lookup keeps `taggedAt`.** `clearWorkData` drops the work record, the auto
+  tags, the hidden-tag strikeouts that only applied to them, the description and a cover the
+  catalogue supplied — and nothing the user put there, which is why the cover is checked
+  against `coverSourceOf` first. But it leaves `taggedAt` set, because `pendingTargets`
+  selects the games *without* it: clearing that too would have the next library-wide pass
+  fetch the same wrong record back, and the user undoing it again every time. The route back
+  is the game's own menu, which is what somebody uses when they expect a different answer.
   **Chinese only on screen.** A blurb that reads as Japanese (`isChineseText`) is
   machine-translated and **labelled as translated** — `summaryTranslated`, shown in the drawer
   and written into the sidecar. Dropping those was the original rule and it was wrong in

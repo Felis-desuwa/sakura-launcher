@@ -748,6 +748,13 @@ export default function App(): React.JSX.Element {
             }
             onRename={setRenaming}
             onFetchWork={(targets, scope) => void computeTags(targets.map((g) => g.id), scope)}
+            onClearWork={async (targets) => {
+              const cleared = await window.sakura.clearWorkData(targets.map((g) => g.id))
+              if (cleared.length === 0) return
+              const byId = new Map(cleared.map((g) => [g.id, g]))
+              setGames((cur) => cur.map((g) => byId.get(g.id) ?? g))
+              toast(tr('toast.workCleared', { n: cleared.length }))
+            }}
             onlineTags={settings.onlineTags}
             magpieOn={settings.magpie}
             magpieMode={settings.magpieMode}

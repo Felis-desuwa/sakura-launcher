@@ -201,16 +201,28 @@ about a story, and only a catalogue has them.
   where half of what the record held had been fetched and half had not. **Manual only** —
   scanning, refreshing and launching never go near the network.
   Image downloads have their own switch, so you can keep the tags without them
-- **A cover you set yourself is never replaced automatically — but you get to see the other
-  one** — when a game already carries a cover you chose and the catalogue has one too, both
-  are kept and a dialog puts them **side by side** at the end of the run for you to pick.
-  Nothing on disk changes before you do: the catalogue's picture is only parked in the app's
-  own data directory, and keeping yours — or simply closing the dialog — deletes it and
-  leaves the library exactly as it was. It used to be two rules and both were wrong the same
-  way: a batch skipped those covers silently and a single lookup replaced them silently, and
-  each decided **without anybody having seen the two pictures**. Adopting a work from the
-  manual search box takes the same route. A picture marked R18 is blurred here too, under
-  the same switch as the tiles
+- **Any cover already on a tile is put to you first** — when a game already has a cover and
+  the catalogue brings back another, both are kept and a dialog puts them **side by side** at
+  the end of the run for you to pick. **Whatever put the first one there** — you, or an
+  earlier lookup. Where a picture came from says nothing about which one you would rather
+  look at: you have been living with one of them and the other is a stranger.
+  Nothing on disk changes before you pick: the catalogue's picture is only parked in the
+  app's own data directory, and keeping the old one — or simply closing the dialog — deletes
+  it and leaves the library exactly as it was. **Identical pictures are not put to you**
+  (compared byte for byte), since that is the ordinary result of looking one game up twice.
+  It used to be two rules and both were wrong the same way: a batch skipped hand-picked
+  covers silently and a single lookup replaced them silently, and each decided **without
+  anybody having seen the two pictures**. Adopting a work from the manual search box takes
+  the same route. A picture marked R18 is blurred here too, under the same switch as the
+  tiles
+- **A lookup can be taken back whole** — when the catalogue identified the wrong work and
+  there is no right entry online to correct it with, *Clear fetched details* on the tile's
+  menu removes everything that lookup put there: the genre tags, the description, the work
+  record and the cover the catalogue supplied. **Only what the catalogue supplied** — your
+  own tags, the name you gave it, the rating, the playtime and a cover you chose yourself
+  all stay. The game is then **left out of library-wide passes**, since one would otherwise
+  fetch the same wrong record straight back; ask again from that game's own menu if you
+  think the answer will differ. Works over a selection too
 - **What the work is, noted down while it is there** — the same record also carries the
   **original Japanese name, the Chinese name, the release date and the brand or circle**. They
   are kept, shown under *The work* in the details panel, and the work number is a link that
