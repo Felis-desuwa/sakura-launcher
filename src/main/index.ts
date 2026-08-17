@@ -28,6 +28,7 @@ import {
   clearFinishedDownloads,
   detectDownloader,
   onDownloadsChanged,
+  onMultiArchive,
   resumeDownloads,
   shutdownDownloads,
   startDownload
@@ -1183,6 +1184,7 @@ app.whenReady().then(() => {
   )
   // The list is short enough that pushing it whole beats tracking what changed.
   onDownloadsChanged(() => mainWindow?.webContents.send('download:changed', db.getDownloads()))
+  onMultiArchive((notice) => mainWindow?.webContents.send('download:multiArchive', notice))
   createWindow()
   splashStage(t('splash.arranging'))
   // Downloads outlive the app: one still running belongs to another process, so pick

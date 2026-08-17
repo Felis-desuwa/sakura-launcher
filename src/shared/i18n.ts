@@ -1303,6 +1303,21 @@ export const MESSAGES = {
   'dl.archiveTrashed': { zh: '，压缩包已移入回收站', en: '. The archive went to the recycle bin' },
   'dl.archiveNotTrashed': { zh: '，但压缩包未能移入回收站', en: '. The archive could not be moved to the recycle bin' },
   'dl.dirAdded': { zh: '。下载目录已加入扫描列表', en: '. The download folder has joined the scan list' },
+  'dl.multiSetNote': {
+    zh: '下载完成，但里面是 {n} 套互不相关的压缩包，未自动解压 —— 请手动挑选要解压的那一套',
+    en: 'Downloaded, but it is {n} unrelated archives rather than one, so nothing was extracted — pick the one to extract by hand'
+  },
+
+  /* ---- several archives instead of one ---- */
+  'multiArchive.title': { zh: '这是多套压缩包', en: 'This is several archives' },
+  'multiArchive.body': {
+    zh: '下载回来的是 {n} 套互不相关的压缩包，不是一套分卷。哪一套是游戏本体、哪些是补丁或附件，只有打开才知道，所以这里没有替你猜。请到文件夹里自己挑一套解压。',
+    en: 'The download came back as {n} unrelated archives, not one split set. Which is the game and which are patches or extras only shows once they are opened, so nothing here guessed for you. Open the folder and extract the one you want.'
+  },
+  'multiArchive.setLine': { zh: '{name}（{n} 卷）', en: '{name} ({n} volumes)' },
+  'multiArchive.setLineOne': { zh: '{name}', en: '{name}' },
+  'multiArchive.open': { zh: '打开文件夹', en: 'Open the folder' },
+  'multiArchive.ack': { zh: '知道了', en: 'Got it' },
 
   /* ---- launcher ---- */
   'launch.refused': {

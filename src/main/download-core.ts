@@ -160,7 +160,10 @@ export function listFiles(dir: string): FolderEntry[] {
 }
 
 export interface WatchState {
-  /** Names present before the download started; never ours. */
+  /**
+   * Names that are not this download's: what the folder held when it started, plus
+   * anything a sibling job in the same folder has since claimed — see `disownFiles`.
+   */
   baseline: Set<string>
   /** How many consecutive polls each candidate has looked identical. */
   stable: Map<string, { size: number; mtimeMs: number; ticks: number }>
@@ -171,6 +174,12 @@ export interface WatchVerdict {
   done: string[]
   /** Something is being written right now. */
   active: boolean
+  /**
+   * Every archive set that landed, largest first — present once anything settled.
+   * More than one means the download is not a single archive and picking one of them
+   * would be a guess.
+   */
+  sets?: string[][]
 }
 
 /** Consecutive identical polls before a file counts as finished. */
@@ -212,22 +221,57 @@ export function pollFolder(state: WatchState, entries: FolderEntry[]): WatchVerd
   if (settled.length === 0 || active) return { done: [], active: true }
 
   // Every settled archive volume must belong to a group that is entirely settled.
-  const archives = settled.filter(isArchiveFile)
-  if (archives.length === 0) return { done: settled.sort(), active: false }
+  const sets = archiveSets(settled)
+  if (sets.length === 0) return { done: settled.sort(), active: false }
 
+  // The largest set is reported as the download, but the rivals are handed up rather
+  // than dropped — see `archiveSets`. Choosing between them is not this function's call.
+  return { done: sets[0], active: false, sets }
+}
+
+/**
+ * Group archive file names into the sets 7-Zip would treat as one archive each.
+ *
+ * `X.7z.001`/`X.part2.rar` collapse to one set that gets extracted by handing 7-Zip the
+ * first volume. Several *unrelated* archives in one folder are several sets, and that is
+ * the case nothing can resolve on its own: a release that arrives as a 3 GB body plus
+ * five appendices looks, file for file, exactly like one archive plus five strangers.
+ * Returned largest first, each set in volume order.
+ */
+export function archiveSets(names: string[]): string[][] {
   const groups = new Map<string, string[]>()
-  for (const name of archives) {
+  for (const name of names) {
+    if (!isArchiveFile(name)) continue
     const key = archiveBaseName(name) as string
     groups.set(key, [...(groups.get(key) ?? []), name])
   }
-  // The largest group wins: a download is one logical archive, and anything else that
-  // happened to land in a shared folder meanwhile is not ours to extract.
-  const best = [...groups.values()].sort((a, b) => b.length - a.length)[0]
-  return { done: best.sort(), active: false }
+  return [...groups.values()]
+    .map((set) => set.sort())
+    .sort((a, b) => b.length - a.length || a[0].localeCompare(b[0]))
 }
 
 export function newWatchState(baseline: string[]): WatchState {
   return { baseline: new Set(baseline), stable: new Map() }
+}
+
+/**
+ * Take names out of this watcher's view for good, because another job owns them.
+ *
+ * A folder can be receiving more than one download at a time, and a baseline only
+ * records what was there when *that* job started. The one that started second never
+ * saw the first job's archive — IDM downloads into its own temp directory and moves the
+ * finished file into place afterwards — so when it finally lands it looks exactly like
+ * the file the second job is waiting for. Left alone, both jobs settle on the same
+ * archive and two 7-Zips write the same tree, each deleting files the other has open.
+ *
+ * So the moment a job settles on its files, every other watcher on that folder is told
+ * they are spoken for. Ownership is decided once, by whoever got there first.
+ */
+export function disownFiles(state: WatchState, names: Iterable<string>): void {
+  for (const name of names) {
+    state.baseline.add(name)
+    state.stable.delete(name)
+  }
 }
 
 /** The volume 7-Zip should be pointed at: the first part of a split set. */

@@ -9,9 +9,11 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import {
+  archiveSets,
   buildCommand,
   buildCustomArgs,
   checkUrl,
+  disownFiles,
   firstVolumeOf,
   isInProgressFile,
   newWatchState,
@@ -204,6 +206,100 @@ function poll(state: ReturnType<typeof newWatchState>, entries: FolderEntry[], t
 
 check('分卷取第一卷', firstVolumeOf(['g.7z.003', 'g.7z.001', 'g.7z.002']) === 'g.7z.001')
 check('没有压缩包时没有第一卷', firstVolumeOf(['setup.exe', 'readme.txt']) === null)
+
+/* --------------------------------------------------------- one set or several */
+
+section('分卷与分包的区别')
+
+check(
+  '分卷是一套',
+  archiveSets(['g.7z.001', 'g.7z.003', 'g.7z.002']).length === 1,
+  JSON.stringify(archiveSets(['g.7z.001', 'g.7z.003', 'g.7z.002']))
+)
+check(
+  '一套分卷按卷序交出',
+  archiveSets(['g.7z.003', 'g.7z.001', 'g.7z.002'])[0].join(',') === 'g.7z.001,g.7z.002,g.7z.003'
+)
+check('partN.rar 也是一套', archiveSets(['g.part1.rar', 'g.part2.rar']).length === 1)
+
+{
+  // The shape that started this: one release arriving as a body plus five appendices,
+  // every one of them a complete archive of its own.
+  const shipped = [
+    'サンプルゲーム 本体.rar',
+    'サンプルゲーム 追加1.rar',
+    'サンプルゲーム 追加2.rar',
+    'サンプルゲーム 追加3.rar',
+    'サンプルゲーム 特典.rar',
+    'サンプルゲーム 修正.rar'
+  ]
+  const sets = archiveSets(shipped)
+  check('六个独立压缩包是六套', sets.length === 6, String(sets.length))
+  check('每套都只有一卷', sets.every((s) => s.length === 1))
+}
+
+{
+  const mixed = archiveSets(['g.7z.001', 'g.7z.002', 'readme.zip'])
+  check('分卷与另一个包是两套', mixed.length === 2, String(mixed.length))
+  check('大的一套排在前面', mixed[0].length === 2, JSON.stringify(mixed[0]))
+}
+
+check('没有压缩包就没有分套', archiveSets(['setup.exe', 'readme.txt']).length === 0)
+
+{
+  const state = newWatchState([])
+  const result = poll(state, [entry('a.zip', 10), entry('b.zip', 20)], STABLE_TICKS)
+  check(
+    '判定结果里带上了所有分套',
+    result.sets !== undefined && result.sets.length === 2,
+    String(result.sets?.length)
+  )
+  check('done 仍然只是其中一套', result.done.length === 1, result.done.join(','))
+}
+
+/* ------------------------------------------------- two downloads, one folder */
+
+section('同一文件夹里的两个任务')
+
+{
+  // The bug this exists for: B starts while A is still downloading into its own temp
+  // directory, so A's finished archive is in nobody's baseline and looks like B's.
+  const a = newWatchState([])
+  const b = newWatchState(['b.7z.part'])
+
+  const both = [entry('a.7z', 100), entry('b.7z', 200)]
+  const forA = poll(a, both, STABLE_TICKS)
+  check('先落盘的一方按最大分组规则拿到了两个候选之一', forA.done.length === 1, forA.done.join(','))
+
+  // Without the claim, B settles on whatever group sorts first — which is A's.
+  const naive = newWatchState(['b.7z.part'])
+  check(
+    '不通知就会抢走别人的包',
+    poll(naive, both, STABLE_TICKS).done.join(',') === 'a.7z',
+    poll(newWatchState(['b.7z.part']), both, STABLE_TICKS).done.join(',')
+  )
+
+  disownFiles(b, forA.done)
+  const forB = poll(b, both, STABLE_TICKS)
+  check('认领之后各拿各的', forB.done.join(',') === 'b.7z', forB.done.join(','))
+  check('两边没有交集', forA.done.every((n) => !forB.done.includes(n)))
+}
+
+{
+  // Claiming mid-flight must also drop what the poller had already counted ticks for.
+  const state = newWatchState([])
+  poll(state, [entry('mine.zip', 10), entry('theirs.zip', 20)], STABLE_TICKS - 1)
+  disownFiles(state, ['theirs.zip'])
+  const result = poll(state, [entry('mine.zip', 10), entry('theirs.zip', 20)], STABLE_TICKS)
+  check('半路认领会清掉已经攒下的稳定计数', result.done.join(',') === 'mine.zip', result.done.join(','))
+}
+
+{
+  const state = newWatchState([])
+  disownFiles(state, ['g.7z.001'])
+  const result = poll(state, [entry('g.7z.001', 100), entry('g.7z.002', 100)], STABLE_TICKS)
+  check('被认领的分卷不会再被当作自己的', result.done.join(',') === 'g.7z.002', result.done.join(','))
+}
 
 /* ------------------------------------------------------------ against real files */
 

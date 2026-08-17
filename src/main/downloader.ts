@@ -2,14 +2,16 @@ import { shell } from 'electron'
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { DownloaderKey, PendingDownload } from '../shared/types'
+import type { DownloaderKey, MultiArchiveNotice, PendingDownload } from '../shared/types'
 import { downloadDirFor } from '../shared/types'
 import { defaultDestFor, extractArchive } from './archive'
 import * as db from './db'
 import { t } from './i18n'
 import {
+  archiveSets,
   buildCommand,
   checkUrl,
+  disownFiles,
   firstVolumeOf,
   listFiles,
   newWatchState,
@@ -40,6 +42,8 @@ const IDM_FALLBACKS = [
 
 interface Live {
   state: WatchState
+  /** The folder being watched. Kept here so a settling job can find its neighbours. */
+  dir: string
   child?: ChildProcess
   cancelExtract?: () => void
 }
@@ -48,8 +52,15 @@ const live = new Map<string, Live>()
 let timer: NodeJS.Timeout | null = null
 let notify: (() => void) | null = null
 
+let notifyMultiArchive: ((notice: MultiArchiveNotice) => void) | null = null
+
 export function onDownloadsChanged(fn: () => void): void {
   notify = fn
+}
+
+/** Told when a download turns out to be several archives — see `MultiArchiveNotice`. */
+export function onMultiArchive(fn: (notice: MultiArchiveNotice) => void): void {
+  notifyMultiArchive = fn
 }
 
 function emit(): void {
@@ -160,7 +171,7 @@ export async function startDownload(rawUrl: string, intoDir?: string): Promise<S
 }
 
 function launch(entry: PendingDownload, command: { exe: string; args: string[] } | null): void {
-  const handle: Live = { state: newWatchState(entry.baseline) }
+  const handle: Live = { state: newWatchState(entry.baseline), dir: entry.dir }
   live.set(entry.id, handle)
 
   if (!command) {
@@ -261,6 +272,45 @@ function tick(): void {
   stopTimerIfIdle()
 }
 
+/* ---------- keeping concurrent jobs out of each other's way ---------- */
+
+function sameFolder(a: string, b: string): boolean {
+  return path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase()
+}
+
+/** Tell every other watcher on this folder that these files are already spoken for. */
+function claimFiles(owner: string, dir: string, names: string[]): void {
+  for (const [otherId, other] of live) {
+    if (otherId === owner || !sameFolder(other.dir, dir)) continue
+    disownFiles(other.state, names)
+  }
+}
+
+/** Destination folders one of our 7-Zips is writing into right now. */
+const extractingInto = new Set<string>()
+
+function destKey(dir: string): string {
+  return path.resolve(dir).toLowerCase()
+}
+
+/**
+ * A destination no extraction of ours is already writing into.
+ *
+ * Two archives in one folder can name the same default target — `game.zip` and
+ * `game.7z` both reduce to `game` — and two 7-Zips over one tree is not a race that
+ * ends well: each deletes files the other has open and both report every entry failed.
+ * Different archives get different folders instead. This says nothing about a folder
+ * that merely already exists on disk; extracting into one of those is the normal case.
+ */
+function freeDestFor(firstVolume: string): string {
+  const base = defaultDestFor(firstVolume)
+  // Terminates: the set is finite, so one of the first `size + 1` suffixes is free.
+  for (let n = 1; ; n++) {
+    const candidate = n === 1 ? base : `${base} (${n})`
+    if (!extractingInto.has(destKey(candidate))) return candidate
+  }
+}
+
 /** A download has produced its files; take it the rest of the way. */
 function settle(id: string, trustProcess: boolean): void {
   const entry = db.getDownloads().find((d) => d.id === id)
@@ -269,16 +319,45 @@ function settle(id: string, trustProcess: boolean): void {
 
   const verdict = pollFolder(handle.state, listFiles(entry.dir))
   let files = verdict.done
+  // Every archive set that landed, not just the one `done` narrowed to — deciding
+  // whether narrowing was defensible needs the ones it dropped.
+  let sets = verdict.sets ?? []
   if (files.length === 0 && trustProcess) {
     // The process said it finished, so whatever is new in the folder is the result —
-    // the stability counter has not had time to run yet.
-    const baseline = new Set(entry.baseline)
+    // the stability counter has not had time to run yet. The watcher's baseline, not
+    // the entry's: that is the one carrying what a neighbouring job has claimed.
     files = listFiles(entry.dir)
       .map((f) => f.name)
-      .filter((n) => !baseline.has(n))
+      .filter((n) => !handle.state.baseline.has(n))
       .sort()
+    sets = archiveSets(files)
   }
   if (files.length === 0) return
+
+  // Several unrelated archives, not one split set. Which of them is the game — and
+  // whether the rest are patches, appendices or a second release entirely — is a
+  // question about the contents, and nothing here has read them. Extracting the
+  // largest and calling the job done was a guess, and a silent one.
+  if (sets.length > 1) {
+    const all = sets.flat()
+    claimFiles(id, entry.dir, all)
+    update(id, {
+      status: 'done',
+      percent: 100,
+      volumes: all.map((f) => path.join(entry.dir, f)),
+      message: t('dl.multiSetNote', { n: String(sets.length) })
+    })
+    notifyMultiArchive?.({
+      dir: entry.dir,
+      sets: sets.map((set) => ({ name: set[0], volumes: set.length }))
+    })
+    live.delete(id)
+    return
+  }
+
+  // Claim them before anything else can: `tick` walks the jobs in one pass, so a
+  // neighbour polled later in this same pass must already see these as not its own.
+  claimFiles(id, entry.dir, files)
 
   const first = firstVolumeOf(files)
   if (!first) {
@@ -298,11 +377,16 @@ function settle(id: string, trustProcess: boolean): void {
   const firstPath = path.join(entry.dir, first)
   update(id, { status: 'extracting', percent: 0, volumes })
 
+  const destDir = freeDestFor(firstPath)
+  const held = destKey(destDir)
+  extractingInto.add(held)
+
   const extract = extractArchive(
     firstPath,
-    defaultDestFor(firstPath),
+    destDir,
     (percent) => update(id, { percent }),
     (result) => {
+      extractingInto.delete(held)
       handle.cancelExtract = undefined
       if (!result.ok) {
         update(id, { status: 'failed', message: result.error ?? t('dlerr.extractFailed') })
@@ -387,12 +471,22 @@ export function clearFinishedDownloads(): void {
  * another process — so the folder is watched again rather than the job restarted. An
  * extract that was interrupted has no such luck and is marked failed, since half an
  * archive on disk is worse than an honest error.
+ *
+ * A resumed watcher also inherits the claims: a job that settled during the last run
+ * left its archive sitting in the folder, and it is not in the baseline of a job that
+ * started before it landed.
  */
 export function resumeDownloads(): void {
   let touched = false
-  for (const entry of db.getDownloads()) {
+  const all = db.getDownloads()
+  for (const entry of all) {
     if (entry.status === 'downloading') {
-      live.set(entry.id, { state: newWatchState(entry.baseline) })
+      const state = newWatchState(entry.baseline)
+      for (const other of all) {
+        if (other.id === entry.id || !other.volumes || !sameFolder(other.dir, entry.dir)) continue
+        disownFiles(state, other.volumes.map((v) => path.basename(v)))
+      }
+      live.set(entry.id, { state, dir: entry.dir })
       touched = true
     } else if (entry.status === 'extracting' || entry.status === 'importing') {
       db.upsertDownload({ ...entry, status: 'failed', message: t('dlerr.interrupted') })

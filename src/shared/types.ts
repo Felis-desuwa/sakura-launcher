@@ -958,6 +958,22 @@ export interface PendingDownload {
   volumes?: string[]
 }
 
+/**
+ * A download that came back as several separate archives rather than one.
+ *
+ * Raised instead of extracting. A split set — `X.7z.001`, `X.part2.rar` — is one archive
+ * and still goes through on its own; this is the other shape, where a release arrives as
+ * a body plus appendices and which one is the game is a question about the contents.
+ * Guessing produced a half-imported library, so the folder is handed to the user
+ * instead, and the notice stays on screen until it is acknowledged.
+ */
+export interface MultiArchiveNotice {
+  /** The folder holding them, so the user can be taken straight there. */
+  dir: string
+  /** One entry per archive set: the first volume's name, and how many volumes it has. */
+  sets: { name: string; volumes: number }[]
+}
+
 export interface Settings {
   /**
    * Interface language.

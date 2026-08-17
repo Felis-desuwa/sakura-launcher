@@ -8,6 +8,7 @@ import type {
   Game,
   Group,
   LaunchTrouble,
+  MultiArchiveNotice,
   PendingDownload,
   PendingMatch,
   Settings,
@@ -45,6 +46,7 @@ import { LangProvider } from './lib/i18n'
 import DesktopPage from './pages/DesktopPage'
 import DiskPage from './pages/DiskPage'
 import MatchDialog from './components/MatchDialog'
+import MultiArchiveCard from './components/MultiArchiveCard'
 import TagBar from './components/TagBar'
 import SettingsPage from './pages/SettingsPage'
 import TierPage from './pages/TierPage'
@@ -130,6 +132,12 @@ export default function App(): React.JSX.Element {
    * than the silence this replaces.
    */
   const [trouble, setTrouble] = useState<LaunchTroubleEvent | null>(null)
+  /**
+   * A download that turned out to be several archives. Held the same way and for the
+   * same reason: it is the only record of what landed, so it goes when it is dismissed
+   * and not before.
+   */
+  const [multiArchive, setMultiArchive] = useState<MultiArchiveNotice | null>(null)
   /** Games being packed up to send, with what the scan proposes leaving out. */
   const [sharing, setSharing] = useState<SharePlan[] | null>(null)
   /** Games whose saves are being copied out, with where each one's saves appear to be. */
@@ -237,6 +245,7 @@ export default function App(): React.JSX.Element {
       )
     })
     const offTrouble = window.sakura.onLaunchTrouble((payload) => setTrouble(payload))
+    const offMultiArchive = window.sakura.onMultiArchive((notice) => setMultiArchive(notice))
     // Translated here rather than where it was raised, so a notice arriving just after a
     // language change is already in the new one — the same reason `tr` exists at all.
     // None of these are failures of the launch: the game is running regardless.
@@ -255,6 +264,7 @@ export default function App(): React.JSX.Element {
       offDb()
       offPlaytime()
       offTrouble()
+      offMultiArchive()
       offMagpie()
     }
   }, [refresh, toast, tr])
@@ -1345,12 +1355,18 @@ export default function App(): React.JSX.Element {
         </div>
       )}
 
+      {/* The archive card shares this corner and sits at the bottom of the column, so
+          toasts stack above it rather than landing on top of the one notice that is
+          waiting to be read. It leaves on its button; they leave on a timer. */}
       <div className="toasts">
         {toasts.map((item) => (
           <div className={`toast${item.error ? ' error' : ''}`} key={item.id}>
             {item.message}
           </div>
         ))}
+        {multiArchive && (
+          <MultiArchiveCard notice={multiArchive} onClose={() => setMultiArchive(null)} />
+        )}
       </div>
     </div>
     </LangProvider>

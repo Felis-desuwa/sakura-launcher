@@ -348,7 +348,13 @@ about a story, and only a catalogue has them.
   archives with a confirmed extracted copy elsewhere, tickable for a bulk move to the Recycle
   Bin
 - **Downloads** — hand a link to IDM / aria2c / the system default / your own command line;
-  a finished archive lands in *Pending install* automatically
+  a finished archive lands in *Pending install* automatically. A **split set** — `X.7z.001`,
+  `X.part2.rar` — is one archive and still extracts on its own. But when the download comes
+  back as **several unrelated archives** (the usual release shape: a body, a patch, a bundle
+  of extras), nothing is extracted: a card appears in the bottom-right listing each one and
+  leaves the choice to you. Which is the game and which are patches only shows once they are
+  opened, and guessing wrong leaves a half-imported library. The card goes when you press its
+  button, not on a timer
 - **Pending install** — archive entries in the library. Right-click → *Extract* installs it;
   a double-click reminds you it is not installed yet
 - **Save backups** — right-click → *Back up saves…* copies the saves to a folder you choose

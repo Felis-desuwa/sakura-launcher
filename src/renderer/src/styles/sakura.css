@@ -2268,6 +2268,69 @@ input[type='range'] {
   align-items: flex-end;
 }
 
+/**
+ * A download that came back as several archives.
+ *
+ * Bottom-right, in the toast column and as its last child, so passing toasts stack
+ * above it instead of over it — no measuring, the flex column does it. It is a toast's
+ * neighbour, not a toast: it carries the only record of what landed and where, so it
+ * waits for its button rather than a timer. Same bargain as `.trouble-card`, which sits
+ * in the other corner only because this one was already spoken for.
+ */
+.archive-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 420px;
+  max-width: calc(100vw - 44px);
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  box-shadow: var(--shadow-lg);
+  animation: toast-in 0.2s ease;
+  text-align: left;
+}
+
+.archive-card > b {
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.archive-card-body {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.archive-card-list {
+  margin: 0;
+  padding: 8px 10px;
+  /* Six sets is the shape this exists for; past that it scrolls rather than grows. */
+  max-height: 168px;
+  overflow-y: auto;
+  list-style: none;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+
+/* One archive per line, never wrapped: a truncated name still identifies the file,
+   a name folded over three lines buries the next one. */
+.archive-card-list li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.8;
+}
+
+.archive-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .toast {
   padding: 11px 17px;
   border-radius: 12px;

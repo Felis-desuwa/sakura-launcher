@@ -10,6 +10,7 @@ import type {
   Group,
   LaunchTrouble,
   MagpieNotice,
+  MultiArchiveNotice,
   MagpieStatus,
   PendingDownload,
   RedundantArchive,
@@ -405,6 +406,15 @@ const api = {
     const handler = (_e: unknown, list: PendingDownload[]): void => cb(list)
     ipcRenderer.on('download:changed', handler)
     return () => ipcRenderer.off('download:changed', handler)
+  },
+  /**
+   * A download that came back as several archives instead of one. Nothing was
+   * extracted; the notice waits to be acknowledged rather than fading on a timer.
+   */
+  onMultiArchive: (cb: (notice: MultiArchiveNotice) => void): (() => void) => {
+    const handler = (_e: unknown, notice: MultiArchiveNotice): void => cb(notice)
+    ipcRenderer.on('download:multiArchive', handler)
+    return () => ipcRenderer.off('download:multiArchive', handler)
   },
 
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:pickFolder'),

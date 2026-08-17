@@ -276,6 +276,22 @@ These come from user decisions and are load-bearing. Violating one is a bug even
   a quality problem; showing the wrong game's Chinese is a lie, and it reads exactly like the
   truth. `translate.ts` fails whole: a half-translated blurb reads as a fault in the game's own
   description, so a failed chunk discards the attempt and the next service starts over.
+- **A download that is several archives is never extracted on a guess.** A split set —
+  `X.7z.001`, `X.part2.rar` — is one archive: 7-Zip is handed the first volume and picks up
+  the rest, and that still happens on its own. Several *unrelated* archive sets is the other
+  shape (`archiveSets` in `download-core.ts` tells them apart), and it is the ordinary way
+  these releases ship: a body, a patch, a bundle of extras. Which one is the game is a
+  question about the contents, and nothing here has opened them. The rule this replaced took
+  the largest set and extracted it silently, which is how a library ends up half-imported
+  with no record of what was skipped. Now nothing is extracted, every set is listed on a
+  card in the bottom-right corner, and the card goes when its button is pressed — not on a
+  timer, because it is the only record of what landed and where. `pollFolder` still narrows
+  `done` to one set, so **read `verdict.sets`, never `archiveSets(verdict.done)`** — the
+  latter is always one set by construction and quietly restores the old behaviour.
+  Two concurrent jobs in one folder are the related trap: a baseline only records what was
+  there when *that* job started, so the second job never saw the first one's archive and
+  adopts it when it lands. `settle` calls `claimFiles` before anything else for that reason,
+  and `freeDestFor` keeps two 7-Zips out of one destination tree even so.
 - **Diagnosis is read-only** and does not go over the network. It names the missing runtime; it does
   not fetch it.
 - **No hardcoded personal paths anywhere.** Scan roots start empty (`DEFAULT_SETTINGS.roots: []`),
