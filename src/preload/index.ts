@@ -9,9 +9,9 @@ import type {
   Game,
   Group,
   LaunchTrouble,
-  MagpieNotice,
   MultiArchiveNotice,
-  MagpieStatus,
+  UpscaleNotice,
+  UpscaleStatus,
   PendingDownload,
   RedundantArchive,
   Settings,
@@ -476,21 +476,41 @@ const api = {
     return () => ipcRenderer.off('launch:trouble', handler)
   },
 
-  magpieStatus: (): Promise<MagpieStatus> => ipcRenderer.invoke('magpie:status'),
+  /** Discriminated on `backend`, because the two have almost nothing to report in common. */
+  upscaleStatus: (): Promise<UpscaleStatus> => ipcRenderer.invoke('upscale:status'),
   /**
-   * The scaling modes Magpie's own config file holds — the built-in seven, plus anything
-   * the user assembled in its interface. Asked for rather than assumed, because that list
-   * is the one this program offers.
+   * The modes the current backend's own config file holds — Magpie's scaling modes, or the
+   * game profiles the user made in Lossless Scaling. Asked for rather than assumed,
+   * because that list is the one this program offers, and for Lossless Scaling an empty
+   * answer is meaningful: there is nothing there to choose yet.
    */
-  magpieModes: (): Promise<string[]> => ipcRenderer.invoke('magpie:modes'),
-  /** Open Magpie's own window: every scaling control this program does not put a knob on. */
-  openMagpieSettings: (): Promise<boolean> => ipcRenderer.invoke('magpie:open'),
-  revealMagpie: (): Promise<boolean> => ipcRenderer.invoke('magpie:reveal'),
-  /** Carries a message key, not a sentence — see `MagpieNotice`. */
-  onMagpieNotice: (cb: (notice: MagpieNotice) => void): (() => void) => {
-    const handler = (_e: unknown, notice: MagpieNotice): void => cb(notice)
-    ipcRenderer.on('magpie:notice', handler)
-    return () => ipcRenderer.off('magpie:notice', handler)
+  upscaleModes: (): Promise<string[]> => ipcRenderer.invoke('upscale:modes'),
+  /** Open the upscaler's own window: every control this program does not put a knob on. */
+  openUpscalerSettings: (): Promise<boolean> => ipcRenderer.invoke('upscale:open'),
+  revealUpscaler: (): Promise<boolean> => ipcRenderer.invoke('upscale:reveal'),
+  /**
+   * Point at a `LosslessScaling.exe`, or pass null to go back to finding it automatically.
+   *
+   * False means it was refused — the file is not there, or is not that executable — and
+   * nothing was stored. A bad path kept here would outrank the automatic route from then
+   * on and leave the feature aimed at nothing, with the control that could fix it showing
+   * the wrong path as though it were working.
+   */
+  pinLossless: (exe: string | null): Promise<boolean> =>
+    ipcRenderer.invoke('upscale:pinLossless', exe),
+  /**
+   * Measure the machine's displays again and hand back the fresh status.
+   *
+   * The only route that costs a query. `upscaleStatus` answers from a cache because the
+   * settings page polls it, so this is what the button behind that display block calls
+   * when the cache and the screen have gone out of step.
+   */
+  refreshDisplays: (): Promise<UpscaleStatus> => ipcRenderer.invoke('upscale:refreshDisplays'),
+  /** Carries a message key, not a sentence — see `UpscaleNotice`. */
+  onUpscaleNotice: (cb: (notice: UpscaleNotice) => void): (() => void) => {
+    const handler = (_e: unknown, notice: UpscaleNotice): void => cb(notice)
+    ipcRenderer.on('upscale:notice', handler)
+    return () => ipcRenderer.off('upscale:notice', handler)
   }
 }
 

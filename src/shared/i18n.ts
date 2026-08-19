@@ -875,18 +875,63 @@ export const MESSAGES = {
     en: 'When nothing has started a dozen seconds after a double-click, a small card appears in the corner; opening it gives the reason — a missing runtime, a demand for administrator rights, the wrong program picked. With this off you can still run Diagnose launch… from the right-click menu at any time.'
   },
 
-  /* ---- scaling the game's window with Magpie ---- */
-  'settings.magpieSection': { zh: '超分放大', en: 'Upscaling' },
+  /* ---- scaling the game's window ---- */
+  'settings.upscaleSection': { zh: '超分放大', en: 'Upscaling' },
   'settings.magpieNote': {
     zh: '用 Magpie 把游戏窗口实时放大到屏幕大小。老游戏常常只有 800×600，在高分屏上是邮票大的一块；这是把它撑开而不糊掉的办法。Magpie 是随本程序一起分发的独立程序（GPLv3），第一次开启时复制到本程序自己的目录，配置也只写在那里，不会碰你自己装的那一份。',
     en: "Magpie scales the game's window up to fill the screen in real time. These games are often 800×600, which is a postage stamp on a high-resolution display; this is how to fill it without turning it to mush. Magpie is a separate program shipped alongside this one (GPLv3). It is copied into this program's own folder the first time you switch this on, and configured only there — a copy you installed yourself is never touched."
   },
-  'settings.magpie': { zh: '启用超分放大', en: 'Scale game windows' },
-  'settings.magpieHint': {
-    zh: '关着就是关着：不复制、不起进程，单独设过的游戏也一样不放大。开着时，启动游戏会顺带把 Magpie 起起来，游戏关掉一两分钟后它自己退出。放大不成也不影响游戏照常运行；随时可以按 Alt+Shift+A 手动放大当前窗口。',
-    en: 'Off means off — nothing is copied, nothing runs, and games given their own setting stay unscaled too. When on, launching a game brings Magpie up with it, and it quits a minute or two after the game does. If scaling fails the game still runs; Alt+Shift+A scales the current window by hand at any time.'
+  'settings.upscale': { zh: '启用超分放大', en: 'Scale game windows' },
+  'settings.upscaleHint': {
+    zh: '关着就是关着：不复制、不起进程，单独设过的游戏也一样不放大。开着时，启动游戏会顺带把放大器起起来，游戏关掉一两分钟后它自己退出。放大不成也不影响游戏照常运行。',
+    en: 'Off means off — nothing is copied, nothing runs, and games given their own setting stay unscaled too. When on, launching a game brings the upscaler up with it, and it quits a minute or two after the game does. If scaling fails the game still runs.'
   },
-  'settings.magpieMode': { zh: '默认缩放模式', en: 'Default scaling mode' },
+  /* ---- the ready-made Lossless Scaling profiles ---- */
+  // Named for what they are for rather than for what they do, because the person choosing
+  // one has not read the algorithm names and should not have to. The cost each one carries
+  // is in the label itself: that is the only thing that separates them in practice.
+  'upscale.presetPerformance': { zh: '性能优先', en: 'Performance' },
+  'upscale.presetQuality': { zh: '画质优先', en: 'Quality' },
+  'upscale.presetUltra': { zh: '极致画质', en: 'Maximum quality' },
+  // The other axis. Named for the complaint they answer rather than for their algorithm,
+  // because "文字发虚" is what somebody notices and "SharpBilinear" is not.
+  //
+  // The integer one deliberately does **not** promise black bars. Whether there are any
+  // depends entirely on the arithmetic, and the most common case in this library has none:
+  // a 1280×720 engine on a 1440p screen is exactly 2×, which fills it edge to edge. Saying
+  // "has black bars" there would talk somebody out of the one preset that is pixel-perfect
+  // for their game.
+  'upscale.presetSharp': { zh: '锐利（推荐）', en: 'Sharp (recommended)' },
+  'upscale.presetInteger': {
+    zh: '整数倍（除不尽会完全不放大）',
+    en: 'Whole multiples (does nothing unless it divides)'
+  },
+  'upscale.presetGroup': { zh: '预设（本程序配好）', en: 'Presets (set up for you)' },
+  'upscale.profileGroup': { zh: '你自己建的配置', en: 'Your own profiles' },
+  'settings.losslessPresetHint': {
+    zh: '拿不准就选「**锐利**」—— 它先按整数倍放大再补余数，线条粗细一致、文字不变形、铺满屏幕，开销几乎为零，而且不挑分辨率。这个库里的游戏它基本都合适。\n\n「**画质优先 / 极致画质**」用 Anime4K，训练来放大**手绘动画画面**的，对立绘和背景有用，但**对文字层不友好** —— 文字是引擎实时渲染的，神经网络会给它加描边光晕、把笔画搞扭。文字多的游戏看着「怪」，多半就是这个原因。\n\n「**整数倍**」只用整数倍，倍率正好时是像素级还原，但**除不尽就一点都不放大** —— 它不会报错，只是悄悄按 1.00 倍输出。注意窗口边框也算在内：多出来的那几个像素足以让 2 倍塞不下，于是直接退回 1 倍。想用这档，得先让游戏窗口的**客户区**正好能整除。\n\n「**性能优先**」用锐化双三次，最省，什么都不挑。\n\n五档都**保持比例**（不然 4:3 拉成 16:9，脸会变宽）、**都关掉插帧**，并且**捕获方式都用 WGC**。最后这一项是为了鼠标：DXGI 抓到的桌面图像里不含光标，LS 只能自己画一个，而它只在拿到新画面时才画 —— 文字冒险游戏画面是静止的，指针就会卡在原地不动，只有点亮一个按钮之类的重绘才会跳一下。WGC 让系统把光标合成进捕获帧，于是它自己就跟手了。WGC 需要 Win11 24H2 以上，旧系统 LS 会自动退回 DXGI，不用管。\n\n还有两项是跟着 WGC 一起改的，单看没道理，配上 WGC 才对：**关掉 G-Sync 支持**、**捕获队列设为 0**。静止画面本来就几乎不出帧，再让可变刷新率跟着这个帧率走，屏幕会一直掉到刷新率下限；而 LS 自己在捕获那一栏就写着「当显示硬件光标时，WGC 需要 MPO 支持才能使 VRR 正常运作」—— 两件事撞在一起，刚刚才看得见的指针就会一闪一闪地卡。捕获队列同理：它的说明把 1 和 2 留给「基础帧率无上限或不稳定、GPU 高负载」的场景，把 0 写成「始终使用最后捕获的帧」。一秒才填一次的队列不是缓冲，是延迟。\n\n显卡选择、鼠标灵敏度、光标是否限制在窗口内这些照你在 Lossless Scaling 里设的来，预设不动。',
+    en: 'When in doubt pick **Sharp**: it goes up by a whole multiple first and covers the remainder after, so line weights stay uniform, text keeps its shape, the screen fills, it costs almost nothing, and it is fussy about no resolution at all. It suits nearly everything in a library like this one.\n\n**Quality / Maximum quality** use Anime4K, trained to upscale **hand-drawn animation** — good for character art and backgrounds, but **unkind to the text layer**, which the engine renders crisply and which a neural upscaler gives halos and wobbly strokes. On a text-heavy game that is usually what "the scaling looks wrong" means.\n\n**Whole multiples** uses nothing but whole numbers. When the factor divides it is pixel-exact, but **when it does not divide it scales by nothing at all** — no error, it just quietly outputs at 1.00×. Window borders count towards this: the few extra pixels they add are enough to put 2× past the edge of the screen, and it falls straight back to 1×. To use this one, the game window\'s **client area** has to divide evenly first.\n\n**Performance** is sharpened bicubic: the cheapest, and fussy about nothing.\n\nAll five **keep the proportions** (stretching 4:3 into 16:9 makes every face wide), all five **turn frame generation off**, and all five **capture through WGC**. That last one is about the mouse: what DXGI captures is the desktop image, which does not contain the cursor, so Lossless Scaling has to draw one itself — and it only draws when a new frame arrives. A visual novel is a still picture, so the pointer freezes where it was and only jumps when something redraws, like a button lighting up. WGC has the system composite the cursor into the captured frame, and it simply follows the mouse. WGC needs Windows 11 24H2 or newer; on anything older Lossless Scaling falls back to DXGI by itself.\n\nTwo more settings move with that choice and would be wrong without it: **G-Sync support off** and **capture queue 0**. A still picture produces almost no frames, and pointing variable refresh at that frame rate drives the panel down to its floor — while the note Lossless Scaling gives on capture warns that a hardware cursor under WGC needs multi-plane overlay support before variable refresh behaves. Between them, the pointer WGC has just made visible blinks and stutters. The capture queue is the same shape of mistake: its own description offers depths 1 and 2 for "uncapped or unstable frame rates under GPU load", and depth 0 as "always use the last captured frame". A queue that fills once a second is not a buffer, it is a delay.\n\nGPU selection, mouse sensitivity and whether the cursor is confined to the window stay as you set them in Lossless Scaling; a preset does not touch those.'
+  },
+  // Said while the first status is still outstanding. Without it a null answer falls
+  // through to "not found", which is a claim rather than a wait — and for Lossless Scaling
+  // the wait is real: locating it reads the registry through PowerShell.
+  'settings.upscaleChecking': { zh: '正在检查…', en: 'Checking…' },
+  'settings.upscaler': { zh: '用哪个程序放大', en: 'Which program scales' },
+  'settings.upscalerHint': {
+    zh: '只能选一个 —— 两个放大器抢同一个窗口没有意义。换掉之后，另一边留下的东西会被收干净。',
+    en: 'One or the other — two upscalers competing for one window is not a useful state. Switching away cleans up whatever the other one left behind.'
+  },
+  'settings.upscalerMagpie': { zh: 'Magpie（随本程序分发）', en: 'Magpie (shipped with this program)' },
+  'settings.upscalerLossless': {
+    zh: 'Lossless Scaling（需自行购买安装）',
+    en: 'Lossless Scaling (you buy and install it)'
+  },
+  // Magpie's own hotkey, which is worth saying only while Magpie is the one in force.
+  'settings.magpieHotkeyHint': {
+    zh: '随时可以按 Alt+Shift+A 手动放大当前窗口。',
+    en: 'Alt+Shift+A scales the current window by hand at any time.'
+  },
+  'settings.upscaleMode': { zh: '默认缩放模式', en: 'Default scaling mode' },
   'settings.magpieModeHint': {
     zh: 'Lanczos 最省，什么显卡都跑得动；Anime4K 对动画风格的立绘最好看，也最吃显卡；FSR 是给 3D 游戏做的。单个游戏可以在右键菜单里另选。这里列的是 Magpie 配置里现有的模式 —— 你在它自己的界面里新建的模式也会出现在这里。',
     en: "Lanczos is the cheapest and runs on anything; Anime4K looks best on anime-style art and costs the most; FSR was made for 3D games. A single game can be given its own in its right-click menu. This list is whatever modes Magpie's config holds, so one you build in its own interface appears here too."
@@ -903,19 +948,19 @@ export const MESSAGES = {
     zh: 'Magpie 需要 Windows 10 1903 或更新的版本',
     en: 'Magpie needs Windows 10 1903 or newer'
   },
-  'settings.magpieOverrides': {
+  'settings.upscaleOverrides': {
     zh: '另有 {n} 个游戏单独设置了',
     en: '{n} games have their own setting'
   },
   // The door to everything this program deliberately does not put a knob on. Named for what
   // is behind it rather than for the program, so somebody looking for picture quality finds
   // it without already knowing what Magpie is called.
-  'settings.magpieOpen': { zh: '画质设置…', en: 'Picture settings…' },
+  'settings.upscaleOpen': { zh: '画质设置…', en: 'Picture settings…' },
   'settings.magpieOpenHint': {
     zh: '打开 Magpie 自己的界面：着色器参数、捕获方式、帧率限制、光标缩放，以及新建你自己的缩放模式（effects 目录里有一百多个着色器，本程序只预置了七种组合）。在那里改的东西本程序不会覆盖，改完即时生效，不用手动退出它。新建的模式会直接出现在上面的下拉框和右键菜单里。',
     en: "Opens Magpie's own interface: shader parameters, capture method, frame limiter, cursor scaling, and building scaling modes of your own — the effects folder holds well over a hundred shaders and this program seeds only seven combinations of them. Nothing you change there is overwritten from here, and it is saved as you go, so there is no need to quit it afterwards. A mode you build there appears in the list above and in the right-click menu."
   },
-  'settings.magpieFolder': { zh: '打开所在文件夹', en: 'Open its folder' },
+  'settings.upscaleFolder': { zh: '打开所在文件夹', en: 'Open its folder' },
   'settings.magpieNotInstalled': { zh: '尚未复制', en: 'Not set up yet' },
   'settings.magpieReady': { zh: '已就绪（v{version}）', en: 'Ready (v{version})' },
   // The one line that answers "is it actually working". Without it the status never moves
@@ -930,6 +975,147 @@ export const MESSAGES = {
   'settings.magpieForeignShort': {
     zh: '另一个 Magpie 正在运行，不归启动器管',
     en: "Another Magpie is running — not the launcher's"
+  },
+
+  /* ---- Lossless Scaling: somebody else's paid software, driven rather than shipped ---- */
+  // Shown whenever this backend is selected, found or not. It answers "where does this come
+  // from", which is not an error condition — a note that appeared only on failure would
+  // leave everyone who happens to have it installed never told that this program does not
+  // supply it, and that it writes into its settings.
+  'settings.losslessNote': {
+    zh: 'Lossless Scaling 是 Steam 上的付费第三方软件，需要你自己购买并安装。本程序不分发、不代下、也不会替你安装它 —— 只是在它已经装好时驱动它。它除了放大还能插帧（LSFG）。',
+    en: 'Lossless Scaling is paid third-party software sold on Steam; you buy and install it yourself. This program does not ship it, download it, or install it for you — it only drives the copy you already have. Besides upscaling it can also generate frames (LSFG).'
+  },
+  'settings.losslessStore': { zh: '在 Steam 上查看', en: 'View on Steam' },
+  // Said before the first write rather than after it. Editing somebody else's configuration
+  // file is the kind of thing a person should hear about in advance.
+  'settings.losslessWrites': {
+    zh: '开启后，本程序会往 Lossless Scaling 自己的配置里加几条以「Sakura · 」开头的游戏配置，内容整份复制自你选定的那一条 —— 插帧、捕获方式等设置照抄，不作改动。第一次写入前会先把原文件备份到本程序目录。你自己建的配置一条也不会动；关掉这个后端时，我们加的那几条会被删干净。',
+    en: 'When on, this program adds a few game profiles named with a Sakura prefix to Lossless Scaling’s own settings. Each is copied wholesale from a profile of yours — frame generation, capture method and everything else come along unchanged. Your original file is backed up into this program’s folder before the first write. None of your own profiles are ever modified, and the ones we added are removed again when you switch this backend off.'
+  },
+  'settings.losslessModeHint': {
+    zh: '这里列的是你在 Lossless Scaling 里建的游戏配置。选中的那一条会被整份复制成一条自动放大的配置，所以画质、插帧、捕获方式全都照你在它界面里设的来。单个游戏可以在右键菜单里另选。',
+    en: 'This list is the game profiles you made in Lossless Scaling. The one you pick is copied whole into an auto-scaling profile, so picture settings, frame generation and capture method all follow what you set in its own interface. A single game can be given its own in its right-click menu.'
+  },
+  // Switching backends reinterprets one stored name against the other's list, so the
+  // setting can quite reasonably be pointing at a Magpie mode. Said here rather than left
+  // to be discovered at launch time, when the game has already started unscaled.
+  'settings.losslessModeMissing': {
+    zh: '「{mode}」不是 Lossless Scaling 里的游戏配置 —— 多半是从 Magpie 那边带过来的。这样启动时不会放大，也不会替你新建一条。请在上面改选一个。',
+    en: '“{mode}” is not a game profile in Lossless Scaling — most likely it came over from Magpie. Games will start unscaled, and nothing will be created on your behalf. Pick one from the list above.'
+  },
+  'settings.losslessNoModes': {
+    zh: '还读不到任何游戏配置 —— 先打开 Lossless Scaling 建一条。',
+    en: 'No game profiles could be read yet — open Lossless Scaling and make one first.'
+  },
+  'settings.losslessNotFound': {
+    zh: '没找到 Lossless Scaling。如果确实装了，用下面的按钮指给本程序。',
+    en: 'Lossless Scaling was not found. If you do have it, point this program at it below.'
+  },
+  'settings.losslessFoundAt': { zh: '找到于 {path}', en: 'Found at {path}' },
+  'settings.losslessPinnedAt': { zh: '手动指定：{path}', en: 'Pointed at: {path}' },
+  'settings.losslessPick': { zh: '手动选择 LosslessScaling.exe…', en: 'Locate LosslessScaling.exe…' },
+  // Offered at all times, not only after a failure: the automatic route can land on a stale
+  // or wrong install and still look like it worked.
+  'settings.losslessPickHint': {
+    zh: '自动查找走的是 Steam 自己的库记录。Steam 装在别处、库文件夹搬过、目录被整个拷走、注册表被清理过，都可能找不着或者找错。手动指定优先于自动查找；按「回到自动查找」可以撤销 —— 换过一次位置就被自己当初的选择锁死是不行的。',
+    en: 'The automatic search reads Steam’s own library records, which can come up empty or wrong if Steam is installed somewhere unusual, a library folder moved, the folder was copied out whole, or the registry was cleaned. A path you pick here wins over it, and the button beside it undoes that — being locked to one choice after moving the install once is not acceptable.'
+  },
+  'settings.losslessClear': { zh: '回到自动查找', en: 'Use automatic search again' },
+  'settings.losslessWrongExe': {
+    zh: '那不是 LosslessScaling.exe，没有保存。请选 Lossless Scaling 安装目录里的那个可执行文件。',
+    en: 'That is not LosslessScaling.exe, so nothing was saved. Pick the executable inside the Lossless Scaling install folder.'
+  },
+  'settings.losslessDelay': { zh: '自动放大延迟', en: 'Auto-scale delay' },
+  'settings.losslessDelayHint': {
+    zh: '窗口出现后等几秒再放大。这些引擎常常先摆一个窗口出来再改它的大小，太早放大就按错的尺寸抓住了。放大得不对就往上加一两秒。只写进本程序建的配置，不动你自己的。',
+    en: 'Seconds to wait after a window appears before scaling it. These engines often put a window on screen and then resize it, and scaling too early catches the wrong size. Add a second or two if what you get looks wrong. Only written into the profiles this program creates, never into yours.'
+  },
+  'settings.losslessSeconds': { zh: '{n} 秒', en: '{n}s' },
+
+  // ---- What the machine actually is -------------------------------------
+  // Read rather than assumed, because a scaling backend was quietly producing wrong
+  // colour and nothing here could see why: the picture was coming off a display running
+  // HDR and the profile driving it said otherwise.
+  'settings.displaySection': { zh: '本机显示', en: 'This machine' },
+  'settings.displayLine': {
+    zh: '{name} · {w}×{h} @ {hz}Hz · {bits} bit',
+    en: '{name} · {w}×{h} @ {hz}Hz · {bits} bit'
+  },
+  'settings.displayNoName': { zh: '显示器', en: 'Display' },
+  'settings.displayHdrOn': { zh: 'HDR 已开启', en: 'HDR is on' },
+  'settings.displayHdrOff': { zh: 'HDR 未开启', en: 'HDR is off' },
+  'settings.displayHdrUnsupported': { zh: '不支持 HDR', en: 'no HDR support' },
+  'settings.displayUnknown': {
+    zh: '还没读到显示器信息。',
+    en: 'The displays have not been read yet.'
+  },
+  'settings.displayRefresh': { zh: '重新检测', en: 'Measure again' },
+  'settings.displayHint': {
+    zh: '只读，只在本机。用来决定放大配置里那个 HDR 开关 —— 它描述的是**屏幕**，不是游戏：桌面开着 HDR 时，放大程序抓到的画面就是 HDR 格式的，无论游戏本身是不是。设错了颜色就不对，而且不会报任何错。',
+    en: 'Read-only, and never leaves this machine. It decides the HDR switch in the scaling profiles, which describes the **screen** rather than the game: with HDR on, what an upscaler captures arrives in a high-dynamic-range format whether the game is HDR or not. Get it wrong and the colour is wrong, with nothing reporting a fault.'
+  },
+  'settings.displayGpu': { zh: '显卡：{name}', en: 'Graphics: {name}' },
+  // Only the discouraging case is ever said. A model name tells you a marketing string,
+  // not a frame time — calling a card capable because it says "GeForce" would flatter a
+  // ten-year-old one, and a false reassurance is worse than saying nothing.
+  'settings.presetHeavyGpu': {
+    zh: '检测到的是核显，「画质优先 / 极致画质」这两档可能吃力。',
+    en: 'That is an integrated adapter — Quality and Maximum quality may be heavy for it.'
+  },
+  // Shown only when a display has actually been measured, so the arithmetic is this
+  // machine's rather than an example from somebody else's.
+  'settings.losslessIntegerFit': {
+    zh: '你的屏幕是 {screen}。「整数倍」要求游戏窗口的客户区正好能整除它 —— {half} 正好 2 倍。差几个像素（窗口边框就够）就会退回 1.00 倍，什么都不放大。',
+    en: 'Your screen is {screen}. Whole-multiple scaling needs the game\'s client area to divide into it exactly — {half} is precisely 2×. A few pixels out (a window border is enough) and it falls back to 1.00× and scales nothing.'
+  },
+
+  // ---- The HDR switch ----------------------------------------------------
+  'settings.losslessHdr': { zh: 'HDR 支持', en: 'HDR support' },
+  'settings.losslessHdrAuto': { zh: '自动（跟随上面检测到的屏幕）', en: 'Automatic (follow the screen above)' },
+  'settings.losslessHdrOn': { zh: '强制开启', en: 'Always on' },
+  'settings.losslessHdrOff': { zh: '强制关闭', en: 'Always off' },
+  'settings.losslessHdrHint': {
+    zh: '只写进本程序建的**预设**配置。你自己建的配置被整份克隆、一个字段都不改，这一项也不例外 —— 那是你的设置。留着手动挡，是因为「这个开关跟着屏幕走而不是跟着游戏走」这个判断是从画面出问题的方式反推的，Lossless Scaling 自己没有写明。',
+    en: 'Written only into the **preset** profiles this program creates. A profile of your own is cloned whole with nothing overridden, and this is no exception — it is your setting. The manual positions exist because the reading behind "automatic" — that this switch follows the screen rather than the game — was worked out from how the picture went wrong, not from anything its authors documented.'
+  },
+  'settings.losslessHdrMismatch': {
+    zh: '屏幕的 HDR 状态和「{mode}」里的 HDR 支持对不上，颜色会不正常。本程序不改你自己建的配置 —— 请在 Lossless Scaling 里改这一项。',
+    en: 'The screen’s HDR state and the HDR support inside “{mode}” do not agree, which makes the colour wrong. This program does not edit profiles of yours — change it inside Lossless Scaling.'
+  },
+
+  // ---- A write that has not landed ---------------------------------------
+  // A standing line rather than the toast `lossless.configLocked` raises. That toast lasts
+  // four seconds; this state lasts until they close the program, and the colour bug this
+  // was written to fix survived precisely because nothing on screen ever said that the
+  // last correction had not been written.
+  'settings.losslessPendingLocked': {
+    zh: '有改动还没写进 Lossless Scaling 的配置，因为它正开着。它退出时会按内存把整个配置文件覆写一遍，所以底下写进去的东西会被吞掉 —— 而停掉你自己买的软件来改它的配置，不是本程序该做的事。**关掉它**，下次启动游戏时就写进去了。',
+    en: 'A change has not been written into Lossless Scaling’s configuration, because it is running. It saves that whole file from memory when it exits, so anything written underneath is swallowed — and stopping software you paid for in order to edit its settings is not this program’s to do. **Close it**, and the next game launch writes it.'
+  },
+  // Raised once per game per session, with the numbers measured off the window that is
+  // actually on screen. Whole-multiple scaling that finds no multiple does not fall back
+  // and does not report anything — it simply presents the picture at its original size,
+  // which reads as "the upscaler did not turn on" and is unanswerable without the sums.
+  'lossless.integerNoFit': {
+    zh: '「整数倍」放不下：窗口 {window}，最少要 {needed}，屏幕只有 {screen}，所以这一档一点都不会放大。换成「锐利」。',
+    en: 'Whole multiples does not fit: the window is {window}, the smallest multiple needs {needed}, and the screen is only {screen} — so it scales by nothing. Switch to Sharp.'
+  },
+  'settings.losslessPendingNext': {
+    zh: '配置有改动待写入，下次启动游戏时生效。',
+    en: 'A configuration change is waiting; the next game launch applies it.'
+  },
+  'settings.losslessProfiles': { zh: '已写入 {n} 条配置', en: '{n} profiles written' },
+  'settings.losslessElevates': {
+    zh: '它设了以管理员身份启动，所以启动游戏时会弹一次 UAC；那样起来的一份本程序关不掉，要自己从托盘退出。',
+    en: 'It is set to start as administrator, so launching a game raises a UAC prompt. A copy started that way cannot be closed from here — you quit it from the tray.'
+  },
+  'settings.losslessReady': { zh: '已就绪', en: 'Ready' },
+  'settings.losslessRunning': { zh: '正在运行', en: 'Running' },
+  'settings.losslessRunningFor': { zh: '正在为 {name} 运行', en: 'Running for {name}' },
+  'settings.losslessOpenHint': {
+    zh: '打开 Lossless Scaling 自己的界面：缩放算法与参数、插帧倍率、捕获方式、光标处理，以及新建你自己的游戏配置。在那里新建的配置会出现在上面的下拉框和右键菜单里。注意它运行期间本程序不会改它的配置文件 —— 它退出时会按内存整份写回去，那时候改了也会被吞掉。',
+    en: 'Opens Lossless Scaling’s own interface: scaling algorithms and their parameters, frame generation, capture method, cursor handling, and making game profiles of your own. A profile you build there appears in the list above and in the right-click menu. Note that this program will not touch its settings file while it is running — it saves that file over from memory when it quits, so anything written underneath would be swallowed.'
   },
   'settings.downloadSection': { zh: '下载', en: 'Downloads' },
   'settings.downloadDir': { zh: '默认下载目录', en: 'Download folder' },
@@ -1669,11 +1855,17 @@ export const MESSAGES = {
   'menu.matchWork': { zh: '手动匹配…', en: 'Match manually…' },
 
   /* ---- upscaling, per game ---- */
-  'menu.magpie': { zh: '超分放大', en: 'Upscaling' },
-  'menu.magpieFollow': { zh: '跟随设置', en: 'Follow settings' },
-  'menu.magpieDefaultMode': { zh: '默认模式（{mode}）', en: 'Default ({mode})' },
-  'menu.magpieNever': { zh: '这个游戏不放大', en: 'Never for this game' },
-  'menu.magpieDisabled': { zh: '先在设置里开启超分放大', en: 'Turn upscaling on in Settings first' },
+  'menu.upscale': { zh: '超分放大', en: 'Upscaling' },
+  'menu.upscaleFollow': { zh: '跟随设置', en: 'Follow settings' },
+  'menu.upscaleDefaultMode': { zh: '默认模式（{mode}）', en: 'Default ({mode})' },
+  'menu.upscaleNever': { zh: '这个游戏不放大', en: 'Never for this game' },
+  'menu.upscaleDisabled': { zh: '先在设置里开启超分放大', en: 'Turn upscaling on in Settings first' },
+  // Magpie always has its seven built-ins to offer. Lossless Scaling has nothing until the
+  // user has made a profile, and an empty submenu has to say so rather than look broken.
+  'menu.upscaleNoModes': {
+    zh: 'Lossless Scaling 里还没有游戏配置',
+    en: 'No game profiles in Lossless Scaling yet'
+  },
   // Said after the fact rather than in the way of the launch: the game has already
   // started by the time any of these are known, and none of them stop it running.
   'magpie.foreign': {
@@ -1703,6 +1895,53 @@ export const MESSAGES = {
   'magpie.unsupported': {
     zh: '这台机器的 Windows 版本达不到 Magpie 的要求（需要 Windows 10 1903 或更新）。',
     en: 'This copy of Windows is older than Magpie needs (Windows 10 1903 or newer).'
+  },
+
+  // Lossless Scaling's, under the same rule as Magpie's above: said after the fact, never
+  // in the way of the launch. The game has already started by the time any of these is
+  // known, and none of them stop it running.
+  'lossless.notFound': {
+    zh: '没找到 Lossless Scaling，这次没有放大，游戏照常运行。可以在设置里手动指定它的位置。',
+    en: 'Lossless Scaling was not found, so nothing was scaled. The game runs as usual — Settings can point this program at it.'
+  },
+  'lossless.noSettings': {
+    zh: 'Lossless Scaling 还没有配置文件 —— 先自己打开它一次，让它把配置建起来。本程序不会替你造一份。',
+    en: 'Lossless Scaling has no settings file yet — open it once yourself so it writes one. This program will not create one for you.'
+  },
+  'lossless.configLocked': {
+    zh: 'Lossless Scaling 正在运行。它退出时会把配置按内存整份写回去，这时候改会被吞掉，所以本次没有改。退出它之后再启动游戏，配置就会更新。',
+    en: 'Lossless Scaling is running. It saves its settings over from memory when it quits, so anything written now would be swallowed — nothing was written. Quit it and launch again to bring the profiles up to date.'
+  },
+  'lossless.writeFailed': {
+    zh: '没能写入 Lossless Scaling 的配置，游戏照常运行，只是不会自动放大。',
+    en: 'Could not write Lossless Scaling’s settings. The game runs as usual, just without automatic scaling.'
+  },
+  // Named rather than counted: the whole use of this message is to let the user go and look
+  // for a profile they thought they had.
+  'lossless.noProfile': {
+    zh: 'Lossless Scaling 里没有叫「{modes}」的游戏配置，这些游戏这次没有放大。本程序不会替你凭空建一条画质设置 —— 请在它界面里建个同名的，或者在设置里改选一个。',
+    en: 'Lossless Scaling has no game profile called “{modes}”, so those games were not scaled. This program will not invent picture settings on your behalf — make a profile of that name in its interface, or pick a different one in Settings.'
+  },
+  // Different from `noProfile` on purpose: a preset is not a name the user got wrong, so
+  // telling them their profile was not found would send them looking for something that was
+  // never theirs to make.
+  'lossless.noBaseProfile': {
+    zh: 'Lossless Scaling 里一条游戏配置都没有，预设没有可以复制的底子 —— 预设是在你的配置之上改几项，不是凭空造一条。先打开它建一条配置（默认那条就行），再启动游戏。',
+    en: 'Lossless Scaling holds no game profile at all, so a preset has nothing to build on — a preset overrides a few things on top of a profile of yours rather than inventing one. Open it and make a profile (its default one will do), then launch again.'
+  },
+  'lossless.startFailed': {
+    zh: 'Lossless Scaling 没能启动，游戏照常运行。',
+    en: 'Lossless Scaling did not start. The game runs as usual.'
+  },
+  // Unlike the one above, nothing comes back later to finish this: the backend has just
+  // been switched away, so no future launch takes that path. Hence the instructions.
+  'lossless.clearLocked': {
+    zh: 'Lossless Scaling 正在运行，本程序加进去的那几条配置这次没能删掉。退出它之后再切一次后端就会清干净，也可以直接在它界面里删掉「Sakura · 」开头的那几条。',
+    en: 'Lossless Scaling is running, so the profiles this program added could not be removed. Quit it and switch the backend once more to clear them, or delete the ones named with the Sakura prefix in its own interface.'
+  },
+  'lossless.needsElevation': {
+    zh: '这个游戏以管理员身份运行，未提权的 Lossless Scaling 放大不了它。要在它自己的设置里打开「以管理员身份启动」—— 那是它的设置，本程序不会替你改。',
+    en: 'This game runs as administrator, and an unelevated Lossless Scaling cannot scale it. Turn on its own Start as admin setting — that is its setting, and this program will not change it for you.'
   },
 
   /* ---- covers from a catalogue ---- */

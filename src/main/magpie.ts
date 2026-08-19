@@ -3,19 +3,18 @@ import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { Game, MagpieNotice, MagpieStatus } from '../shared/types'
+import type { Game, MagpieStatus, UpscaleNotice } from '../shared/types'
 import * as db from './db'
 import { buildConfig, listModes, parseConfig } from './magpie-config'
 import {
   MAGPIE_VERSION,
-  effectiveMagpie,
   instanceVerdict,
-  magpieGames,
   mayStop,
   needsReinstall,
   supportsMagpie,
   type InstanceVerdict
 } from './magpie-rules'
+import { effectiveUpscale, upscaleTargets } from './upscale-rules'
 import { playingIds } from './playtime'
 
 /**
@@ -89,15 +88,15 @@ let installFailure: string | null = null
  * assigning over the first would silently take the toasts away, and the fault would be
  * blamed on whatever stopped appearing rather than on the thing that displaced it.
  */
-const listeners = new Set<(notice: MagpieNotice) => void>()
+const listeners = new Set<(notice: UpscaleNotice) => void>()
 
 /** Returns the unsubscribe, as every other `onX` in the program does. */
-export function onMagpieNotice(fn: (notice: MagpieNotice) => void): () => void {
+export function onMagpieNotice(fn: (notice: UpscaleNotice) => void): () => void {
   listeners.add(fn)
   return () => listeners.delete(fn)
 }
 
-function notice(key: MagpieNotice['key'], vars?: MagpieNotice['vars']): void {
+function notice(key: UpscaleNotice['key'], vars?: UpscaleNotice['vars']): void {
   for (const fn of listeners) fn({ key, vars })
 }
 
@@ -272,7 +271,7 @@ async function ensureInstalled(): Promise<{ ok: true } | { ok: false; error: str
       const settings = db.getSettings()
       const seed = buildConfig(
         null,
-        { profiles: [], defaultMode: settings.magpieMode, language: settings.language },
+        { profiles: [], defaultMode: settings.upscaleMode, language: settings.language },
         []
       )
       writeAtomic(configPath(), JSON.stringify(seed.config, null, 2))
@@ -559,9 +558,9 @@ function reportableInstallError(error: string | undefined): error is string {
 /** Whether any game currently being played wants scaling. */
 function anyScaledPlaying(playing: string[]): boolean {
   const settings = db.getSettings()
-  if (!settings.magpie) return false
+  if (!settings.upscale) return false
   const ids = new Set(playing)
-  return db.getGames().some((g) => ids.has(g.id) && effectiveMagpie(settings, g).on)
+  return db.getGames().some((g) => ids.has(g.id) && effectiveUpscale(settings, g).on)
 }
 
 /**
@@ -577,11 +576,11 @@ export function magpieBeforeLaunch(game: Game, opts: { elevated: boolean }): Pro
   // it has to, so the two UAC prompts do not race — and the queue may be several seconds
   // deep behind a stop. A game with scaling switched off would sit there waiting for work
   // that has nothing to do with it, and its UAC prompt would not appear until it drained.
-  if (!effectiveMagpie(db.getSettings(), game).on) return Promise.resolve()
+  if (!effectiveUpscale(db.getSettings(), game).on) return Promise.resolve()
 
   return serial(async () => {
     const settings = db.getSettings()
-    if (!effectiveMagpie(settings, game).on) return
+    if (!effectiveUpscale(settings, game).on) return
 
     if (!supportsMagpie(os.release())) {
       notice('magpie.unsupported')
@@ -622,8 +621,8 @@ export function magpieBeforeLaunch(game: Game, opts: { elevated: boolean }): Pro
     const result = buildConfig(
       existing,
       {
-        profiles: magpieGames(settings, db.getGames()),
-        defaultMode: settings.magpieMode,
+        profiles: upscaleTargets(settings, db.getGames()),
+        defaultMode: settings.upscaleMode,
         language: settings.language
       },
       readOwned()
@@ -680,7 +679,7 @@ export function magpieSessionsChanged(playing: string[]): void {
  * nothing at all.
  */
 export function warmMagpie(): void {
-  if (!db.getSettings().magpie) return
+  if (!db.getSettings().upscale) return
   void serial(async () => {
     // A Magpie left over from a launcher that crashed. Only ever our own copy, matched on
     // the full path.
@@ -707,6 +706,7 @@ export function shutdownMagpie(): void {
 export async function magpieStatus(): Promise<MagpieStatus> {
   const settings = db.getSettings()
   const base = {
+    backend: 'magpie' as const,
     supported: supportsMagpie(os.release()),
     installed: fs.existsSync(ourExe()),
     version: MAGPIE_VERSION
@@ -715,14 +715,14 @@ export async function magpieStatus(): Promise<MagpieStatus> {
   // one guarantee that makes this answerable without asking the operating system. The
   // settings page still needs `supported` — it is what disables the switch on a machine too
   // old for Magpie — so the question is answered, just not at the price of a process query.
-  if (!settings.magpie) return { ...base, running: false }
+  if (!settings.upscale) return { ...base, running: false }
 
   const v = await verdict()
   const playing = new Set(playingIds())
   // Which game this copy is up for. Read from the sessions actually open rather than
   // remembered from the launch, so it stays right when one game is closed and another
   // started without Magpie ever stopping in between.
-  const forGame = db.getGames().find((g) => playing.has(g.id) && effectiveMagpie(settings, g).on)
+  const forGame = db.getGames().find((g) => playing.has(g.id) && effectiveUpscale(settings, g).on)
   return {
     ...base,
     // A query that failed reads as "not running" here and nowhere else. This line is a
@@ -805,8 +805,8 @@ export function openMagpieSettings(): void {
     const result = buildConfig(
       existing,
       {
-        profiles: magpieGames(settings, db.getGames()),
-        defaultMode: settings.magpieMode,
+        profiles: upscaleTargets(settings, db.getGames()),
+        defaultMode: settings.upscaleMode,
         language: settings.language
       },
       readOwned()

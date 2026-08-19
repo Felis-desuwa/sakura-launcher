@@ -112,8 +112,8 @@ export function toSidecar(game: Game): SidecarData {
     launchArgs: game.exePinned ? relativizeArgs(game, game.launchArgs) : undefined,
     // Passed through as-is, `undefined` and all: that absence is the "follow the setting"
     // state, and substituting anything for it here would collapse three answers into two.
-    magpie: game.magpie,
-    magpieMode: game.magpieMode,
+    upscale: game.upscale,
+    upscaleMode: game.upscaleMode,
     wishlist: game.wishlist,
     playing: game.playing,
     played: game.played,
@@ -168,12 +168,12 @@ function applySidecar(game: Game, data: SidecarData): void {
   // sync: the edit reverts, and the third state is reachable from the menu but not from
   // the file. A line nobody could parse is the one case that changes nothing, because
   // there the user's intent is not known.
-  if (typeof data.magpie === 'boolean') {
-    game.magpie = data.magpie
-    game.magpieMode = data.magpie ? data.magpieMode : undefined
-  } else if (!data.magpieUnreadable) {
-    game.magpie = undefined
-    game.magpieMode = undefined
+  if (typeof data.upscale === 'boolean') {
+    game.upscale = data.upscale
+    game.upscaleMode = data.upscale ? data.upscaleMode : undefined
+  } else if (!data.upscaleUnreadable) {
+    game.upscale = undefined
+    game.upscaleMode = undefined
   }
 
   const status: Partial<Game> = {}

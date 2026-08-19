@@ -5,14 +5,14 @@ import path from 'node:path'
 import type { MessageKey } from '../shared/i18n.ts'
 import {
   formatDuration,
-  normalizeMagpieMode,
+  normalizeUpscaleMode,
   parseDuration,
   type AutoTag,
   type EngineId,
-  type MagpieMode
+  type UpscaleMode
 } from '../shared/types.ts'
 import { mainLang, t } from './i18n.ts'
-import { modeFromLabel } from './magpie-rules.ts'
+import { modeFromLabel } from './upscale-rules.ts'
 
 export const MAX_DEPTH = 4
 
@@ -735,14 +735,14 @@ export interface SidecarData {
   /** Arguments it is started with — how a locale-emulator entry is recorded. */
   launchArgs?: string[]
   /**
-   * Whether Magpie scales this game's window.
+   * Whether this game's window is scaled.
    *
    * Absent means "follow the setting", which is a third state and not a default — so the
    * line is left out entirely rather than written with a value standing in for it.
    */
-  magpie?: boolean
-  /** Which shader, when one was chosen for this game specifically. */
-  magpieMode?: MagpieMode
+  upscale?: boolean
+  /** Which mode, when one was chosen for this game specifically. */
+  upscaleMode?: UpscaleMode
   /**
    * The line was there and could not be read.
    *
@@ -752,7 +752,7 @@ export interface SidecarData {
    * existing answer alone. Without this the two are the same value and a typo would
    * quietly reset the game.
    */
-  magpieUnreadable?: boolean
+  upscaleUnreadable?: boolean
   wishlist?: boolean
   playing?: boolean
   played?: boolean
@@ -848,7 +848,7 @@ const SIDECAR_FIELDS = {
   tags: { zh: '标签', en: 'Tags' },
   exe: { zh: '主程序', en: 'Main program' },
   args: { zh: '启动参数', en: 'Launch arguments' },
-  magpie: { zh: '超分放大', en: 'Upscaling' },
+  upscale: { zh: '超分放大', en: 'Upscaling' },
   playtime: { zh: '总时长', en: 'Total playtime' },
   launches: { zh: '启动次数', en: 'Times launched' },
   last: { zh: '最后游玩', en: 'Last played' },
@@ -1008,15 +1008,15 @@ export function renderSidecar(data: SidecarData): string {
     }
   }
   // No line at all is what "follow the setting" looks like, so a game that has never been
-  // given its own answer stays silent here. The shader name is written as Magpie spells
-  // it, in either language, so that this line and Magpie's own interface can be compared.
-  if (data.magpie !== undefined) {
-    const value = !data.magpie
+  // given its own answer stays silent here. The mode is written as the upscaler spells it,
+  // in either language, so that this line and that program's own interface can be compared.
+  if (data.upscale !== undefined) {
+    const value = !data.upscale
       ? sentinel('off')
-      : data.magpieMode
-        ? normalizeMagpieMode(data.magpieMode)
+      : data.upscaleMode
+        ? normalizeUpscaleMode(data.upscaleMode)
         : sentinel('on')
-    lines.push(`- ${fieldLabel('magpie')}: ${value}`)
+    lines.push(`- ${fieldLabel('upscale')}: ${value}`)
   }
 
   // Everything a catalogue said, so that losing the database does not mean paying for the
@@ -1211,20 +1211,21 @@ export function parseSidecar(text: string): SidecarData {
   if (args !== null) data.launchArgs = splitArgs(args)
 
   // Three ways to say something and one way to say nothing. Any other word is taken as a
-  // mode name and kept as written, because a mode built in Magpie's own interface is
-  // called whatever its author called it and nothing here can know the list. A name for a
-  // mode that turns out not to exist costs the default shader, not the line.
-  const magpie = field('magpie')
-  if (magpie !== null) {
-    if (isSentinel('off', magpie)) data.magpie = false
-    else if (isSentinel('on', magpie)) data.magpie = true
+  // mode name and kept as written, because a mode built in Magpie's own interface — or a
+  // profile made in Lossless Scaling's — is called whatever its author called it and
+  // nothing here can know the list. A name that turns out not to exist costs the default,
+  // not the line.
+  const upscale = field('upscale')
+  if (upscale !== null) {
+    if (isSentinel('off', upscale)) data.upscale = false
+    else if (isSentinel('on', upscale)) data.upscale = true
     else {
-      const mode = modeFromLabel(magpie)
+      const mode = modeFromLabel(upscale)
       if (mode) {
-        data.magpie = true
-        data.magpieMode = mode
+        data.upscale = true
+        data.upscaleMode = mode
       } else {
-        data.magpieUnreadable = true
+        data.upscaleUnreadable = true
       }
     }
   }

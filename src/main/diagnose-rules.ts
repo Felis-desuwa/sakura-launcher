@@ -296,6 +296,16 @@ export interface ForeignWindow {
   title: string
   /** Text of every child control, which is where a message box keeps its message. */
   controls: string[]
+  /**
+   * The window's client area — what an upscaler actually captures and scales.
+   *
+   * Optional because it answers a different question from the rest of this type, and
+   * nothing in the diagnosis reads it: it is here so the scale arithmetic can be done on
+   * the window that is really on screen instead of on an example. Zero or absent when the
+   * measurement failed, and callers must not treat that as a window of no size.
+   */
+  clientWidth?: number
+  clientHeight?: number
 }
 
 export interface DialogFinding {

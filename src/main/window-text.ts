@@ -30,6 +30,8 @@ $sig = @(
   '[DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassNameW(IntPtr h, System.Text.StringBuilder s, int n);',
   '[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);',
   '[DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);',
+  'public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }',
+  '[DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);',
   'public delegate bool EnumProc(IntPtr h, IntPtr l);'
 ) -join [Environment]::NewLine
 
@@ -66,10 +68,14 @@ if ($pids.Count -gt 0) {
         return $true
       }
       [void]$W::EnumChildWindows($h, $ccb, [IntPtr]::Zero)
+      $rect = New-Object 'SakuraWin.Api+RECT'
+      [void]$W::GetClientRect($h, [ref]$rect)
       [void]$out.Add([pscustomobject]@{
         className = Get-C $h
         title = Get-T $h
         controls = @($kids)
+        clientWidth = [int]($rect.Right - $rect.Left)
+        clientHeight = [int]($rect.Bottom - $rect.Top)
       })
     }
     return $true
@@ -81,7 +87,12 @@ ConvertTo-Json -Compress -Depth 4 -InputObject @($out)
 `
 
 /**
- * Every visible window belonging to a process running out of `dir`.
+ * Every visible window belonging to a process running out of `dir`, with its client size.
+ *
+ * The size is additive and nothing in the diagnosis reads it. It is here because the one
+ * question this program could never answer about scaling — how big the window it is
+ * scaling actually is — needs a measurement, and this is already the place that enumerates
+ * the windows a game put on screen.
  *
  * Returns null when the query itself failed. That must never be read as "no windows" —
  * the difference between "it is showing nothing" and "we could not look" is the
@@ -109,6 +120,8 @@ export function readWindowsIn(dir: string): Promise<ForeignWindow[] | null> {
               return {
                 className: String(row.className ?? ''),
                 title: String(row.title ?? ''),
+                clientWidth: Number(row.clientWidth) || 0,
+                clientHeight: Number(row.clientHeight) || 0,
                 // A single-element array comes back from PowerShell as a bare value.
                 controls: Array.isArray(row.controls)
                   ? row.controls.map(String)

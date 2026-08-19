@@ -76,12 +76,17 @@ export default function App(): React.JSX.Element {
   const [playing, setPlaying] = useState<string[]>([])
 
   /**
-   * The scaling modes Magpie's config offers, for the per-game submenu.
+   * The modes the current upscaler's config offers, for the per-game submenu.
    *
    * Held here rather than fetched by the menu, because a context menu is built during a
-   * right-click and has nowhere to wait. The built-in seven until the file has been read.
+   * right-click and has nowhere to wait.
+   *
+   * Seeded with Magpie's built-in seven because Magpie is the default backend and those
+   * are what its config will hold once written. Switching to Lossless Scaling replaces the
+   * list outright rather than adding to it — its profiles are the user's own creations, and
+   * offering Magpie's names there would let somebody pick one that silently scales nothing.
    */
-  const [magpieModes, setMagpieModes] = useState<string[]>(MAGPIE_MODES)
+  const [upscaleModes, setUpscaleModes] = useState<string[]>(MAGPIE_MODES)
 
   const [disks, setDisks] = useState<DiskInfo[]>([])
   const [toasts, setToasts] = useState<Toast[]>([])
@@ -249,7 +254,7 @@ export default function App(): React.JSX.Element {
     // Translated here rather than where it was raised, so a notice arriving just after a
     // language change is already in the new one — the same reason `tr` exists at all.
     // None of these are failures of the launch: the game is running regardless.
-    const offMagpie = window.sakura.onMagpieNotice(({ key, vars }) => toast(tr(key, vars), true))
+    const offUpscale = window.sakura.onUpscaleNotice(({ key, vars }) => toast(tr(key, vars), true))
     const offDb = window.sakura.onDbChanged(() => void refresh())
     const offPlaytime = window.sakura.onPlaytime(({ id, playtimeMs, playing: running }) => {
       setGames((cur) => cur.map((g) => (g.id === id ? { ...g, playtimeMs } : g)))
@@ -265,7 +270,7 @@ export default function App(): React.JSX.Element {
       offPlaytime()
       offTrouble()
       offMultiArchive()
-      offMagpie()
+      offUpscale()
     }
   }, [refresh, toast, tr])
 
@@ -275,16 +280,15 @@ export default function App(): React.JSX.Element {
     if (trouble && playing.includes(trouble.id)) setTrouble(null)
   }, [playing, trouble])
 
-  // Re-read on the way back from the settings page, which is where Magpie's own interface
-  // is opened from: a mode built in there is saved when Magpie exits, and the whole point
-  // of reading the list rather than hard-coding it is that the new one can be chosen
-  // straight away. A file read, no process listing.
+  // Re-read on the way back from the settings page, which is where the upscaler's own
+  // interface is opened from: a mode or profile built in there is the whole point of
+  // reading the list rather than hard-coding it, and it has to be choosable straight away.
+  // Also re-read when the backend changes, because the two lists have nothing in common.
+  // A file read, no process listing.
   useEffect(() => {
-    if (!settings.magpie) return
-    void window.sakura.magpieModes().then((m) => {
-      if (m.length > 0) setMagpieModes(m)
-    })
-  }, [settings.magpie, page])
+    if (!settings.upscale) return
+    void window.sakura.upscaleModes().then(setUpscaleModes)
+  }, [settings.upscale, settings.upscaler, page])
 
   const runScan = useCallback(
     async (announce = true, sync = true): Promise<void> => {
@@ -766,9 +770,10 @@ export default function App(): React.JSX.Element {
               toast(tr('toast.workCleared', { n: cleared.length }))
             }}
             onlineTags={settings.onlineTags}
-            magpieOn={settings.magpie}
-            magpieMode={settings.magpieMode}
-            magpieModes={magpieModes}
+            upscaleOn={settings.upscale}
+            upscaleMode={settings.upscaleMode}
+            upscaleModes={upscaleModes}
+            upscaler={settings.upscaler}
             // Straight into the dialog with the search box, no lookup first. This is the
             // route for a folder nothing could ever match on its own.
             onMatchWork={(game) =>
@@ -822,7 +827,7 @@ export default function App(): React.JSX.Element {
             tagProgress={tagProgress}
             pendingCount={pendingTagCount}
             gameCount={games.length}
-            magpieOverrides={games.filter((g) => g.magpie !== undefined).length}
+            upscaleOverrides={games.filter((g) => g.upscale !== undefined).length}
           />
         )}
 

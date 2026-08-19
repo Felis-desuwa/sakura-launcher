@@ -75,8 +75,9 @@ Run anyway*.
   even when on, all that leaves the machine is a title
 - Playtime is measured by *whether any process is running inside the game folder*, which
   survives the very common launcher-exits-immediately case
-- An 800×600 game can be scaled up to fill the screen in real time (Magpie, shipped with the
-  installer, **off by default**) — it comes up with the game and quits after it
+- An 800×600 game can be scaled up to fill the screen in real time (**off by default**) — it
+  comes up with the game and quits after it; the upscaler is either Magpie, shipped with the
+  installer, or Lossless Scaling, the copy you bought on Steam yourself
 - Backing saves up looks in `%APPDATA%`, `LocalLow` and the root of C: as well — saves are
   very often nowhere near the game — and recognises a completed save that came with the download
 - Packing a game up to share lists your personal traces for review first, and **leaves the
@@ -132,15 +133,20 @@ Run anyway*.
 
 Most of these games have their resolution welded into the engine at 800×600 or 1024×768,
 which is a postage stamp on a modern display — and letting Windows stretch it turns the art
-to mush. Switch this on and launching a game brings Magpie up with it, scaling the game's
-window to fill the screen in real time with a shader. It matches on the main program's path
-and finds the window by itself, and quits a minute or two after the game does.
+to mush. Switch this on and launching a game brings the upscaler up with it, scaling the
+game's window to fill the screen in real time. It matches on the main program's path and finds
+the window by itself, and quits a minute or two after the game does.
+
+**There are two upscalers to choose between, and only one can be in force** — two of them
+competing for one window is not a useful state. Either way the rest of the feature is the
+same: Settings picks the default mode, a single game can be given its own from its right-click
+menu, and that choice is written into `sakura-launcher.md` so it travels with the folder.
+
+#### Magpie (shipped with the installer)
 
 Seven scaling modes are seeded: Lanczos, FSR, FSRCNNX, CuNNy, Anime4K, CRT-Geom and Integer
-Scale 2x. Settings picks the default; a single game can be given its own from its right-click
-menu, and that choice is written into `sakura-launcher.md` so it travels with the folder.
-Lanczos is the cheapest and runs on anything; Anime4K looks best on anime-style art and costs
-the most GPU.
+Scale 2x. Lanczos is the cheapest and runs on anything; Anime4K looks best on anime-style art
+and costs the most GPU.
 
 The finer picture settings — a shader's own parameters, the capture method, the frame limiter,
 cursor scaling — are Magpie's own, and *Picture settings…* on the settings page is the door to
@@ -151,13 +157,106 @@ fixed seven. Nothing you change in there is overwritten from here — only the u
 tray icon, elevation and the debug switches are insisted upon. Note that Magpie saves its
 settings when it exits, so quit it from the tray before launching a game.
 
-A few conditions: Windows 10 1903 or newer and a card that supports DirectX 11; the game has
-to be windowed or borderless, as exclusive fullscreen cannot be scaled; and a game started as
+It needs Windows 10 1903 or newer and a card that supports DirectX 11. A game started as
 administrator needs Settings to allow an elevated Magpie too (running this launcher as
-administrator is the tidier way). If a game hands off to a different executable once it
-starts, matching by path finds nothing — point *Change main program…* at the right one, which
-fixes the playtime tracking at the same time, or press Alt+Shift+A to scale the current window
-by hand. Scaling failing never stops the game itself from running.
+administrator is the tidier way). Alt+Shift+A scales the current window by hand at any time.
+
+#### Lossless Scaling (you buy and install it)
+
+[Lossless Scaling](https://store.steampowered.com/app/993090/) is paid third-party software
+sold on Steam. **This program does not ship it, download it, or install it for you** — it only
+drives the copy you already have. Besides upscaling it can also generate frames (LSFG).
+
+Where it lives is worked out from Steam's own library records. If that comes up empty it does
+not matter much: Settings carries a *Locate LosslessScaling.exe…* button, and **that button is
+always there**, because Steam installed somewhere unusual, a library folder moved, the folder
+copied out whole or a cleaned registry can all make the automatic search miss or land on the
+wrong copy. A path you pick wins over it, and there is a way back to the automatic search
+beside it.
+
+**Five presets, ready to use.** The first three are a quality ladder — Performance
+(sharpened bicubic, close to free), Quality and Maximum quality (both Anime4K, built for
+hand-drawn anime art, the last being the heaviest and the best-looking).
+
+The last two answer a different problem: **the scale factor is usually not a whole number**.
+An 800×600 game on a 1440p screen is 2.4×, so some lines get two pixels and their neighbours
+three — nothing blurry, nothing stretched, just subtly uneven weights, and Anime4K makes it
+more visible rather than less because it sharpens before the fractional resample. *Even
+linework* goes up by a whole multiple first and only then covers the remainder, keeping weights
+uniform while still filling the screen; *Whole multiples only* refuses the remainder altogether
+— the sharpest of the five, paid for in black bars.
+
+All five **keep the 4:3 proportions** (stretching an 800×600 window to 16:9 makes every face
+wide) and all five **turn frame generation off**: it exists for action games, and on a mostly
+still visual novel it only spends GPU to add latency and artefacts.
+
+A preset **is still a clone**, not a profile invented from nothing: it copies your default
+profile and overrides only those few things, so GPU selection and mouse sensitivity stay
+as you set them in Lossless Scaling. **The capture method is the exception**: all five
+presets ask for WGC, and the reason is the mouse. What DXGI captures is the desktop image,
+which does not contain the cursor, so Lossless Scaling has to draw one itself — and it only
+draws when a new frame arrives. A visual novel is a still picture, so the pointer freezes
+where it was. WGC has the system composite the cursor into the captured frame instead, and
+it follows the mouse on its own. WGC needs Windows 11 24H2 or newer; on anything older
+Lossless Scaling falls back to DXGI by itself. Two more settings move with that choice and
+would be wrong without it: **G-Sync support off** and **capture queue 0**. A still picture
+produces almost no frames, so pointing variable refresh at that frame rate drives the panel
+down to its floor — and the note Lossless Scaling gives on capture warns that a hardware
+cursor under WGC needs multi-plane overlay support before variable refresh behaves. Between
+them, the pointer WGC has just made visible blinks and stutters. The capture queue is the
+same shape of thing: its own description offers depths 1 and 2 for "uncapped or unstable
+frame rates under GPU load" and depth 0 as "always use the last captured frame", and a queue
+that fills once a second is not a buffer, it is a delay. Every value it writes is a real enum member
+read out of that program's assembly metadata rather than guessed from its interface — where the
+label `Vsync3` belongs to a member spelled `VSYNC3`. That is not fussiness: the settings file is
+read by .NET's `XmlSerializer`, an unknown enum value throws, and what fails to load is **the
+whole file** — the cost of a misspelling is every setting you have, not one wrong shader.
+
+**It reads your display.** Read-only, local, and over no network: model, resolution, refresh
+rate, colour depth, and **whether HDR is switched on**. That last one is not a matter of taste
+— with HDR on, everything an upscaler captures arrives in a high-dynamic-range format whether
+the game is HDR or not, and a profile whose HDR switch is off presents that picture as though
+it were SDR. The colour comes out wrong and **nothing reports a fault**. So the presets get
+that field written from the screen; when the screen cannot be measured nothing is written at
+all (it is never guessed as "off"), and there is a manual override. **A profile of your own is
+cloned with nothing overridden**, this field included — it is your setting, and a disagreement
+is only pointed out in the settings page.
+
+The same measurements put **your machine's real numbers** into the scale-factor arithmetic
+instead of somebody else's example. Whole-multiple scaling quietly outputs at 1.00× when the
+window does not divide evenly, so once a game is up this program measures its client area once
+and, if no multiple fits, says so with the actual figures.
+
+**A configuration change that cannot be written stays on screen.** Lossless Scaling saves that
+whole file from memory when it exits, so nothing is written while it is running — stopping
+software you paid for in order to edit its settings is not this program's to do. That pending
+state is a standing line in the settings page rather than a notification that disappears after
+a few seconds; otherwise you correct your base profile, assume it took effect, and it never did.
+
+If you would rather not use a preset, the same dropdown also lists **the game profiles you made
+in Lossless Scaling yourself**. The one you pick is copied whole, so picture settings, frame
+generation, capture method and GPU selection all follow what you set in its own interface — this
+program does not understand a single one of those fields, and so cannot decide any of them on
+your behalf.
+
+Three rules govern what gets written into its settings file. Only profiles named with a
+`Sakura · ` prefix are ever added or removed, and **none of your own profiles are touched**;
+the original file is backed up into `%APPDATA%\sakura-launcher\lossless\` before the first
+write; and **nothing is written at all while it is running** — it saves that file over from
+memory when it quits, so anything written underneath would be swallowed, and you are told to
+close it instead. Switching this backend off removes the profiles we added. If the mode you
+picked names no profile of yours, **nothing is invented** — you are told it is missing.
+
+Whether it starts as administrator is its own setting, which this program reads and never
+changes. With it on, launching a game raises a UAC prompt, and a copy started that way cannot
+be closed from here either — you quit it from the tray.
+
+#### True of both
+
+The game has to be windowed or borderless; exclusive fullscreen cannot be scaled. If a game
+hands off to a different executable once it starts, matching by path finds nothing — point
+*Change main program…* at the right one, which fixes the playtime tracking at the same time.
+Scaling failing never stops the game itself from running.
 
 ### Genre tags (the only online feature, off by default)
 
@@ -432,6 +531,8 @@ cache/breakdown/     cached directory size breakdowns
 covers/              covers you set yourself
 magpie/              Magpie and its configuration (copied here the first time upscaling
                      is switched on, about 30 MB)
+lossless/            with Lossless Scaling, a copy of its settings file as it was before
+                     this program changed anything
 ```
 
 Save backups are deliberately not kept here — they go to Documents\Sakura Launcher Saves by
@@ -454,6 +555,13 @@ of the same data.
   build time. Full licence text and how to obtain the corresponding source are in
   [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Note that Magpie allows one instance:
   while your own copy is running this program will not start a second one, and says so
+- **Lossless Scaling** (paid, closed-source, sold on Steam) — the other backend upscaling can
+  use. **Not shipped with anything here**; you buy and install it yourself. This program does
+  two things with it: finds it through Steam's library records (and lets you point at it by
+  hand when that fails), and adds a few game profiles named with a `Sakura · ` prefix to its
+  own settings — each copied wholesale from a profile of yours, written only after the
+  original file has been backed up, never overwriting a profile you made, and removed again
+  when you switch the backend away
 - **7-Zip** — extracts *Pending install* archive entries and does the packing when sharing.
   Without it those two features are unavailable; everything else is unaffected
 - **Geek Uninstaller** — the second link in the uninstall chain. Without it, a game with no
@@ -514,6 +622,9 @@ npm run tag-test                                  # genre tags: which titles cou
 npm run magpie-test                               # upscaling: the three-state switch (off wholesale means off),
                                                   # config merges staying idempotent, and scaling modes looked
                                                   # up by name rather than by a remembered index
+npm run lossless-test                             # Lossless Scaling: editing somebody else's config file —
+                                                  # every byte outside the profile list unchanged, the same
+                                                  # library producing the same file, and only our own removed
 npm run cover-test                                # covers: which picture is usable, which counts as adult, the
                                                   # error page posing as an image, the user's own cover left alone
 npm run translate-test                            # translating a blurb: chunking, both services' response
@@ -553,3 +664,8 @@ The source of this project is [MIT](LICENSE).
 The installers additionally bundle [Magpie](https://github.com/Blinue/Magpie) (GPL-3.0,
 unmodified, invoked as a separate process). Its full licence text and how to obtain its
 corresponding source are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+Lossless Scaling is **not distributed with this project**, and none of its code or assets are
+included here. This program only invokes a copy you installed yourself, as a separate process,
+and edits its configuration file under the rules described above. It belongs to its author and
+its terms are the ones stated on Steam.

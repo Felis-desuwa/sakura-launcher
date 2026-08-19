@@ -71,7 +71,35 @@ function empty(): Database {
  * field added later arrived as `undefined` and quietly poisoned anything that did
  * arithmetic on it — `a.tierOrder - b.tierOrder` sorting to NaN, for one.
  */
+/**
+ * The keys the upscaling feature used while Magpie was the only thing that could do it.
+ *
+ * Moved rather than read in place, because the fields are no longer about Magpie: a second
+ * backend made "scale this game's window" a question one program among two answers, and a
+ * field called `magpieMode` holding a Lossless Scaling profile title would be a name that
+ * lies to whoever reads it next. Renaming on the way in costs one pass over a file that is
+ * already being parsed, and after it nothing downstream has to know there was ever another
+ * spelling.
+ *
+ * The sidecar needs no equivalent: its line was always labelled 「超分放大 / Upscaling」,
+ * and only the key on this side of it changed.
+ */
+function migrate<T extends object>(raw: T, from: string, to: string): void {
+  const bag = raw as Record<string, unknown>
+  if (bag[from] === undefined) return
+  if (bag[to] === undefined) bag[to] = bag[from]
+  delete bag[from]
+}
+
+function migrateSettings(raw: Partial<Settings>): Partial<Settings> {
+  migrate(raw, 'magpie', 'upscale')
+  migrate(raw, 'magpieMode', 'upscaleMode')
+  return raw
+}
+
 function normalizeGame(raw: Game): Game {
+  migrate(raw, 'magpie', 'upscale')
+  migrate(raw, 'magpieMode', 'upscaleMode')
   const game = { ...GAME_DEFAULTS, ...raw } as Game
   if (!Array.isArray(game.tags)) game.tags = []
   if (!Array.isArray(game.autoTags)) game.autoTags = []
@@ -95,7 +123,7 @@ export function load(): Database {
       games: Array.isArray(parsed.games) ? parsed.games.map(normalizeGame) : [],
       groups: Array.isArray(parsed.groups) ? parsed.groups : [],
       // Merge so settings added in later versions get their defaults.
-      settings: { ...DEFAULT_SETTINGS, ...(parsed.settings ?? {}) },
+      settings: { ...DEFAULT_SETTINGS, ...migrateSettings(parsed.settings ?? {}) },
       downloads: Array.isArray(parsed.downloads) ? parsed.downloads : [],
       removed: Array.isArray(parsed.removed) ? parsed.removed.map(normalizeGame) : []
     }

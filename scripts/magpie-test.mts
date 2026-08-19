@@ -1,15 +1,17 @@
 import {
-  DEFAULT_MODE_ORDER,
-  MAGPIE_MAX_PROFILES,
-  effectiveMagpie,
   instanceVerdict,
-  magpieApplies,
-  magpieGames,
   mayStop,
-  modeFromLabel,
   needsReinstall,
   supportsMagpie
 } from '../src/main/magpie-rules.ts'
+import {
+  DEFAULT_MODE_ORDER,
+  MAX_UPSCALE_TARGETS,
+  effectiveUpscale,
+  modeFromLabel,
+  upscaleApplies,
+  upscaleTargets
+} from '../src/main/upscale-rules.ts'
 import {
   buildConfig,
   listModes,
@@ -21,10 +23,10 @@ import {
 import {
   DEFAULT_SETTINGS,
   MAGPIE_MODES,
-  normalizeMagpieMode,
+  normalizeUpscaleMode,
   type Game,
-  type MagpieMode,
-  type Settings
+  type Settings,
+  type UpscaleMode
 } from '../src/shared/types.ts'
 
 /**
@@ -106,7 +108,7 @@ function game(over: Partial<Game> = {}): Game {
 }
 
 function settings(over: Partial<Settings> = {}): Settings {
-  return { ...DEFAULT_SETTINGS, magpie: true, ...over }
+  return { ...DEFAULT_SETTINGS, upscale: true, ...over }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -117,35 +119,35 @@ console.log('\n== the master switch, and the third state under it ==')
 // ago on one tile starts a background process, and "why is this running" has no answer.
 eq(
   'off wholesale beats on per-game',
-  effectiveMagpie(settings({ magpie: false }), game({ magpie: true })).on,
+  effectiveUpscale(settings({ upscale: false }), game({ upscale: true })).on,
   false
 )
 
-eq('absent follows the setting', effectiveMagpie(settings(), game()).on, true)
-eq('off per-game is off', effectiveMagpie(settings(), game({ magpie: false })).on, false)
-eq('on per-game is on', effectiveMagpie(settings(), game({ magpie: true })).on, true)
+eq('absent follows the setting', effectiveUpscale(settings(), game()).on, true)
+eq('off per-game is off', effectiveUpscale(settings(), game({ upscale: false })).on, false)
+eq('on per-game is on', effectiveUpscale(settings(), game({ upscale: true })).on, true)
 
 // The mode is a separate question from whether it is on, and absent means "the default".
 eq(
   'no per-game mode means the setting',
-  effectiveMagpie(settings({ magpieMode: 'Anime4K' }), game()).mode,
+  effectiveUpscale(settings({ upscaleMode: 'Anime4K' }), game()).mode,
   'Anime4K'
 )
 eq(
   'a per-game mode wins',
-  effectiveMagpie(settings({ magpieMode: 'Anime4K' }), game({ magpieMode: 'FSR' })).mode,
+  effectiveUpscale(settings({ upscaleMode: 'Anime4K' }), game({ upscaleMode: 'FSR' })).mode,
   'FSR'
 )
 // A mode assembled in Magpie's own interface. The point of the field being a name.
 eq(
   'a mode of the user\'s own making passes through',
-  effectiveMagpie(settings(), game({ magpie: true, magpieMode: 'CuNNy-8x32-NVL' })).mode,
+  effectiveUpscale(settings(), game({ upscale: true, upscaleMode: 'CuNNy-8x32-NVL' })).mode,
   'CuNNy-8x32-NVL'
 )
 // Old keys are translated here, at the one place either stored value is read.
 eq(
   'a key stored before this field held names',
-  effectiveMagpie(settings({ magpieMode: 'integer2x' }), game()).mode,
+  effectiveUpscale(settings({ upscaleMode: 'integer2x' }), game()).mode,
   'Integer Scale 2x'
 )
 
@@ -154,10 +156,10 @@ console.log('\n== what can be scaled at all ==')
 
 // A profile that can never match is worse than no profile: it is a line in a config file
 // the user has to wonder about.
-eq('an archive has no window', magpieApplies(game({ kind: 'archive', exe: '' })), false)
-eq('a missing folder has no exe to match', magpieApplies(game({ missing: true })), false)
-eq('an entry with no exe', magpieApplies(game({ exe: '   ' })), false)
-eq('an ordinary installed game', magpieApplies(game()), true)
+eq('an archive has no window', upscaleApplies(game({ kind: 'archive', exe: '' })), false)
+eq('a missing folder has no exe to match', upscaleApplies(game({ missing: true })), false)
+eq('an entry with no exe', upscaleApplies(game({ exe: '   ' })), false)
+eq('an ordinary installed game', upscaleApplies(game()), true)
 
 /* -------------------------------------------------------------------------- */
 console.log('\n== the profile set ==')
@@ -165,18 +167,18 @@ console.log('\n== the profile set ==')
 // Two entries on one binary are one window as far as Magpie is concerned.
 eq(
   'the same exe twice yields one profile',
-  magpieGames(settings(), [
+  upscaleTargets(settings(), [
     game({ id: 'a', exe: 'D:\\g\\game.exe' }),
     game({ id: 'b', exe: 'd:\\G\\GAME.EXE' })
   ]).length,
   1
 )
 
-const many = Array.from({ length: MAGPIE_MAX_PROFILES + 1 }, (_, i) =>
+const many = Array.from({ length: MAX_UPSCALE_TARGETS + 1 }, (_, i) =>
   game({ id: `g${i}`, exe: `D:\\g${i}\\game.exe`, lastLaunchedAt: i })
 )
-const capped = magpieGames(settings(), many)
-eq('the cap holds', capped.length, MAGPIE_MAX_PROFILES)
+const capped = upscaleTargets(settings(), many)
+eq('the cap holds', capped.length, MAX_UPSCALE_TARGETS)
 // Most recently played survive; the one never reached for is the one dropped.
 eq('the cap drops the least recently played', capped.at(-1)?.exe, 'D:\\g1\\game.exe')
 
@@ -189,12 +191,12 @@ const unplayed = [
 ]
 deepEq(
   'order is stable when nothing has been played',
-  magpieGames(settings(), unplayed),
-  magpieGames(settings(), [...unplayed].reverse())
+  upscaleTargets(settings(), unplayed),
+  upscaleTargets(settings(), [...unplayed].reverse())
 )
 
 // A name is shown in Magpie's own interface and written through JSON.
-const nasty = magpieGames(settings(), [
+const nasty = upscaleTargets(settings(), [
   game({ name: 'a "quoted"\n\tname', exe: 'D:\\q\\game.exe' })
 ])
 check('a name with quotes and newlines survives JSON', (() => {
@@ -212,8 +214,8 @@ eq('CRT-Geom either way round', modeFromLabel('crt geom'), 'CRT-Geom')
 // The keys this field held before it held names. On disk in every sidecar written then,
 // and in `db.json`; unmapped they would all silently fall back to the default shader.
 eq('an old key becomes its name', modeFromLabel('integer2x'), 'Integer Scale 2x')
-eq('...and so does the settings value', normalizeMagpieMode('crtgeom'), 'CRT-Geom')
-eq('a name is left alone', normalizeMagpieMode('CuNNy-8x32 mine'), 'CuNNy-8x32 mine')
+eq('...and so does the settings value', normalizeUpscaleMode('crtgeom'), 'CRT-Geom')
+eq('a name is left alone', normalizeUpscaleMode('CuNNy-8x32 mine'), 'CuNNy-8x32 mine')
 // A mode built in Magpie's own interface is called whatever its author called it, and
 // nothing on this side can know the list — so an unfamiliar name is kept, not discarded.
 // Whether it exists is `modeIndexIn`'s question, and its answer is Magpie's own default.

@@ -1,12 +1,23 @@
 import { useEffect, useState } from 'react'
 import type { Lang, MessageKey } from '../../../shared/i18n'
 import { LANGS } from '../../../shared/i18n'
-import type { DownloaderKey, MagpieStatus, Settings, SortKey, TabKey } from '../../../shared/types'
+import type {
+  DownloaderKey,
+  LosslessHdr,
+  Settings,
+  SortKey,
+  TabKey,
+  Upscaler,
+  UpscaleStatus
+} from '../../../shared/types'
 import {
   DOWNLOADERS,
+  isIntegratedGpu,
+  LOSSLESS_PRESETS,
   MAGPIE_MODES,
-  normalizeMagpieMode,
+  normalizeUpscaleMode,
   POLL_CHOICES,
+  presetIsHeavy,
   SORT_KEYS,
   TAB_KEYS,
   THEMES
@@ -38,7 +49,7 @@ interface Props {
   pendingCount: number
   gameCount: number
   /** Games given their own upscaling answer, so the override is never invisible. */
-  magpieOverrides: number
+  upscaleOverrides: number
 }
 
 export default function SettingsPage({
@@ -57,7 +68,7 @@ export default function SettingsPage({
   tagProgress,
   pendingCount,
   gameCount,
-  magpieOverrides
+  upscaleOverrides
 }: Props): React.JSX.Element {
   const t = useT()
   const [has7z, setHas7z] = useState<boolean | null>(null)
@@ -66,18 +77,27 @@ export default function SettingsPage({
   /** The suggested backup folder, shown when the user has not named one. */
   const [backupDir, setBackupDir] = useState('')
   /** null while the probe is still running, so nothing is claimed too early. */
-  const [magpie, setMagpie] = useState<MagpieStatus | null>(null)
-  /** What Magpie's config actually offers. The built-in seven until it can be read. */
+  const [upscaler, setUpscaler] = useState<UpscaleStatus | null>(null)
+  /**
+   * What the backend in force actually offers.
+   *
+   * Magpie's built-in seven until it can be read, which is also the wrong starting point
+   * for the other one — so switching to Lossless Scaling replaces the list rather than
+   * adding to it, and an empty answer there is a real answer: that program has no
+   * built-ins, and a name this program invented would be offered and then do nothing.
+   */
   const [modes, setModes] = useState<string[]>(MAGPIE_MODES)
+  /** A path the user picked that the main process would not keep. Cleared by the next try. */
+  const [pickRefused, setPickRefused] = useState(false)
 
   useEffect(() => {
     window.sakura.has7z().then(setHas7z)
   }, [])
 
-  // Polled, not asked once. Switching the feature on lays the copy down, and Magpie itself
-  // comes and goes with the games it scales — neither of which this page would ever hear
-  // about. A status that cannot change is the same as no status: the user is left watching
-  // a line that says "ready" whether or not anything is working.
+  // Polled, not asked once. Switching the feature on lays a copy down or goes looking for
+  // one, and the upscaler itself comes and goes with the games it scales — neither of which
+  // this page would ever hear about. A status that cannot change is the same as no status:
+  // the user is left watching a line that says "ready" whether or not anything is working.
   useEffect(() => {
     let alive = true
     // One question at a time. Each status answer costs a process query with a twenty-second
@@ -88,25 +108,25 @@ export default function SettingsPage({
       if (asking) return
       asking = true
       void window.sakura
-        .magpieStatus()
+        .upscaleStatus()
         .then((s) => {
-          if (alive) setMagpie(s)
+          if (alive) setUpscaler(s)
         })
         .finally(() => {
           asking = false
         })
-      // Asked on the same beat, and for the same reason: a mode the user has just built in
-      // Magpie's own interface is worth nothing if choosing it means restarting this
+      // Asked on the same beat, and for the same reason: a mode just built in
+      // the upscaler's own interface is worth nothing if choosing it means restarting this
       // program. Only a file read, unlike the status above.
-      void window.sakura.magpieModes().then((m) => {
-        if (alive && m.length > 0) setModes(m)
+      void window.sakura.upscaleModes().then((m) => {
+        if (alive) setModes(m)
       })
     }
     ask()
     // Asked once even with the feature off, because `supported` is what disables the switch
     // on a machine too old for Magpie — and with the switch off the main process answers
     // that without going near a process query.
-    if (!settings.magpie) {
+    if (!settings.upscale) {
       return () => {
         alive = false
       }
@@ -118,7 +138,10 @@ export default function SettingsPage({
       alive = false
       clearInterval(id)
     }
-  }, [settings.magpie])
+    // Re-run on a backend switch as well as on the master switch, because a stale
+    // Magpie answer on screen after a switch to Lossless Scaling would show a version
+    // number for a program that is no longer the one in force.
+  }, [settings.upscale, settings.upscaler])
 
   // Re-asked whenever the choice changes: the answer is "theirs, or the default", so a
   // value cached from before a reset would show the folder they just cleared.
@@ -134,7 +157,34 @@ export default function SettingsPage({
   const current = DOWNLOADERS.find((d) => d.key === settings.downloader)
   // Normalised for display: a setting saved when this field held keys rather than names
   // would match no option at all, and the control would sit on the wrong one.
-  const chosenMode = normalizeMagpieMode(settings.magpieMode)
+  const chosenMode = normalizeUpscaleMode(settings.upscaleMode)
+  const magpie = upscaler?.backend === 'magpie' ? upscaler : null
+  const lossless = upscaler?.backend === 'lossless' ? upscaler : null
+  const onMagpie = settings.upscaler === 'magpie'
+  // Only Magpie can be refused by the machine itself. Lossless Scaling's requirement is
+  // that the user owns it, which is not something a version check can answer.
+  const blocked = magpie !== null && !magpie.supported
+  /**
+   * Every name the picker can currently resolve.
+   *
+   * Presets count under Lossless Scaling even though they are not in `modes` — they are
+   * this program's own and always available, so a stored preset id is not an unknown mode
+   * and must not be reported as one.
+   */
+  const known = onMagpie ? modes : [...LOSSLESS_PRESETS.map((p) => p.id), ...modes]
+  const display = lossless?.display ?? null
+  /**
+   * The whole-multiple arithmetic, done with this machine's screen rather than an example.
+   *
+   * Halving is the only case worth printing: 2× is what anybody reaching for whole-multiple
+   * scaling wants, and the window that gets it is exactly half the screen. Anything that
+   * does not divide falls back to 1× in silence, which is the trap being described.
+   */
+  const halfScreen =
+    display === null ? null : `${Math.floor(display.width / 2)}×${Math.floor(display.height / 2)}`
+  // Only the discouraging half of the annotation is ever shown — see `isIntegratedGpu`.
+  const heavyForThisGpu =
+    lossless?.gpu != null && isIntegratedGpu(lossless.gpu.name) && presetIsHeavy(chosenMode)
 
   return (
     <div className="page">
@@ -380,109 +430,447 @@ export default function SettingsPage({
       </div>
 
       {/* A card of its own rather than a row under Launch: it carries a paragraph about
-          where Magpie comes from and a line about whether it is there yet, and neither
-          fits in a row. */}
+          where the upscaler comes from and a line about whether it is there yet, and
+          neither fits in a row. */}
       <div className="card" style={{ maxWidth: 760 }}>
         <div className="section-title" style={{ marginTop: 0 }}>
-          {t('settings.magpieSection')}
+          {t('settings.upscaleSection')}
         </div>
-        <p className="settings-hint" style={{ marginTop: 0 }}>{t('settings.magpieNote')}</p>
 
         <div className="settings-row">
-          <label htmlFor="magpie">
-            {t('settings.magpie')}
+          <label htmlFor="upscale">
+            {t('settings.upscale')}
             <span className="settings-hint">
-              {magpie && !magpie.supported ? t('settings.magpieUnsupported') : t('settings.magpieHint')}
+              {blocked ? t('settings.magpieUnsupported') : t('settings.upscaleHint')}
             </span>
           </label>
           <button
-            id="magpie"
+            id="upscale"
             type="button"
-            disabled={magpie !== null && !magpie.supported}
-            className={`switch${settings.magpie ? ' on' : ''}`}
-            onClick={() => onChange({ magpie: !settings.magpie })}
+            disabled={blocked}
+            className={`switch${settings.upscale ? ' on' : ''}`}
+            onClick={() => onChange({ upscale: !settings.upscale })}
           />
         </div>
 
-        {settings.magpie && (
+        {settings.upscale && (
           <>
             <div className="settings-row">
-              <label htmlFor="magpieMode">
-                {t('settings.magpieMode')}
-                <span className="settings-hint">{t('settings.magpieModeHint')}</span>
+              <label htmlFor="upscaler">
+                {t('settings.upscaler')}
+                <span className="settings-hint">{t('settings.upscalerHint')}</span>
               </label>
               <select
-                id="magpieMode"
+                id="upscaler"
                 className="field"
-                value={chosenMode}
-                onChange={(e) => onChange({ magpieMode: e.target.value })}
+                value={settings.upscaler}
+                onChange={(e) => onChange({ upscaler: e.target.value as Upscaler })}
               >
-                {/* A mode chosen before it was deleted from Magpie, or one carried over
-                    from another machine, is still the answer on record — listed so the
-                    control shows what is actually set rather than silently reading as the
-                    first entry. Magpie treats it as "use the default" until it exists. */}
-                {!modes.includes(chosenMode) && <option value={chosenMode}>{chosenMode}</option>}
-                {modes.map((mode) => (
-                  <option key={mode} value={mode}>
-                    {mode}
-                  </option>
-                ))}
+                <option value="magpie">{t('settings.upscalerMagpie')}</option>
+                <option value="lossless">{t('settings.upscalerLossless')}</option>
               </select>
             </div>
 
-            <div className="settings-row">
-              <label htmlFor="magpieElevate">
-                {t('settings.magpieElevate')}
-                <span className="settings-hint">{t('settings.magpieElevateHint')}</span>
-              </label>
-              <button
-                id="magpieElevate"
-                type="button"
-                className={`switch${settings.magpieElevate ? ' on' : ''}`}
-                onClick={() => onChange({ magpieElevate: !settings.magpieElevate })}
-              />
-            </div>
+            {/* Where it comes from, shown whether or not it was found. A note that appeared
+                only on failure would leave everybody who does already own Lossless Scaling
+                never told that this program does not supply it, and that it writes into
+                that program's own configuration. */}
+            <p className="settings-hint" style={{ marginTop: 0 }}>
+              {onMagpie ? t('settings.magpieNote') : t('settings.losslessNote')}
+            </p>
+
+            {onMagpie ? (
+              <p className="settings-hint" style={{ marginTop: 0 }}>
+                {t('settings.magpieHotkeyHint')}
+              </p>
+            ) : (
+              <>
+                {/* What will be written into their file, said before the first write rather
+                    than after it. The link opens in their own browser through the window
+                    handler in `index.ts`; this program still opens no socket of its own. */}
+                <p className="settings-hint" style={{ marginTop: 0 }}>
+                  {t('settings.losslessWrites')}{' '}
+                  <a
+                    className="linkish"
+                    href="https://store.steampowered.com/app/993090/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {t('settings.losslessStore')}
+                  </a>
+                </p>
+
+                {/* Where it is, immediately above the control that changes that — the two
+                    are one subject, and a "not found" reported at the bottom of the card
+                    leaves the button that fixes it out of sight. Says nothing at all until
+                    the first answer arrives, rather than guessing at it. */}
+                {lossless !== null && (
+                  <p className="settings-hint" style={{ marginTop: 0, wordBreak: 'break-all' }}>
+                    {!lossless.installed
+                      ? t('settings.losslessNotFound')
+                      : t(
+                          lossless.pinned
+                            ? 'settings.losslessPinnedAt'
+                            : 'settings.losslessFoundAt',
+                          { path: lossless.path ?? '' }
+                        )}
+                  </p>
+                )}
+
+                {/* Offered at all times, not only after a failure. The automatic search can
+                    land on a stale or wrong install and still look like it worked, and the
+                    user has to be able to overrule it — and to take the overrule back. */}
+                <div className="settings-row">
+                  <label htmlFor="losslessPick">
+                    {t('settings.losslessPick')}
+                    <span className="settings-hint">{t('settings.losslessPickHint')}</span>
+                  </label>
+                  <span style={{ display: 'flex', gap: 8 }}>
+                    {settings.losslessPath !== null && (
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        onClick={() => {
+                          setPickRefused(false)
+                          void window.sakura.pinLossless(null)
+                          onChange({ losslessPath: null })
+                        }}
+                      >
+                        {t('settings.losslessClear')}
+                      </button>
+                    )}
+                    <button
+                      id="losslessPick"
+                      type="button"
+                      className="btn ghost"
+                      onClick={() => {
+                        void window.sakura.pickExePath().then((exe) => {
+                          // A cancelled dialog is not a refusal and must not clear the pin.
+                          if (exe === null) return
+                          void window.sakura.pinLossless(exe).then((ok) => {
+                            setPickRefused(!ok)
+                            // Stored by the main process, which is the only side that can
+                            // check it. Mirrored into settings so the row updates now
+                            // rather than at the next poll.
+                            if (ok) onChange({ losslessPath: exe })
+                          })
+                        })
+                      }}
+                    >
+                      {t('settings.losslessPick')}
+                    </button>
+                  </span>
+                </div>
+                {pickRefused && (
+                  <p className="settings-hint" style={{ marginTop: 0, color: 'var(--danger-text)' }}>
+                    {t('settings.losslessWrongExe')}
+                  </p>
+                )}
+
+                {lossless !== null && (
+                  <>
+                    {/* What the machine actually is.
+                        Here rather than anywhere else because it is the input to exactly one
+                        decision on this page: the HDR switch written into the profiles
+                        below. Reading it costs a PowerShell and a compiled interop stub, so
+                        the poll behind this card answers from a cache and this button is the
+                        only thing that asks again. A screen that has not been measured says
+                        so and claims nothing — "no HDR" on an unknown is the same
+                        fabrication as the stale value that made this necessary. */}
+                    <div className="section-title">{t('settings.displaySection')}</div>
+                    <p className="settings-hint" style={{ marginTop: 0 }}>
+                      {t('settings.displayHint')}
+                    </p>
+                    <div className="settings-row">
+                      <label htmlFor="displayRefresh">
+                        {display === null
+                          ? t('settings.displayUnknown')
+                          : t('settings.displayLine', {
+                              name: display.name || t('settings.displayNoName'),
+                              w: display.width,
+                              h: display.height,
+                              hz: display.refreshHz,
+                              bits: display.bitsPerChannel
+                            })}
+                        <span className="settings-hint">
+                          {display !== null &&
+                            (!display.hdrSupported
+                              ? t('settings.displayHdrUnsupported')
+                              : display.hdrEnabled
+                                ? t('settings.displayHdrOn')
+                                : t('settings.displayHdrOff'))}
+                          {lossless.gpu !== null && (
+                            <>
+                              {display !== null && ' · '}
+                              {t('settings.displayGpu', { name: lossless.gpu.name })}
+                            </>
+                          )}
+                        </span>
+                      </label>
+                      <button
+                        id="displayRefresh"
+                        type="button"
+                        className="btn ghost"
+                        onClick={() => {
+                          void window.sakura.refreshDisplays().then(setUpscaler)
+                        }}
+                      >
+                        {t('settings.displayRefresh')}
+                      </button>
+                    </div>
+
+                    <div className="settings-row">
+                      <label htmlFor="losslessHdr">
+                        {t('settings.losslessHdr')}
+                        <span className="settings-hint">{t('settings.losslessHdrHint')}</span>
+                      </label>
+                      <select
+                        id="losslessHdr"
+                        className="field"
+                        value={settings.losslessHdr}
+                        onChange={(e) => onChange({ losslessHdr: e.target.value as LosslessHdr })}
+                      >
+                        <option value="auto">{t('settings.losslessHdrAuto')}</option>
+                        <option value="on">{t('settings.losslessHdrOn')}</option>
+                        <option value="off">{t('settings.losslessHdrOff')}</option>
+                      </select>
+                    </div>
+
+                    {/* A standing line, not the toast `lossless.configLocked` raises. That
+                        toast lasts four seconds; this state lasts until they close the
+                        program, and the colour bug all of this was written for survived
+                        precisely because nothing on screen ever said that the last
+                        correction had not been written. */}
+                    {lossless.pendingWrite && (
+                      <p
+                        className="settings-hint"
+                        style={{
+                          marginTop: 0,
+                          whiteSpace: 'pre-line',
+                          color: lossless.running ? 'var(--warn)' : undefined
+                        }}
+                      >
+                        {t(
+                          lossless.running
+                            ? 'settings.losslessPendingLocked'
+                            : 'settings.losslessPendingNext'
+                        )}
+                      </p>
+                    )}
+                    {/* Only reachable for a mode naming one of their own profiles: a preset
+                        disagreeing with the screen is something the next write settles, and
+                        the line above is already saying why it has not. Their own profile is
+                        cloned and never corrected, so pointing at it is all there is to do. */}
+                    {lossless.hdrMismatch && !lossless.pendingWrite && (
+                      <p className="settings-hint" style={{ marginTop: 0, color: 'var(--warn)' }}>
+                        {t('settings.losslessHdrMismatch', { mode: chosenMode })}
+                      </p>
+                    )}
+                  </>
+                )}
+              </>
+            )}
 
             <div className="settings-row">
-              {/* Ordered by what the user most needs to know: a foreign instance means
-                  nothing will scale at all, and saying "ready" over that would be a lie. */}
+              <label htmlFor="upscaleMode">
+                {t('settings.upscaleMode')}
+                <span className="settings-hint">
+                  {onMagpie ? t('settings.magpieModeHint') : t('settings.losslessModeHint')}
+                </span>
+              </label>
+              <select
+                id="upscaleMode"
+                className="field"
+                value={chosenMode}
+                onChange={(e) => onChange({ upscaleMode: e.target.value })}
+              >
+                {/* A mode chosen before it was deleted from the upscaler, or one carried
+                    over from another machine, is still the answer on record — listed so the
+                    control shows what is actually set rather than silently reading as the
+                    first entry. Magpie treats an unknown name as "use the default"; for
+                    Lossless Scaling nothing is written for it and the user is told. */}
+                {!known.includes(chosenMode) && <option value={chosenMode}>{chosenMode}</option>}
+                {/* Presets first, and in their own group: somebody who has just switched
+                    this on has no profiles of their own and would otherwise be handed an
+                    empty list, or a list of names they would have to research. */}
+                {!onMagpie && (
+                  <optgroup label={t('upscale.presetGroup')}>
+                    {LOSSLESS_PRESETS.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {t(preset.labelKey)}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {onMagpie
+                  ? modes.map((mode) => (
+                      <option key={mode} value={mode}>
+                        {mode}
+                      </option>
+                    ))
+                  : modes.length > 0 && (
+                      <optgroup label={t('upscale.profileGroup')}>
+                        {modes.map((mode) => (
+                          <option key={mode} value={mode}>
+                            {mode}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+              </select>
+            </div>
+            {!onMagpie && (
+              // `pre-line` because this one is written in paragraphs: it walks through five
+              // choices and which to pick, and collapsed into a single block nobody reads
+              // past the first line. The blank lines in the dictionary entry are the layout.
+              <p className="settings-hint" style={{ marginTop: 0, whiteSpace: 'pre-line' }}>
+                {t('settings.losslessPresetHint')}
+              </p>
+            )}
+            {/* The same rule that paragraph states, worked out on the screen actually
+                plugged in. The hint used to carry one machine's numbers, which made it
+                wrong on every other machine. Absent when nothing has been measured. */}
+            {!onMagpie && display !== null && halfScreen !== null && (
+              <p className="settings-hint" style={{ marginTop: 0 }}>
+                {t('settings.losslessIntegerFit', {
+                  screen: `${display.width}×${display.height}`,
+                  half: halfScreen
+                })}
+              </p>
+            )}
+            {!onMagpie && heavyForThisGpu && (
+              <p className="settings-hint" style={{ marginTop: 0, color: 'var(--warn)' }}>
+                {t('settings.presetHeavyGpu')}
+              </p>
+            )}
+            {!onMagpie && modes.length === 0 && (
+              <p className="settings-hint" style={{ marginTop: 0 }}>
+                {t('settings.losslessNoModes')}
+              </p>
+            )}
+            {/* The setting holds one name for both backends, so switching can leave it
+                pointing at a Magpie mode. Said here rather than left to be discovered at
+                launch, by which time the game has already started unscaled. Presets are
+                always valid, so this only fires on a name that was meant to be a profile. */}
+            {!onMagpie && !known.includes(chosenMode) && (
+              <p className="settings-hint" style={{ marginTop: 0, color: 'var(--warn)' }}>
+                {t('settings.losslessModeMissing', { mode: chosenMode })}
+              </p>
+            )}
+
+            {onMagpie ? (
+              <div className="settings-row">
+                <label htmlFor="magpieElevate">
+                  {t('settings.magpieElevate')}
+                  <span className="settings-hint">{t('settings.magpieElevateHint')}</span>
+                </label>
+                <button
+                  id="magpieElevate"
+                  type="button"
+                  className={`switch${settings.magpieElevate ? ' on' : ''}`}
+                  onClick={() => onChange({ magpieElevate: !settings.magpieElevate })}
+                />
+              </div>
+            ) : (
+              <div className="settings-row">
+                <label htmlFor="losslessDelay">
+                  {t('settings.losslessDelay')}
+                  <span className="settings-hint">{t('settings.losslessDelayHint')}</span>
+                </label>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <input
+                    id="losslessDelay"
+                    type="range"
+                    min={0}
+                    max={10}
+                    step={1}
+                    value={settings.losslessDelay}
+                    onChange={(e) => onChange({ losslessDelay: Number(e.target.value) })}
+                  />
+                  <span style={{ width: 44, fontSize: 12.5, color: 'var(--ink-soft)' }}>
+                    {t('settings.losslessSeconds', { n: settings.losslessDelay })}
+                  </span>
+                </span>
+              </div>
+            )}
+
+            <div className="settings-row">
+              {/* Ordered by what the user most needs to know. For Magpie a foreign instance
+                  means nothing will scale at all, and saying "ready" over that would be a
+                  lie; for Lossless Scaling the equivalent is not being found, which is the
+                  ordinary state for anybody who has not bought it. */}
               <span className="settings-hint">
-                {magpie?.foreign
-                  ? t('settings.magpieForeignShort')
-                  : magpie?.running
-                    ? magpie.forGame
-                      ? t('settings.magpieRunningFor', {
-                          name: t('common.quoted', { name: magpie.forGame }),
-                          version: magpie.version
-                        })
-                      : t('settings.magpieRunning', { version: magpie.version })
-                    : magpie?.installed
-                      ? t('settings.magpieReady', { version: magpie.version })
-                      : t('settings.magpieNotInstalled')}
-                {magpieOverrides > 0 && ` · ${t('settings.magpieOverrides', { n: magpieOverrides })}`}
+                {/* The null case is its own answer, not the negative one. Locating Lossless
+                    Scaling reads the registry through PowerShell and takes a moment, and
+                    "not found" said during that moment is a claim rather than a wait — the
+                    exact wrong thing to show somebody who does have it installed. */}
+                {upscaler === null
+                  ? t('settings.upscaleChecking')
+                  : magpie !== null
+                    ? magpie.foreign
+                      ? t('settings.magpieForeignShort')
+                      : magpie.running
+                        ? magpie.forGame
+                          ? t('settings.magpieRunningFor', {
+                              name: t('common.quoted', { name: magpie.forGame }),
+                              version: magpie.version
+                            })
+                          : t('settings.magpieRunning', { version: magpie.version })
+                        : magpie.installed
+                          ? t('settings.magpieReady', { version: magpie.version })
+                          : t('settings.magpieNotInstalled')
+                    : !lossless?.installed
+                      ? t('settings.losslessNotFound')
+                      : lossless.running
+                        ? lossless.forGame
+                          ? t('settings.losslessRunningFor', {
+                              name: t('common.quoted', { name: lossless.forGame })
+                            })
+                          : t('settings.losslessRunning')
+                        : t('settings.losslessReady')}
+                {upscaleOverrides > 0 &&
+                  ` · ${t('settings.upscaleOverrides', { n: upscaleOverrides })}`}
+                {!onMagpie &&
+                  lossless !== null &&
+                  lossless.profiles > 0 &&
+                  ` · ${t('settings.losslessProfiles', { n: lossless.profiles })}`}
               </span>
-              {magpie?.installed && (
-                <button type="button" className="ghost" onClick={() => void window.sakura.revealMagpie()}>
-                  {t('settings.magpieFolder')}
+              {(onMagpie ? magpie?.installed : lossless?.installed) && (
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => void window.sakura.revealUpscaler()}
+                >
+                  {t('settings.upscaleFolder')}
                 </button>
               )}
             </div>
+            {/* Its own setting, read and never written — worth saying because it explains
+                the UAC prompt at launch and why a copy started that way cannot be stopped
+                from here. */}
+            {!onMagpie && lossless?.startsElevated && (
+              <p className="settings-hint" style={{ marginTop: 0 }}>
+                {t('settings.losslessElevates')}
+              </p>
+            )}
 
             {/* The way out of this page and into the settings this one does not carry.
                 Last, because it leaves: everything above is answerable here. */}
             <div className="settings-row">
-              <label htmlFor="magpieOpen">
-                {t('settings.magpieOpen')}
-                <span className="settings-hint">{t('settings.magpieOpenHint')}</span>
+              <label htmlFor="upscaleOpen">
+                {t('settings.upscaleOpen')}
+                <span className="settings-hint">
+                  {onMagpie ? t('settings.magpieOpenHint') : t('settings.losslessOpenHint')}
+                </span>
               </label>
               <button
-                id="magpieOpen"
+                id="upscaleOpen"
                 type="button"
                 className="btn ghost"
-                disabled={magpie !== null && !magpie.supported}
-                onClick={() => void window.sakura.openMagpieSettings()}
+                disabled={blocked || (!onMagpie && lossless !== null && !lossless.installed)}
+                onClick={() => void window.sakura.openUpscalerSettings()}
               >
-                {t('settings.magpieOpen')}
+                {t('settings.upscaleOpen')}
               </button>
             </div>
           </>

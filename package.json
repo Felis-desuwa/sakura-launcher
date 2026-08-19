@@ -24,6 +24,8 @@
     "diagnose-probe": "node scripts/diagnose-probe.mts",
     "tag-test": "node scripts/tag-test.mts",
     "magpie-test": "node scripts/magpie-test.mts",
+    "lossless-test": "node scripts/lossless-test.mts",
+    "display-test": "node scripts/display-test.mts",
     "cover-test": "node scripts/cover-test.mts",
     "save-test": "node scripts/save-test.mts",
     "share-test": "node scripts/share-test.mts",

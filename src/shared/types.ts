@@ -31,23 +31,32 @@ export const TAB_KEYS: TabKey[] = ['all', 'wishlist', 'playing', 'played']
 export type GameKind = 'installed' | 'archive'
 
 /**
- * Which shader Magpie scales a game's window with, held as **the name Magpie's own
- * `config.json` gives it** — never as the number that file actually stores.
+ * How a game's window is to be scaled, held as **a name the upscaler's own configuration
+ * gives it** — never as the number or position that file actually stores.
  *
- * That number is a *position* in a list the user can reorder from Magpie's interface, so a
- * stored index quietly means a different shader the moment they do. The name is the stable
- * thing; `magpie-config.ts` turns it back into an index against whatever list is really on
- * disk.
+ * One string covers both backends because both answer the same question the same way:
  *
- * It is a bare string rather than a union of the seven built-ins because Magpie's own
- * interface can *create* modes — the shipped `effects\` folder holds far more shaders than
- * the seven default modes use, and a mode combining them is exactly the reason somebody
- * opens that interface. A closed union would leave anything they built there unselectable
- * here and unwritable to the sidecar, which is to say invisible to the program that offers
- * the setting. A name that no longer exists is not an error either: `modeIndexIn` answers
- * `-1`, which is Magpie's own "use the default".
+ *  - Magpie: the name of a scaling mode in its `config.json`. The file stores a *position*
+ *    in a list the user can reorder from Magpie's interface, so a stored index quietly
+ *    means a different shader the moment they do. `magpie-config.ts` turns the name back
+ *    into an index against whatever list is really on disk.
+ *  - Lossless Scaling: the `<Title>` of one of the user's own game profiles in its
+ *    `Settings.xml`. `lossless-config.ts` clones that profile rather than reading it, so
+ *    everything inside it — frame generation included — follows the user's intent without
+ *    this program having to understand a single one of its forty fields.
+ *
+ * It is a bare string rather than a union because both interfaces can *create* these: the
+ * shaders under Magpie's `effects\` outnumber the seven default modes by far, and a
+ * Lossless Scaling profile is called whatever its author called it. A closed union would
+ * leave anything built there unselectable here and unwritable to the sidecar, which is to
+ * say invisible to the program that offers the setting. A name that no longer exists is
+ * not an error either: Magpie's `modeIndexIn` answers `-1`, its own "use the default", and
+ * Lossless Scaling writes no profile at all rather than invent one.
  */
-export type MagpieMode = string
+export type UpscaleMode = string
+
+/** Which program does the scaling. The two are exclusive — see `Settings.upscaler`. */
+export type Upscaler = 'magpie' | 'lossless'
 
 /**
  * The seven modes Magpie creates for itself, in the order its `_SetDefaultScalingModes()`
@@ -62,7 +71,7 @@ export type MagpieMode = string
  * and translating them would leave the user unable to match what this program shows
  * against what they are looking at.
  */
-export const MAGPIE_MODES: MagpieMode[] = [
+export const MAGPIE_MODES: UpscaleMode[] = [
   'Lanczos',
   'FSR',
   'FSRCNNX',
@@ -72,8 +81,245 @@ export const MAGPIE_MODES: MagpieMode[] = [
   'Integer Scale 2x'
 ]
 
-/** Longest mode name accepted from a hand-edited sidecar. Magpie's own UI shows these. */
-export const MAX_MAGPIE_MODE = 80
+/** Longest mode name accepted from a hand-edited sidecar. Both upscalers display these. */
+export const MAX_UPSCALE_MODE = 80
+
+/**
+ * A ready-made Lossless Scaling profile, for people who do not want to build one.
+ *
+ * The default arrangement asks the user to make a profile in Lossless Scaling and points
+ * at it, which is right when they have opinions and useless when they do not — the first
+ * thing anybody sees otherwise is forty controls and no idea which three matter. These are
+ * the three that matter for this library, chosen and named.
+ *
+ * **A preset is still a clone.** It copies the user's first profile exactly as the other
+ * path does and then overrides `fields`, so everything not listed — capture API, GPU and
+ * display selection, sync mode, cursor handling, the frame counter — stays as they have it.
+ * That is not laziness: authoring all forty would mean reimplementing another program's
+ * settings page here and getting it wrong the day they add a field.
+ *
+ * **Every value in `fields` is a real member of the enum it belongs to**, read out of
+ * `LosslessScaling.dll`'s metadata rather than guessed from its interface — where, for
+ * instance, the label `Vsync3` belongs to a member spelled `VSYNC3`. This matters more than
+ * it looks: `Settings.xml` is deserialised by .NET's `XmlSerializer`, which throws on an
+ * enum value it does not know, and the thing that fails to load is **the whole file**. A
+ * misspelling here would not scale a game wrong, it would cost the user every setting they
+ * have. Verified members, for anyone adding to this table:
+ *
+ * - `ScalingType`: Off, LS1, FSR, NIS, SGSR, BicubicCAS, Anime4K, XBR, SharpBilinear,
+ *   Integer, Nearest
+ * - `Anime4kType`: S, M, L, VL, UL   ·   `ScalingMode`: Auto, Custom
+ * - `ScalingFitMode`: AspectRatio, Fullscreen
+ * - `FrameGeneration`: Off, LSFG3, LSFG2, LSFG1, LSFI, LSFI1
+ * - `LS1Type`: BALANCED, PERFORMANCE   ·   `CaptureApi`: DXGI, WGC, GDI
+ * - `SyncMode`: OFF, DEFAULT, VSYNC1, VSYNC2, VSYNC3, VSYNC4
+ */
+export interface LosslessPreset {
+  /**
+   * What gets stored in `Settings.upscaleMode` and written to the sidecar.
+   *
+   * Prefixed and untranslated so it is stable: this string travels in `sakura-launcher.md`
+   * to machines with another interface language, and it must mean the same thing there.
+   * The `Sakura:` also makes it impossible to confuse with a profile title of the user's,
+   * which is the other kind of value this field holds.
+   */
+  id: UpscaleMode
+  /**
+   * What it is called inside Lossless Scaling's own profile list, before the prefix that
+   * marks it as this program's — see `ourProfileTitle`.
+   *
+   * Untranslated for the reason `MAGPIE_MODES` is: the user reads this name in somebody
+   * else's window, and a name that changed with this program's language would leave them
+   * unable to match what they are looking at against what this program says. It also keeps
+   * a language switch from rewriting their settings file for no reason.
+   */
+  title: string
+  /** `label.<key>` in the dictionary, since a person does need this in their own language. */
+  labelKey:
+    | 'upscale.presetPerformance'
+    | 'upscale.presetQuality'
+    | 'upscale.presetUltra'
+    | 'upscale.presetSharp'
+    | 'upscale.presetInteger'
+  /** Elements to set on the clone. Everything absent is inherited from the user's profile. */
+  fields: Record<string, string>
+}
+
+/**
+ * Two axes, not one ladder.
+ *
+ * The **first three** are a quality ladder, and what they cost is the scaling algorithm.
+ * `BicubicCAS` is a sharpened bicubic and effectively free; Anime4K is a small neural
+ * upscaler built for exactly this material — hand-drawn anime art — and `L` to `UL` is the
+ * difference between "a mid-range card will not notice" and "it is the most this can look
+ * like".
+ *
+ * The **last two** answer a different complaint, and it is one this library runs into
+ * constantly: the scale factor is usually not a whole number. A 800×600 window on a 1440p
+ * screen is 2.4×, and a resampler asked for 2.4× gives some lines two pixels and their
+ * neighbours three. Nothing is blurry and nothing is stretched — it just looks subtly
+ * *uneven*, worst of all on the fine linework these games are drawn in. Anime4K makes it
+ * more visible rather than less, because it sharpens before the fractional resample.
+ *
+ *   - `SharpBilinear` takes the picture up by a whole multiple first and only then covers
+ *     the remainder, so every line keeps the same weight and the screen still fills.
+ *   - `Integer` refuses the remainder altogether: whole multiples only, black bars for
+ *     what is left over. The sharpest of the five and the only one that cannot be uneven,
+ *     paid for in screen area.
+ *
+ * The rest of the overrides are the same in all five and are the point of having presets
+ * at all. Two are about the picture:
+ *
+ * - `ScalingFitMode: AspectRatio`, because these games are 4:3 and a modern screen is not.
+ *   `Fullscreen` stretches an 800×600 window into 16:9 and every face in it comes out wide.
+ * - `FrameGeneration: Off`, always. It exists for action games; on a visual novel there is
+ *   nothing to interpolate between, and it spends GPU to add latency and artefacts to a
+ *   still image.
+ *
+ * The other three are all one decision wearing three names, and the decision is that
+ * **the thing being scaled is a still picture**. That is not a guess about this library,
+ * it is what the library is: a page of text under a painting, redrawn when somebody
+ * clicks. Every default in a scaling program assumes the opposite, and each of these is
+ * that assumption showing:
+ *
+ * - `VRS: false`. Variable-rate scaling skips frames that did not change, which on this
+ *   material is nearly all of them — it is the one option whose own description names
+ *   “mostly static content” as the case it was built for, and it is the case where it has
+ *   nothing left to do but stall.
+ * - `CaptureApi: WGC`, so the cursor can move at all. See the note below; this one was
+ *   arrived at the long way.
+ * - `GsyncSupport: false` and `QueueTarget: 0`, which are the *consequences* of that
+ *   choice and would be wrong without it. Forcing variable refresh onto the output of a
+ *   source producing almost no frames drives the panel to its floor, and Lossless
+ *   Scaling's own note on capture warns that a hardware cursor under WGC needs multi-plane
+ *   overlay support before variable refresh behaves — so the cursor it just made visible
+ *   stutters and blinks. A buffered capture queue is the same shape of mistake: its own
+ *   description offers depth 1 and 2 for “uncapped or unstable frame rates under GPU
+ *   load” and depth 0 as “always use the last captured frame”. A queue that fills once a
+ *   second is not a buffer, it is a delay.
+ */
+export const LOSSLESS_PRESETS: LosslessPreset[] = [
+  {
+    id: 'Sakura:Sharp',
+    title: 'Sharp',
+    labelKey: 'upscale.presetSharp',
+    fields: {
+      ScalingType: 'SharpBilinear',
+      ScalingMode: 'Auto',
+      ScalingFitMode: 'AspectRatio',
+      VRS: 'false',
+      FrameGeneration: 'Off',
+      CaptureApi: 'WGC',
+      GsyncSupport: 'false',
+      QueueTarget: '0'
+    }
+  },
+  {
+    id: 'Sakura:Performance',
+    title: 'Performance',
+    labelKey: 'upscale.presetPerformance',
+    fields: {
+      ScalingType: 'BicubicCAS',
+      ScalingMode: 'Auto',
+      ScalingFitMode: 'AspectRatio',
+      VRS: 'false',
+      FrameGeneration: 'Off',
+      CaptureApi: 'WGC',
+      GsyncSupport: 'false',
+      QueueTarget: '0'
+    }
+  },
+  {
+    id: 'Sakura:Quality',
+    title: 'Quality',
+    labelKey: 'upscale.presetQuality',
+    fields: {
+      ScalingType: 'Anime4K',
+      Anime4kType: 'L',
+      ScalingMode: 'Auto',
+      ScalingFitMode: 'AspectRatio',
+      VRS: 'false',
+      FrameGeneration: 'Off',
+      CaptureApi: 'WGC',
+      GsyncSupport: 'false',
+      QueueTarget: '0'
+    }
+  },
+  {
+    id: 'Sakura:Ultra',
+    title: 'Ultra',
+    labelKey: 'upscale.presetUltra',
+    fields: {
+      ScalingType: 'Anime4K',
+      Anime4kType: 'UL',
+      ScalingMode: 'Auto',
+      ScalingFitMode: 'AspectRatio',
+      VRS: 'false',
+      FrameGeneration: 'Off',
+      CaptureApi: 'WGC',
+      GsyncSupport: 'false',
+      QueueTarget: '0'
+    }
+  },
+  {
+    id: 'Sakura:Integer',
+    title: 'Integer',
+    labelKey: 'upscale.presetInteger',
+    fields: {
+      ScalingType: 'Integer',
+      ScalingMode: 'Auto',
+      ScalingFitMode: 'AspectRatio',
+      VRS: 'false',
+      FrameGeneration: 'Off',
+      CaptureApi: 'WGC',
+      GsyncSupport: 'false',
+      QueueTarget: '0'
+    }
+  }
+]
+
+/** The preset a stored mode names, or null when it names a profile of the user's. */
+export function losslessPresetFor(mode: UpscaleMode): LosslessPreset | null {
+  const want = mode.trim().toLowerCase()
+  return LOSSLESS_PRESETS.find((p) => p.id.toLowerCase() === want) ?? null
+}
+
+/**
+ * Whether a graphics adapter is an integrated one — and **nothing else**.
+ *
+ * Beside `LOSSLESS_PRESETS` and for the same reason: the settings page annotates the
+ * presets with it and cannot reach into `src/main`.
+ *
+ * There is deliberately no "this card is fast" answer. A model name is a marketing string,
+ * not a frame time: any rule that called discrete cards capable would flatter one ten years
+ * old, and the user would be told the heaviest preset suits them on the strength of the
+ * word "GeForce". A false reassurance is worse than silence, exactly as it is in the launch
+ * diagnosis — so only the one case that is safe to state is stated, and everything
+ * unrecognised is left unannotated. Intel's Arc is checked for a model number precisely
+ * because that name covers both a discrete card and an integrated part.
+ */
+export function isIntegratedGpu(name: string): boolean {
+  const n = name.toLowerCase()
+  if (n.includes('intel')) {
+    if (/arc\b/.test(n)) return !/\b[ab]\d{3}\b/.test(n)
+    return /\b(uhd|hd|iris)\b/.test(n) || /intel\(r\) graphics/.test(n)
+  }
+  if (n.includes('radeon')) {
+    return /\bvega\b/.test(n) ? !/\brx\b/.test(n) : /radeon\(tm\) graphics/.test(n)
+  }
+  return false
+}
+
+/**
+ * Whether a preset leans on the neural upscaler, which is the only one heavy enough to be
+ * worth warning an integrated adapter about.
+ *
+ * Derived from the table above rather than kept as a second list of ids, so a preset that
+ * changes algorithm cannot leave a stale annotation behind.
+ */
+export function presetIsHeavy(mode: string): boolean {
+  return losslessPresetFor(mode)?.fields.ScalingType === 'Anime4K'
+}
 
 /**
  * The keys this setting used before it held names, and the name each one meant.
@@ -83,7 +329,7 @@ export const MAX_MAGPIE_MODE = 80
  * fail loudly — `modeIndexIn` would return -1 and every one of those games would quietly
  * fall back to the default shader.
  */
-const LEGACY_MAGPIE_MODES: Record<string, MagpieMode> = {
+const LEGACY_MAGPIE_MODES: Record<string, UpscaleMode> = {
   lanczos: 'Lanczos',
   fsr: 'FSR',
   fsrcnnx: 'FSRCNNX',
@@ -94,14 +340,22 @@ const LEGACY_MAGPIE_MODES: Record<string, MagpieMode> = {
 }
 
 /**
- * The name to look up in Magpie's config, given whatever is stored.
+ * The name to look up in the upscaler's config, given whatever is stored.
  *
  * Translates an old key and otherwise passes the name through untouched — a mode the user
  * built is theirs to spell, including the case. Applied at every point that reads the
  * setting rather than once on upgrade, because the sidecar is a second copy that no
  * migration pass would ever reach: a folder can arrive from another machine years later.
+ *
+ * The legacy table is Magpie's history and is applied whichever backend is in force, which
+ * looks like a bug and is not: the only way it can touch a Lossless Scaling profile is if
+ * that profile is titled `fsr` or `anime4k`, and the change is one of case. Both backends
+ * look their names up case-insensitively for exactly this reason — see `modeIndexIn` and
+ * `findProfile` — so the round trip lands on the same profile either way. Splitting this
+ * into two functions would buy nothing and would have to be threaded through the sidecar,
+ * which does not know which backend is in force and should not have to.
  */
-export function normalizeMagpieMode(mode: MagpieMode): MagpieMode {
+export function normalizeUpscaleMode(mode: UpscaleMode): UpscaleMode {
   const trimmed = mode.trim()
   return LEGACY_MAGPIE_MODES[trimmed.toLowerCase()] ?? trimmed
 }
@@ -117,13 +371,81 @@ export function normalizeMagpieMode(mode: MagpieMode): MagpieMode {
  * None of these stop a game running. By the time any of them is known the game has
  * already started, and scaling failing is not a reason to interfere with that.
  */
-export interface MagpieNotice {
+export interface UpscaleNotice {
   key: MessageKey
   vars?: Vars
 }
 
+/**
+ * What one connected display actually is, read off Windows rather than guessed.
+ *
+ * Everything here is a fact about the **machine**, never about a game, which is why none
+ * of it is written into `sakura-launcher.md` — the same reasoning that keeps group
+ * membership and tile order out of the sidecar.
+ */
+export interface DisplayFacts {
+  /** The monitor's own name, e.g. `MAG 272Q X24`. Empty when Windows will not say. */
+  name: string
+  width: number
+  height: number
+  /** Vertical refresh, rounded. Zero when the path reports none. */
+  refreshHz: number
+  /** The desktop origin sits on this one. */
+  primary: boolean
+  /** The display can do HDR at all. */
+  hdrSupported: boolean
+  /**
+   * HDR is switched **on** right now.
+   *
+   * This is the fact the whole feature turns on. On an HDR desktop everything an upscaler
+   * captures arrives in a high-dynamic-range format whether the game is HDR or not, and a
+   * scaler told otherwise presents it as though it were SDR — which looks exactly like the
+   * washed-out colour this was written to fix.
+   */
+  hdrEnabled: boolean
+  /** Bits per colour channel, 8 or 10. Zero when unknown. */
+  bitsPerChannel: number
+}
+
+/**
+ * A graphics adapter, kept only so something cautious can be said about how heavy a
+ * preset is.
+ *
+ * Nothing is ever *configured* from this. Picking a scaling algorithm by reading a model
+ * name would be inventing picture settings in somebody else's program on the strength of
+ * a string match.
+ */
+export interface GpuFacts {
+  name: string
+  /** Reported adapter memory in MB. Zero for the virtual adapters remote-desktop tools install. */
+  memoryMb: number
+}
+
+/**
+ * Everything this program knows about the machine's display hardware.
+ *
+ * Null when the query has not run or could not answer, and callers must never read that as
+ * "no displays". Nothing is written on an unknown.
+ */
+export interface MachineFacts {
+  displays: DisplayFacts[]
+  gpus: GpuFacts[]
+}
+
+/**
+ * Whether the profiles this program writes claim HDR support.
+ *
+ * `auto` follows the display and is the answer for almost everybody. The other two exist
+ * because the reasoning behind `auto` — that Lossless Scaling's HDR switch describes the
+ * *screen* rather than the game — is inferred from the way the picture goes wrong, and is
+ * not something its authors document. A conclusion reached that way gets an escape hatch,
+ * the same way a hand-picked Lossless Scaling path outranks the automatic search.
+ */
+export type LosslessHdr = 'auto' | 'on' | 'off'
+
 /** What the settings page shows about the bundled copy. */
 export interface MagpieStatus {
+  backend: 'magpie'
   /** This machine is new enough for Magpie to run at all. */
   supported: boolean
   /** The copy has been laid down under the app's own data directory. */
@@ -143,6 +465,78 @@ export interface MagpieStatus {
   /** Path of a Magpie that is running and is not ours — the case that silently does nothing. */
   foreign?: string
 }
+
+/**
+ * What the settings page shows about Lossless Scaling.
+ *
+ * Shaped differently from `MagpieStatus` on purpose, because the relationship is
+ * different. Magpie is a copy this program lays down and owns, so its status is about
+ * *our* copy — is it there, is it ours, is somebody else's in the way. Lossless Scaling is
+ * the user's own paid software; there is nothing of ours to report on, only where theirs
+ * is and what we are allowed to do with it.
+ */
+export interface LosslessStatus {
+  backend: 'lossless'
+  /** Found — by the Steam library, or because the user pointed at it themselves. */
+  installed: boolean
+  /** Where it was found. Shown so a wrong Steam library can be recognised as wrong. */
+  path?: string
+  /** True when `path` is `Settings.losslessPath` rather than something we worked out. */
+  pinned: boolean
+  running: boolean
+  /**
+   * The game it is up for. Same caveat as `MagpieStatus.forGame`: this program knows what
+   * it started Lossless Scaling *for*, not what Lossless Scaling actually caught.
+   */
+  forGame?: string
+  /**
+   * Its own `<StartAsAdmin>`, read and never written.
+   *
+   * Worth showing because it explains two things the user would otherwise blame on this
+   * program: the UAC prompt that appears when a game is launched, and the fact that a
+   * Lossless Scaling started that way can no longer be stopped by us.
+   */
+  startsElevated: boolean
+  /** How many profiles of ours are currently in their `Settings.xml`. */
+  profiles: number
+  /** Their profile titles, for the mode picker. Empty until the file can be read. */
+  modes: string[]
+  /**
+   * The display our profiles are written for — the primary one.
+   *
+   * Null until the query has run, or when it could not answer. Never a stand-in: a guessed
+   * screen would be written into somebody's configuration as though it had been measured.
+   */
+  display: DisplayFacts | null
+  /**
+   * The adapter worth naming, or null when nothing has been measured.
+   *
+   * One rather than the list, because the answer to "which of these is the graphics card"
+   * is a rule (`mainGpu`) that belongs in one tested place rather than in the settings page.
+   */
+  gpu: GpuFacts | null
+  /**
+   * The profiles on disk differ from the ones we would write, and Lossless Scaling being
+   * up is the only reason they have not been.
+   *
+   * Shown as a standing line rather than left to the toast `configLocked` raises. That
+   * toast lasts 4.2 seconds; this state lasts until they close the program. The colour bug
+   * this was written to fix survived precisely because nothing on screen ever said that
+   * the last correction had not landed.
+   */
+  pendingWrite: boolean
+  /**
+   * The profile the chosen mode clones disagrees with the screen about HDR.
+   *
+   * For a preset this is transient — the next write settles it, and `pendingWrite` says
+   * why it has not yet. For a mode naming one of the user's own profiles it is the **only**
+   * thing that will ever be said, because that path clones and overrides nothing.
+   */
+  hdrMismatch: boolean
+}
+
+/** Whichever backend is in force. Discriminated so the settings page can switch on it. */
+export type UpscaleStatus = MagpieStatus | LosslessStatus
 
 /** One stretch of time the game was actually running. */
 export interface PlaySession {
@@ -194,16 +588,25 @@ export interface Game {
    */
   exePinned?: boolean
   /**
-   * Whether Magpie scales this game's window, overriding the global switch.
+   * Whether this game's window is scaled, overriding the global switch.
    *
    * Three states, and the third is the point: absent means *follow the setting*, which is
    * not the same as either answer. Collapsing it to a boolean would force every game ever
    * scanned to carry a verdict nobody gave, and the setting could then never change
-   * anything again. `effectiveMagpie()` in `magpie-rules.ts` is the only reader.
+   * anything again. `effectiveUpscale()` in `upscale-rules.ts` is the only reader.
    */
-  magpie?: boolean
-  /** Absent means the mode from Settings. Only meaningful while `magpie !== false`. */
-  magpieMode?: MagpieMode
+  upscale?: boolean
+  /**
+   * Absent means the mode from Settings. Only meaningful while `upscale !== false`.
+   *
+   * One field for both backends rather than one each, because the sidecar holds one line
+   * for it and a second line would have to say which program it was for — on a file whose
+   * whole purpose is to travel to a machine that may have neither. Switching backends
+   * therefore reinterprets this against the new one's names, and a name it does not know
+   * falls back to the default. That is the same graceful end a deleted Magpie mode already
+   * had, arrived at from a different direction.
+   */
+  upscaleMode?: UpscaleMode
   kind: GameKind
   /**
    * Which engine the folder was built on, when the layout says so plainly.
@@ -1012,7 +1415,7 @@ export interface Settings {
   diagnoseOnLaunch: boolean
 
   /**
-   * Scale game windows with Magpie while they run.
+   * Scale game windows while they run.
    *
    * **Off by default**, and the switch means it literally: with this off nothing is
    * copied out of the installer, no process is started, and a game that was individually
@@ -1020,23 +1423,69 @@ export interface Settings {
    * background process because of a choice made months ago on one tile would leave the
    * user with no way to answer "why is this running". The per-game field overrides which
    * games are scaled, never whether the feature exists.
-   *
-   * Magpie is a separate GPLv3 program shipped alongside this one. It is copied into
-   * `%APPDATA%\sakura-launcher\magpie\` the first time this is switched on, and configured
-   * only there, so a copy the user installed themselves is never read or written.
    */
-  magpie: boolean
+  upscale: boolean
   /**
-   * Which shader to scale with, for games that have not been given their own.
+   * Which program does the scaling.
    *
-   * Lanczos — Magpie's own default — because it runs on anything and cannot make 2D art
-   * look wrong. Anime4K suits this library's material best but costs the most GPU, so it
-   * is offered in the hint rather than chosen on the user's behalf.
+   * Exclusive, because two upscalers competing for one window is not a state worth being
+   * able to reach. `upscale.ts` stops the other one when this changes.
    *
-   * Not restricted to the seven built-ins: the settings page offers whatever modes Magpie's
-   * config file actually holds, so one the user assembled there can be chosen here.
+   * The two are not interchangeable, and the difference is about ownership rather than
+   * quality. Magpie is GPLv3 and travels with this program: a private copy under
+   * `%APPDATA%\sakura-launcher\magpie\`, kept in portable mode, so a copy the user
+   * installed themselves is never read or written. Lossless Scaling is paid, closed
+   * software the user buys and installs on Steam themselves; this program cannot ship it
+   * and does not try to, so the only copy there is is theirs — which is why writing into
+   * its configuration is hedged the way it is. See `lossless.ts`.
    */
-  magpieMode: MagpieMode
+  upscaler: Upscaler
+  /**
+   * Which mode to scale with, for games that have not been given their own.
+   *
+   * Read against whichever backend is in force — a Magpie scaling mode, or a Lossless
+   * Scaling profile title. Lanczos is the default because it is Magpie's own: it runs on
+   * anything and cannot make 2D art look wrong. Anime4K suits this library's material best
+   * but costs the most GPU, so it is offered in the hint rather than chosen on the user's
+   * behalf.
+   *
+   * Not restricted to a fixed list: the settings page offers whatever the backend's own
+   * config file actually holds, so a mode or profile the user assembled there can be
+   * chosen here.
+   */
+  upscaleMode: UpscaleMode
+  /**
+   * Where the user's `LosslessScaling.exe` is, when they pointed at it themselves.
+   *
+   * Null means "work it out from the Steam library". This wins outright when set, because
+   * the automatic route has several perfectly ordinary ways to land on the wrong answer —
+   * Steam installed somewhere unusual, a library folder moved, the folder copied out
+   * whole, the registry cleaned — and the user has to be able to correct it. The settings
+   * page offers this at all times, not only after a failure, and offers a way back to
+   * null: a path pinned once must not outlive the install it pointed at.
+   */
+  losslessPath: string | null
+  /**
+   * Seconds Lossless Scaling waits after a matching window appears before scaling it.
+   *
+   * Written into the profiles this program creates, never into the user's own. Two by
+   * default: these engines put a window on screen well before they are finished with it,
+   * and scaling one mid-initialisation catches the wrong size. It is a setting rather than
+   * a constant because how long that takes varies by an order of magnitude across a
+   * library, and a constant would leave the slow ones with no way out.
+   */
+  losslessDelay: number
+  /**
+   * Whether the profiles this program writes claim HDR support.
+   *
+   * `auto` reads the display, and is right unless the detection is. It is applied **only**
+   * to profiles a preset produced: a preset is this program's choice of a scaling
+   * algorithm, so the fields around it that decide whether the picture is even correct are
+   * this program's to get right. A mode naming one of the user's own profiles is cloned
+   * and never corrected, because that value is theirs — a disagreement there is pointed
+   * out in the settings page and left alone.
+   */
+  losslessHdr: LosslessHdr
   /**
    * Let Magpie run elevated for a game that was launched as administrator.
    *
@@ -1145,8 +1594,12 @@ export const DEFAULT_SETTINGS: Settings = {
   groupingPrompted: [],
   playtimePollSeconds: 15,
   diagnoseOnLaunch: true,
-  magpie: false,
-  magpieMode: 'Lanczos',
+  upscale: false,
+  upscaler: 'magpie',
+  upscaleMode: 'Lanczos',
+  losslessPath: null,
+  losslessDelay: 2,
+  losslessHdr: 'auto',
   magpieElevate: false,
   onlineTags: false,
   spoilerTags: false,

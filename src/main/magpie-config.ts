@@ -1,6 +1,6 @@
 // Extension spelled out: `scripts/magpie-test.mts` loads this file straight into node.
-import { MAGPIE_MODES, normalizeMagpieMode, type MagpieMode } from '../shared/types.ts'
-import type { MagpieProfile } from './magpie-rules.ts'
+import { MAGPIE_MODES, normalizeUpscaleMode, type UpscaleMode } from '../shared/types.ts'
+import type { UpscaleTarget } from './upscale-rules.ts'
 
 /**
  * Writing Magpie's `config.json` without taking anything away from it.
@@ -166,8 +166,8 @@ function scalingModesOf(existing: Obj | null): unknown[] {
  * Falls back to the built-in names when there is no file yet, so the list is never empty —
  * a mode has to be choosable before Magpie has ever run.
  */
-export function listModes(existing: Obj | null): MagpieMode[] {
-  const out: MagpieMode[] = []
+export function listModes(existing: Obj | null): UpscaleMode[] {
+  const out: UpscaleMode[] = []
   for (const entry of scalingModesOf(existing)) {
     if (!isObj(entry) || typeof entry.name !== 'string') continue
     const name = entry.name.trim()
@@ -189,9 +189,9 @@ export function listModes(existing: Obj | null): MagpieMode[] {
  * deleted after choosing it here, and of one carried in on a sidecar from a machine whose
  * Magpie had it.
  */
-export function modeIndexIn(existing: Obj | null, mode: MagpieMode): number {
+export function modeIndexIn(existing: Obj | null, mode: UpscaleMode): number {
   const list = scalingModesOf(existing)
-  const want = normalizeMagpieMode(mode)
+  const want = normalizeUpscaleMode(mode)
   const found = list.findIndex((m) => isObj(m) && m.name === want)
   if (found >= 0) return found
   // Second pass ignoring case, for a name typed into a sidecar by hand. Exact first, so
@@ -202,8 +202,8 @@ export function modeIndexIn(existing: Obj | null, mode: MagpieMode): number {
 
 /** What the caller wants the file to say. */
 export interface DesiredMagpie {
-  profiles: MagpieProfile[]
-  defaultMode: MagpieMode
+  profiles: UpscaleTarget[]
+  defaultMode: UpscaleMode
   language: 'zh' | 'en'
 }
 
@@ -274,7 +274,7 @@ export function buildConfig(
   const modes = scalingModesOf(existing)
   config.scalingModes = modes
 
-  const indexFor = (mode: MagpieMode): number => modeIndexIn({ scalingModes: modes }, mode)
+  const indexFor = (mode: UpscaleMode): number => modeIndexIn({ scalingModes: modes }, mode)
 
   const oldProfiles: unknown[] = Array.isArray(existing?.profiles) ? existing.profiles : []
 

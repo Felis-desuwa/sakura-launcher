@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, screen, shell } from 'electron'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -39,15 +39,18 @@ import { setMainLang, t } from './i18n'
 import { cancelWatch, onLaunchTrouble } from './launch-watch'
 import { launchElevated, launchGame, revealInExplorer, spawnDetached } from './launcher'
 import {
-  magpieModes,
-  magpieSessionsChanged,
-  magpieStatus,
-  onMagpieNotice,
-  openMagpieFolder,
-  openMagpieSettings,
-  shutdownMagpie,
-  warmMagpie
-} from './magpie'
+  onUpscaleNotice,
+  openUpscalerSettings,
+  revealUpscaler,
+  shutdownUpscale,
+  upscaleModes,
+  upscaleSessionsChanged,
+  upscaleSettingsChanged,
+  upscaleStatus,
+  warmUpscale
+} from './upscale'
+import { forgetDisplays, refreshDisplays } from './display-info'
+import { pinLossless } from './lossless'
 import { probeExeMeta } from './pe-icon'
 import { onPlaytimeChange, playingIds, runningInDir, shutdownPlaytime } from './playtime'
 import {
@@ -335,21 +338,44 @@ function registerIpc(): void {
 
   ipcMain.handle('settings:update', (_e, patch: Partial<Settings>) => {
     const settings = db.setSettings(patch)
-    // Switching upscaling on is the moment to lay the copy down, rather than making the
-    // first launch afterwards wait ten megabytes for it.
-    if (patch.magpie === true) warmMagpie()
+    // Switching upscaling on is the moment to lay Magpie's copy down, rather than making
+    // the first launch afterwards wait ten megabytes for it — and switching away from
+    // Lossless Scaling is the moment to take our profiles back out of its configuration.
+    upscaleSettingsChanged(patch)
     return settings
   })
 
-  ipcMain.handle('magpie:status', () => magpieStatus())
-  ipcMain.handle('magpie:modes', () => magpieModes())
-  ipcMain.handle('magpie:open', () => {
-    openMagpieSettings()
+  ipcMain.handle('upscale:status', () => upscaleStatus())
+  ipcMain.handle('upscale:modes', () => upscaleModes())
+  ipcMain.handle('upscale:open', () => {
+    openUpscalerSettings()
     return true
   })
-  ipcMain.handle('magpie:reveal', () => {
-    openMagpieFolder()
+  ipcMain.handle('upscale:reveal', () => {
+    revealUpscaler()
     return true
+  })
+  /**
+   * The path the user picked, checked before it is kept.
+   *
+   * The renderer names a path and hears yes or no; whether the file is there and whether
+   * it is the right executable are questions only the main process can answer, and it is
+   * the one that has to refuse. Passing null clears the pin and returns to working the
+   * install out from the Steam library.
+   */
+  ipcMain.handle('upscale:pinLossless', (_e, exe: string | null) => pinLossless(exe).ok)
+
+  /**
+   * Ask the machine about its displays again, on the button and nowhere else.
+   *
+   * The status call this sits beside is polled every five seconds and answers from a
+   * cache, because a query costs a PowerShell and a compiled interop stub. This is the
+   * deliberate route back for the case the automatic invalidation cannot see — a monitor
+   * whose own settings changed without Windows reporting a metrics change.
+   */
+  ipcMain.handle('upscale:refreshDisplays', async () => {
+    await refreshDisplays()
+    return upscaleStatus()
   })
 
   /**
@@ -1166,12 +1192,23 @@ app.whenReady().then(() => {
   splashStage(t('splash.loading'))
   onPlaytimeChange((payload) => mainWindow?.webContents.send('playtime:changed', payload))
   // A second subscriber, which is why that hook hands out subscriptions rather than
-  // holding one. Magpie is kept only while a scaled game is actually being played.
-  onPlaytimeChange(() => magpieSessionsChanged(playingIds()))
-  onMagpieNotice((n) => mainWindow?.webContents.send('magpie:notice', n))
-  // Only when the feature is on: this both clears up a Magpie a crash left behind and
-  // gets the copying out of the way before the first launch needs it.
-  warmMagpie()
+  // holding one. The upscaler is kept only while a scaled game is actually being played.
+  onPlaytimeChange(() => upscaleSessionsChanged(playingIds()))
+  onUpscaleNotice((n) => mainWindow?.webContents.send('upscale:notice', n))
+  // Free invalidation for an expensive answer. Switching HDR on, changing resolution and
+  // plugging a monitor in are all metrics changes, so the moment the measured facts stop
+  // being true is exactly the moment this fires. It marks them stale rather than
+  // re-reading: the next thing that actually needs them will pay for the query, and a
+  // display being fiddled with should not spawn a PowerShell per event.
+  // Spelled out one by one because each event carries its own payload type and the
+  // overloads will not take a union of the names.
+  screen.on('display-added', () => forgetDisplays())
+  screen.on('display-removed', () => forgetDisplays())
+  screen.on('display-metrics-changed', () => forgetDisplays())
+  // Only when the feature is on: this both clears up an upscaler a crash left behind and
+  // gets the copying — or the backup of somebody else's settings file — out of the way
+  // before the first launch needs it.
+  warmUpscale()
   // Only the fact that something went wrong is pushed. Running the diagnosis costs a PE
   // parse and a registry read, and it belongs behind the user deciding they want it.
   onLaunchTrouble(({ game, trouble, startedAt }) =>
@@ -1217,7 +1254,7 @@ app.on('before-quit', () => {
   // Settle open sessions first: it writes playtime that the flush then commits.
   shutdownPlaytime()
   // After that, so it sees "nothing is being played" before the hard stop.
-  shutdownMagpie()
+  shutdownUpscale()
   // Stops the watch timers. Downloads themselves keep running in their own process and
   // are picked back up next launch; an extract in flight is cancelled rather than left
   // to write into a folder nothing is tracking any more.

@@ -3,7 +3,7 @@ import type {
   DownloadStatus,
   Game,
   Group,
-  MagpieMode,
+  Upscaler,
   PendingDownload,
   SortKey,
   TabKey
@@ -11,7 +11,8 @@ import type {
 import {
   ARCHIVE_GROUP_ID,
   matchesQuery,
-  normalizeMagpieMode,
+  LOSSLESS_PRESETS,
+  normalizeUpscaleMode,
   SORT_KEYS,
   visibleTags
 } from '../../../shared/types'
@@ -92,15 +93,24 @@ interface Props {
   /** Whether the catalogue is switched on at all — no menu entry offers what is refused. */
   onlineTags: boolean
   /** Same idea for upscaling: with the master switch off the submenu explains itself. */
-  magpieOn: boolean
+  upscaleOn: boolean
   /** Named in the menu, so "the default" is never an unlabelled choice. */
-  magpieMode: MagpieMode
+  upscaleMode: string
   /**
-   * The modes Magpie's config actually offers — the built-in seven, plus any the user
-   * assembled in its own interface. Read there rather than listed here, so a mode they
-   * built is choosable per game and not only globally.
+   * The modes the current backend's config actually offers — Magpie's scaling modes, or
+   * the game profiles the user made in Lossless Scaling. Read there rather than listed
+   * here, so one they built is choosable per game and not only globally.
    */
-  magpieModes: MagpieMode[]
+  upscaleModes: string[]
+  /**
+   * Which backend those names came from.
+   *
+   * Decides two things the names themselves cannot say. Lossless Scaling's submenu offers
+   * `LOSSLESS_PRESETS` above the user's own profiles, since a fresh installation has none
+   * of the latter; Magpie's does not, because its seven built-ins already fill that role
+   * and a preset id would resolve to nothing there.
+   */
+  upscaler: Upscaler
   /** Open the match dialog for this one game, search box and all. */
   onMatchWork: (game: Game) => void
   onBlockedLaunch: () => void
@@ -438,41 +448,64 @@ export default function DesktopPage(props: Props): React.JSX.Element {
         // gets on screen. Every row stays open — the tick moving is the only confirmation
         // the choice gets, and comparing two shaders is a second click away.
         {
-          label: t('menu.magpie'),
-          submenu: props.magpieOn
-            ? [
+          label: t('menu.upscale'),
+          submenu: !props.upscaleOn
+            ? [{ label: t('menu.upscaleDisabled'), disabled: true }]
+            : [
                 {
-                  label: t('menu.magpieFollow'),
-                  checked: game.magpie === undefined,
+                  label: t('menu.upscaleFollow'),
+                  checked: game.upscale === undefined,
                   keepOpen: true,
-                  onClick: () => onPatch(game.id, { magpie: undefined, magpieMode: undefined })
+                  onClick: () => onPatch(game.id, { upscale: undefined, upscaleMode: undefined })
                 },
                 {
-                  label: t('menu.magpieNever'),
-                  checked: game.magpie === false,
+                  label: t('menu.upscaleNever'),
+                  checked: game.upscale === false,
                   keepOpen: true,
-                  onClick: () => onPatch(game.id, { magpie: false, magpieMode: undefined })
+                  onClick: () => onPatch(game.id, { upscale: false, upscaleMode: undefined })
                 },
                 { type: 'separator' as const },
                 {
-                  label: t('menu.magpieDefaultMode', {
-                    mode: normalizeMagpieMode(props.magpieMode)
+                  label: t('menu.upscaleDefaultMode', {
+                    mode: normalizeUpscaleMode(props.upscaleMode)
                   }),
-                  checked: game.magpie === true && game.magpieMode === undefined,
+                  checked: game.upscale === true && game.upscaleMode === undefined,
                   keepOpen: true,
-                  onClick: () => onPatch(game.id, { magpie: true, magpieMode: undefined })
+                  onClick: () => onPatch(game.id, { upscale: true, upscaleMode: undefined })
                 },
-                ...props.magpieModes.map((mode) => ({
-                  label: mode,
-                  checked:
-                    game.magpie === true &&
-                    game.magpieMode !== undefined &&
-                    normalizeMagpieMode(game.magpieMode) === mode,
-                  keepOpen: true,
-                  onClick: () => onPatch(game.id, { magpie: true, magpieMode: mode })
-                }))
+                // The ready-made ones first, and only under the backend they belong to.
+                // Magpie has its own seven built-ins in the list below; these are the
+                // equivalent for a Lossless Scaling the user has not configured at all.
+                ...(props.upscaler === 'lossless'
+                  ? LOSSLESS_PRESETS.map((preset) => ({
+                      label: t(preset.labelKey),
+                      checked:
+                        game.upscale === true &&
+                        game.upscaleMode !== undefined &&
+                        normalizeUpscaleMode(game.upscaleMode) === preset.id,
+                      keepOpen: true,
+                      onClick: () => onPatch(game.id, { upscale: true, upscaleMode: preset.id })
+                    }))
+                  : []),
+                ...(props.upscaler === 'lossless' && props.upscaleModes.length > 0
+                  ? [{ type: 'separator' as const }]
+                  : []),
+                // Under Lossless Scaling these are profiles the user made, and there may
+                // genuinely be none yet. Said rather than left blank, so an empty stretch of
+                // menu is not read as a fault — but only when there are no presets above it
+                // either, which is to say only under Magpie, where it cannot happen.
+                ...(props.upscaleModes.length === 0 && props.upscaler !== 'lossless'
+                  ? [{ label: t('menu.upscaleNoModes'), disabled: true }]
+                  : props.upscaleModes.map((mode) => ({
+                      label: mode,
+                      checked:
+                        game.upscale === true &&
+                        game.upscaleMode !== undefined &&
+                        normalizeUpscaleMode(game.upscaleMode) === mode,
+                      keepOpen: true,
+                      onClick: () => onPatch(game.id, { upscale: true, upscaleMode: mode })
+                    })))
               ]
-            : [{ label: t('menu.magpieDisabled'), disabled: true }]
         },
         // Sits next to the executable picker on purpose: they are the two answers to
         // the same question, and the picker is where a diagnosis usually sends you.

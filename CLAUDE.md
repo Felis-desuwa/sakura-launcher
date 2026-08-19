@@ -51,6 +51,8 @@ npm run cover-test       # cover art: which picture, whether it is adult, what i
 npm run translate-test   # translating a blurb: chunking, both services' shapes, all-or-nothing
 npm run save-test        # locating saves: name matching, engine roots, the download's own save
 npm run magpie-test      # upscaling: the three-state switch, config merges, mode indices by name
+npm run lossless-test    # the other upscaler: splicing profiles into somebody else's settings file
+npm run display-test     # the machine: which screen, whether HDR is on, what a scale factor lands on
 npm run share-test       # share exclusion rules
 npm run share-e2e        # calls a real 7-Zip; asserts the source folder is unchanged afterwards
 ```
@@ -94,7 +96,8 @@ Always pass `--user-data-dir`; without it this writes to the user's actual
 
 `scan-core.ts`, `share-rules.ts`, `save-rules.ts`, `download-core.ts`, `diagnose-rules.ts`,
 `pe-imports.ts`, `tag-rules.ts`, `tag-bangumi.ts`, `cover-rules.ts`, `translate-rules.ts`,
-`magpie-rules.ts`, `magpie-config.ts`
+`upscale-rules.ts`, `magpie-rules.ts`, `magpie-config.ts`, `lossless-rules.ts`,
+`lossless-config.ts`, `display-rules.ts`
 **must not import electron**. The `.mts` harnesses load them directly under node, which is what makes the
 logic testable without a window. They also spell out `.ts` in their relative imports (`from
 './i18n.ts'`) because node has no bundler to fill the extension in — `allowImportingTsExtensions`
@@ -173,6 +176,127 @@ Shift-JIS-through-GBK mojibake. It is ranked first in the results list for that 
 
 A false positive is worse than silence here. `diagnose-test.mts` is mostly negative cases; keep it
 that way.
+
+### The two upscalers
+
+`upscale.ts` is a switch on `Settings.upscaler` and nothing else; `launcher.ts`, the IPC
+handlers and the renderer all speak of "upscaling" and never name a backend. What is
+backend-neutral — which games qualify, whose setting wins, how many fit, in what order —
+lives in `upscale-rules.ts` and is shared. Everything below that diverges completely, and
+the divergence is about **ownership**, not quality:
+
+- **Magpie** (`magpie.ts`, `magpie-rules.ts`, `magpie-config.ts`) is GPLv3 and travels with
+  this program. A private copy under `%APPDATA%`, held in portable mode by the `config\config.json`
+  beside it, is a process this program started, configured and may stop. The user's own
+  Magpie is never even read.
+- **Lossless Scaling** (`lossless.ts`, `lossless-rules.ts`, `lossless-config.ts`) is paid,
+  closed software bought on Steam. It cannot be shipped and is not. The only copy that
+  exists is theirs, so it has to be *found* rather than placed, its configuration is *theirs*
+  rather than ours, and it is *not ours to stop*.
+
+Three things will break quietly if changed:
+
+1. `lossless-config.ts` **splices text**; it does not parse and reserialise. Only the bytes
+   between `<GameProfiles>` and `</GameProfiles>` are touched. A tree round trip would
+   reformat their file and drop any element a future version adds — the harness asserts the
+   rest of the file is unchanged byte for byte.
+2. The written order is **sorted, not ranked**. `upscaleTargets` hands games over most
+   recently played first, which is right for deciding what fits under the cap and wrong for
+   writing down: it changes on every launch. Since a rewrite requires Lossless Scaling to be
+   closed, an unstable result would mean the config could never be updated once the first
+   game of a session had started it.
+3. A profile is **cloned**, not composed. Its forty-odd fields — frame generation,
+   capture API, GPU and display selection — are copied verbatim from the profile the user
+   picked, and only four are changed. Authoring them here would mean reimplementing that
+   program's settings page and getting it wrong the day they add a field.
+4. `LOSSLESS_PRESETS` (in `shared/types.ts`, beside `MAGPIE_MODES` and for the same reason:
+   the renderer offers them and cannot reach into `src/main`) is the ready-made answer for
+   somebody who has not built a profile. It is **the same clone with a few elements set on
+   top**, never a profile authored from nothing — what it does not name it still inherits.
+   What it *does* name is only what makes a preset worth having: the scaling algorithm,
+   keeping a 4:3 game's proportions, frame generation off, and **`CaptureApi: WGC`**.
+   That last one is not a picture preference — it is the only capture path that can carry a
+   **moving cursor**, and this library is played entirely with a mouse. What DXGI hands over
+   is the desktop image, which does not contain the cursor at all; Lossless Scaling can only
+   draw one itself, and it draws when a frame arrives. A visual novel is a still picture, so
+   the pointer freezes where it was and jumps only when something redraws. WGC has the system
+   composite the cursor into the captured frame (`IsCursorCaptureEnabled`, visible in
+   `Lossless.dll`) so it moves on its own. **This was arrived at the long way**: setting
+   `ScaleCursor` first made a pointer appear and then froze it, which is the same bug wearing
+   a different face — do not re-add it. `ClipCursor` and `AdjustCursorSpeed` stay unset too:
+   they change how the mouse *moves* rather than whether it can be seen, and trapping
+   somebody's cursor is not a default to hand out.
+   **`GsyncSupport: false` and `QueueTarget: 0` are that same choice finishing itself**, and
+   both would be wrong without it. Making the cursor visible is not the same as making it
+   move: it came back stuttering and blinking, because two settings inherited from the
+   clone are tuned for the opposite of this material. Variable refresh follows the frame
+   rate, a still page of text has almost none, so the panel sits at its floor — and Lossless
+   Scaling's own note on capture warns in as many words that a hardware cursor under WGC
+   needs multi-plane overlay support before variable refresh behaves. A capture queue is
+   the same shape of thing: that note offers depths 1 and 2 for "uncapped or unstable frame
+   rates under GPU load" and depth 0 as "always use the last captured frame", and a queue
+   that fills once a second is not a buffer, it is a delay. Neither is a picture
+   preference, and neither buys a visual novel anything: there is no tearing to smooth when
+   nothing moves. **Do not re-add them by reading the defaults as the user's choice** — the
+   user picked an algorithm, and these arrived with the profile that got cloned. Note that
+   `QueueTarget` is neither an enum nor a boolean but a plain integer; `lossless-test.mts`
+   still pins it to the three depths Lossless Scaling documents, because a depth nobody has
+   seen it handle is not made safe by the absence of a serialiser cliff.
+   Two consequences worth knowing. WGC needs Windows 11 24H2; **older versions fall back to
+   DXGI inside Lossless Scaling**, so this needs no capability check here. And the two paths
+   handle colour differently — its own tooltip says DXGI needs `HdrSupport` while WGC applies
+   correction itself under Windows' colour management — which is why `Settings.losslessHdr`
+   keeps its manual positions: if a machine ends up corrected twice, the way out is one
+   dropdown rather than a code change.
+   Every value it writes is a verified member of its enum, read out of the assembly's
+   metadata with `System.Reflection.Metadata` rather than guessed from the interface, where
+   the label `Vsync3` belongs to a member spelled `VSYNC3`. This is not fussiness:
+   `Settings.xml` is read by .NET's `XmlSerializer`, an unknown enum value throws, and what
+   fails to load is the **whole file** — a misspelling costs the user every setting they
+   have, not one shader. `lossless-test.mts` pins each value against the verified lists.
+5. **One field is written from a measurement rather than copied or chosen: `HdrSupport`.**
+   `display-info.ts` asks Windows through `QueryDisplayConfig` /
+   `DisplayConfigGetDeviceInfo`, `display-rules.ts` holds the judgement, and the answer is
+   applied to **preset profiles only**. It is not a picture preference — it describes the
+   *screen*, which Lossless Scaling has no way to know either: on an HDR desktop everything
+   it captures arrives in a high-dynamic-range format whether the game is HDR or not, and a
+   preset that inherited a stale `false` from the profile it cloned presents that picture as
+   though it were SDR. The colour comes out wrong, nothing reports a fault, and the value the
+   user would have to correct is one they never chose — they picked an algorithm.
+   Four things hold this up and each is load-bearing:
+   - **Null is not false.** A query that could not answer writes nothing at all; `false` on
+     an unknown is the same bug pointing the other way.
+   - **A failed query keeps the last known answer** rather than reverting to null. Flapping
+     between "on" and "not known" makes `changed` true on every launch, and a rewrite needs
+     Lossless Scaling closed — so an unstable answer means the file can never be brought up
+     to date once the first game of a session has started it.
+   - **A mode naming one of the user's own profiles is still cloned and corrected in
+     nothing.** A disagreement there is reported (`hdrMismatch`) and left alone. Do not
+     widen this to "our profiles are ours so we may write what we like": their value is the
+     one they set, and silently holding two different answers in two adjacent profiles is
+     how a person loses a day.
+   - **The query never runs on a poll.** `losslessStatus` is asked every five seconds by the
+     settings page and reads `cachedDisplays()`; only `warmLossless`, a launch, and the
+     button ask. Electron's `screen` events invalidate the cache for free, which is exactly
+     when HDR being switched on stops the answer being true.
+6. **A write blocked by `configLocked` must leave a standing mark** (`pendingWrite`, shown
+   in the settings page). The toast that reports it lasts 4.2 seconds; the state lasts until
+   the user closes Lossless Scaling. The colour bug above survived for exactly this reason —
+   the user turned HDR support on in their base profile, every later launch found that
+   program running and wrote nothing, and no part of the interface could say that the last
+   correction had never landed.
+
+`window-text.ts` additionally reports each window's `GetClientRect`, which is purely
+additive — `launch-watch.ts` reads only the title and class. It exists so the one question
+this program could never answer about scaling can be answered out loud: whole-multiple
+scaling that finds no multiple presents the picture at its original size and **reports
+nothing**, and a 1280×720 game in a bordered window has a client area of 1284×724, which
+needs 2568×1448 to double and does not fit a 2560×1440 screen. `checkWholeMultipleFit` in
+`lossless.ts` samples that **once**, for that one preset, and stores nothing anywhere — it
+is not a third folder watcher and must not become one.
+
+**Nothing about the machine goes into the sidecar.** A monitor describes this desktop, not
+the game — the same reason group membership and tile order stay out.
 
 ### Engine detection
 
@@ -292,6 +416,47 @@ These come from user decisions and are load-bearing. Violating one is a bug even
   there when *that* job started, so the second job never saw the first one's archive and
   adopts it when it lands. `settle` calls `claimFiles` before anything else for that reason,
   and `freeDestFor` keeps two 7-Zips out of one destination tree even so.
+- **Lossless Scaling is the user's own program, and the interface has to say so.** It is
+  paid, closed software they buy and install themselves; nothing here ships it, downloads it
+  or installs it. The note saying that is shown whenever the backend is selected, **found or
+  not** — a note that appeared only on failure would leave everyone who happens to own it
+  never told that this program does not supply it, and that it writes into its settings. The
+  build is unaffected: `magpie:fetch` is still the only step that touches the network, and
+  locating Lossless Scaling reads the registry and local files.
+- **The route to point at it by hand is always available, and outranks the automatic search.**
+  That search reads Steam's own library records and has several perfectly ordinary ways to
+  miss or land on the wrong copy — Steam installed somewhere unusual, a library folder moved,
+  the folder copied out whole, the registry cleaned. So it is a standing control rather than
+  an error fallback, it comes with a way back to null (a path pinned once must not outlive
+  the install it pointed at), and a path that is not `LosslessScaling.exe` or is not there is
+  **refused rather than stored** — a bad pin would outrank the search from then on and leave
+  the feature aimed at nothing while showing a path as though it worked.
+- **Their `Settings.xml` is written only while Lossless Scaling is not running, and never
+  before the original has been copied aside.** It saves that file over from memory when it
+  quits, so anything written underneath is swallowed. Magpie has the same trap and answers it
+  by stopping Magpie first; there is no such answer here, because stopping the user's own paid
+  software to edit its configuration is not something this program gets to do. It waits and
+  says so. The backup is taken **once** — refreshing it would replace the file-as-it-was with
+  our own last output.
+- **Only profiles carrying `SAKURA_PREFIX` are ever added or removed; theirs are read and
+  never written.** That prefix is the sole judge of what is ours, so changing it orphans every
+  profile written under the old one — and it is why a preset's title goes through
+  `ourProfileTitle` rather than being spelled out in the table. A mode naming no profile of
+  theirs writes **nothing** — inventing picture settings in somebody else's program, under a
+  name that looks like this one endorsed them, is worse than not scaling. A preset asked for
+  where there is no profile at all has nothing to clone and says so (`noBase`), which is a
+  different message from `missing` on purpose: one is a name to correct, the other is a
+  Lossless Scaling that has never been opened.
+- **A preset id is stable and untranslated, and so is the profile title it produces.**
+  `Sakura:Quality` travels in `sakura-launcher.md` to machines with another interface
+  language and has to mean the same thing there; `Sakura · Quality` is read by the user
+  inside *Lossless Scaling's* window, where a name that moved with this program's language
+  would leave them unable to match the two — the same reasoning that keeps `MAGPIE_MODES`
+  untranslated. Only the label in this program's own menus is translated.
+- **Only a Lossless Scaling this program spawned, whose handle it still holds, is ever
+  stopped.** It raises itself to administrator from its own `<StartAsAdmin>` — which this
+  program reads and never changes — and a copy that did so is out of reach for good. Anything
+  else running is theirs.
 - **Diagnosis is read-only** and does not go over the network. It names the missing runtime; it does
   not fetch it.
 - **No hardcoded personal paths anywhere.** Scan roots start empty (`DEFAULT_SETTINGS.roots: []`),
@@ -311,6 +476,12 @@ These come from user decisions and are load-bearing. Violating one is a bug even
   Magpie vanishes silently. That immediacy is also why ending it outright is safe: there is
   no unsaved state to lose, and `stopMagpie`'s polite WM_CLOSE is measured never to end it
   (closing Magpie's window hides it to the tray, and a `-t` copy has no window at all).
+- **Lossless Scaling has no `-t`, and must never be given `windowsHide` instead.** The flag
+  below is `SW_HIDE` in the `STARTUPINFO` and the lesson is the same one Magpie taught: the
+  window is created and merely left unshown, and the program's own "show me" path then finds a
+  window it believes is already open. Lossless Scaling simply has no tray-start flag, so its
+  window appears — a wart, and the honest one. The game is spawned before this runs and takes
+  the foreground when it finally draws.
 - **Magpie is started with `-t` for a game and without it for the settings button.** That
   flag is Magpie's own way of coming up in the notification area, and it is the only one
   that works. Hiding the window from outside — `windowsHide` on the spawn, which is
