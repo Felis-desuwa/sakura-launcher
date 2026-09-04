@@ -419,6 +419,34 @@ about a story, and only a catalogue has them.
 - Only games that have never been looked up are queried, and none are asked about twice. You
   can stop at any point, or re-query the whole library
 
+### Walkthrough search (online, manual only)
+
+Left-click a tile and the drawer has a *Search for a walkthrough* button at the bottom.
+
+- **Only when you press it.** Scanning, refreshing and launching never ask. It searches
+  with the **Japanese original the catalogue recorded**, because that is what both sites
+  index by and a folder called `032601` means nothing to either. The name it used is left
+  in the box, so it can be corrected and searched again
+- **誠也の部屋** publishes its four thousand walkthroughs on a single page, so that page is
+  **fetched whole and kept**, and searching happens here. The cost is a megabyte; what it
+  buys is that the site never learns which game was opened, answers are still found while
+  it is down, and searching often cannot get anyone rate-limited. The copy lasts a week,
+  and **a failed fetch keeps the old one** rather than blanking it — a feature that says
+  "no walkthrough" because a site was briefly unreachable is worse than one answering
+  from last week
+- **2DFan** has the Chinese walkthroughs, but it answers a query, so the name does leave
+  the machine. What comes back is an HTML fragment that will change shape one day, and
+  **when it does the answer says so** instead of reporting nothing found: a reader that
+  broke is not a fact about the game
+- **Matching is containment, and a short name has to start the title.** `ネコぱら` begins
+  `ネコぱらAfter…` and counts; `air` sits in the middle of `pairing` and does not. That rule
+  was measured rather than guessed — against the real four thousand entries, full titles
+  put the right walkthrough in the top five 200 times out of 200, all eight sampled series
+  prefixes found their own series, and fragments like `恋`, `学園` and `game` returned
+  nothing at all
+- **Neither site having it is not a dead end** — a row of *search elsewhere* links sits
+  underneath: Google, Bing and each site's own search, carrying the same name
+
 ### Keeping track
 
 - **Playtime** — it does not watch the process it started (a great many games have a launcher

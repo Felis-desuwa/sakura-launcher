@@ -5,6 +5,7 @@ import type {
   CoverChoice,
   DiskInfo,
   ExeChoices,
+  GuideSearch,
   Game,
   Group,
   LaunchTrouble,
@@ -231,6 +232,16 @@ export default function App(): React.JSX.Element {
    * Empty until it arrives, and the places that show it render nothing while it is — a
    * version that flickers in as a blank chip is worse than one that appears a frame late.
    */
+  /**
+   * The last walkthrough search, and the game it was made for.
+   *
+   * Keyed by game id rather than cleared on selection, because the request outlives the
+   * click: switching game while one is in flight would otherwise land somebody else's
+   * results under this game's name.
+   */
+  const [guide, setGuide] = useState<{ gameId: string; search: GuideSearch } | null>(null)
+  const [guideBusy, setGuideBusy] = useState(false)
+
   const [version, setVersion] = useState('')
   useEffect(() => {
     void window.sakura.appVersion().then(setVersion)
@@ -886,6 +897,18 @@ export default function App(): React.JSX.Element {
             playing={playing.includes(selected.id)}
             showSpoilers={settings.spoilerTags}
             showAdult={settings.adultTags}
+            guide={guide && guide.gameId === selected.id ? guide.search : null}
+            guideBusy={guideBusy}
+            onSearchGuide={async (query) => {
+              const gameId = selected.id
+              setGuideBusy(true)
+              try {
+                const search = await window.sakura.searchGuides(gameId, query)
+                setGuide({ gameId, search })
+              } finally {
+                setGuideBusy(false)
+              }
+            }}
             onTagHidden={async (gameId, tagId, hidden) => {
               const updated = await window.sakura.setTagHidden(gameId, tagId, hidden)
               if (updated) setGames((cur) => cur.map((g) => (g.id === gameId ? updated : g)))

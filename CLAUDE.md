@@ -55,6 +55,7 @@ npm run lossless-test    # the other upscaler: splicing profiles into somebody e
 npm run display-test     # the machine: which screen, whether HDR is on, what a scale factor lands on
 npm run pointer-test     # putting a streamed tap back on the game: where the picture lands
 npm run update-test      # the manual update check: version precedence, channels, which asset
+npm run guide-test       # walkthrough search: what normalises away, what counts as a match
 npm run share-test       # share exclusion rules
 npm run share-e2e        # calls a real 7-Zip; asserts the source folder is unchanged afterwards
 ```
@@ -99,8 +100,8 @@ Always pass `--user-data-dir`; without it this writes to the user's actual
 `scan-core.ts`, `share-rules.ts`, `save-rules.ts`, `download-core.ts`, `diagnose-rules.ts`,
 `pe-imports.ts`, `tag-rules.ts`, `tag-bangumi.ts`, `cover-rules.ts`, `translate-rules.ts`,
 `upscale-rules.ts`, `magpie-rules.ts`, `magpie-config.ts`, `lossless-rules.ts`,
-`lossless-config.ts`, `pointer-map-rules.ts`, `display-rules.ts`, `update-rules.ts`
-**must not import electron**. The `.mts` harnesses load them directly under node, which is what makes the
+`lossless-config.ts`, `pointer-map-rules.ts`, `display-rules.ts`, `update-rules.ts`,
+`guide-rules.ts` **must not import electron**. The `.mts` harnesses load them directly under node, which is what makes the
 logic testable without a window. They also spell out `.ts` in their relative imports (`from
 './i18n.ts'`) because node has no bundler to fill the extension in — `allowImportingTsExtensions`
 is on in `tsconfig.node.json` for exactly this. If you add an import to one of these files, keep
@@ -719,6 +720,34 @@ These come from user decisions and are load-bearing. Violating one is a bug even
     rule that keeps a cover candidate's path out of the renderer. The file is written to
     `<name>.part` and renamed only once the whole thing has arrived at the declared size:
     a truncated installer left under its real name is a program somebody would double-click.
+- **A walkthrough is searched for from one button, and the two providers are not alike.**
+  `guides.ts` is reached from one IPC handler and nothing else, the same shape as the
+  update check. What differs is the two sites, and the difference is the design:
+  - **誠也の部屋 publishes one static index**, four thousand entries on a single page, so it
+    is fetched whole, cached under `cache/guides/`, and searched **locally**. That is what
+    keeps it from learning which game was opened, keeps answers coming while the site is
+    down, and makes searching often free. The page is **cp932**, not UTF-8 — decoded as
+    UTF-8 every title is mojibake and every search quietly finds nothing. A failed fetch
+    **keeps the copy on disk**, the same policy `display-info.ts` holds for a failed
+    display query.
+  - **2DFan answers a query**, so the title leaves the machine, and what comes back is an
+    HTML fragment inside a JSON envelope — somebody else's markup, which will change. So
+    `read2dfan` reports a shape it cannot read as a **failure, never an empty list**: the
+    fragile provider going quiet must not look like a fact about the game. Same rule as
+    `readReleases` in `update-rules.ts`, and for the same reason.
+  - **Matching is containment, and a short query must be a prefix.** Not coverage — that
+    was tried, measured well against full titles, and was wrong the first time a real
+    search ran: a four-character series name found nothing on the site that indexes it.
+    Position separates the two cases that proportion cannot, because a series name begins
+    the title it belongs to (`ネコぱら` in `ネコぱらAfter…`) and a fragment lands in the middle
+    (`air` in `pairing`). The floor lives inside `guideScore` rather than in one caller,
+    because 2DFan's ranking runs through the same scorer and would otherwise have no floor
+    at all.
+  - **`guideKey` is deliberately not `titleKey`.** `tag-rules.ts` decides which catalogue
+    row *is* this game, so widening it changes what gets tagged in every library; this one
+    only decides which walkthrough to offer. The folds it adds were measured as flat-zero
+    gaps against this corpus: fullwidth digits, fullwidth latin, halfwidth katakana, and
+    unbracketed Japanese edition words.
 - **Diagnosis is read-only** and does not go over the network. It names the missing runtime; it does
   not fetch it.
 - **No hardcoded personal paths anywhere.** Scan roots start empty (`DEFAULT_SETTINGS.roots: []`),

@@ -23,6 +23,7 @@ import type {
   SharePlan,
   ShareResult,
   PendingMatch,
+  GuideSearch,
   UpdateAssetKind,
   UpdateDownload,
   UpdateProgress,
@@ -304,6 +305,18 @@ const api = {
     ipcRenderer.invoke('update:download', kind),
 
   cancelUpdateDownload: (): Promise<boolean> => ipcRenderer.invoke('update:cancelDownload'),
+
+  /**
+   * Look for a walkthrough. **Only ever from the button in the drawer.**
+   *
+   * With no `query` the main process works one out, preferring the Japanese original the
+   * catalogue recorded over the folder's own name.
+   */
+  searchGuides: (id: string, query?: string): Promise<GuideSearch> =>
+    ipcRenderer.invoke('guide:search', id, query),
+
+  /** The title the search would start from, for seeding the box. */
+  guideQuery: (id: string): Promise<string> => ipcRenderer.invoke('guide:query', id),
 
   onUpdateProgress: (fn: (progress: UpdateProgress) => void): (() => void) => {
     const handler = (_e: unknown, progress: UpdateProgress): void => fn(progress)

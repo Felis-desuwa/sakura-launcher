@@ -1236,6 +1236,27 @@ export const MESSAGES = {
   'settings.7zFound': { zh: '已检测到，可解压压缩包条目', en: 'Found — archive entries can be extracted' },
   'settings.7zMissing': { zh: '未检测到，无法解压', en: 'Not found — extraction is unavailable' },
 
+  /* ---- walkthroughs ---- */
+  'drawer.guides': { zh: '攻略', en: 'Walkthroughs' },
+  'drawer.guideSearch': { zh: '搜索攻略', en: 'Search for a walkthrough' },
+  'drawer.guideSearching': { zh: '搜索中…', en: 'Searching…' },
+  'drawer.guideAgain': { zh: '重新搜索', en: 'Search again' },
+  'drawer.guideQuery': { zh: '改个名字再搜', en: 'Try another name' },
+  'drawer.guideHint': {
+    zh: '去两个攻略站找这个游戏。**只在你按下时发生**，扫描、刷新、启动都不会。优先用联网查到的日文原名，因为两个站都是按它编目录的。',
+    en: 'Looks for this game on two walkthrough sites. **Only when you press it** — never on a scan, a refresh or a launch. It searches with the Japanese original the catalogue recorded, because that is what both sites index by.'
+  },
+  'drawer.guideNone': { zh: '没找到这个游戏', en: 'Nothing here matches this game' },
+  'drawer.guideFailed': {
+    zh: '这次没读懂——可能没连上，也可能是人家改版了。这不等于没有攻略',
+    en: 'This one could not be read — either it was unreachable or its markup changed. That is not the same as there being no walkthrough'
+  },
+  'drawer.guideLoose': {
+    zh: '下面是它搜出来的，但没有一条看起来是这个游戏',
+    en: 'These are what its search returned, but none of them look like this game'
+  },
+  'drawer.guideFallback': { zh: '换个地方搜：', en: 'Search elsewhere:' },
+
   /* ---- about, and the one update check ---- */
   'settings.aboutSection': { zh: '关于与更新', en: 'About and updates' },
   'settings.version': { zh: '版本', en: 'Version' },

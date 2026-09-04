@@ -18,6 +18,7 @@ export function initPaths(): void {
   dbPath = path.join(dataDir, 'db.json')
   fs.mkdirSync(iconCacheDir(), { recursive: true })
   fs.mkdirSync(breakdownCacheDir(), { recursive: true })
+  fs.mkdirSync(guideCacheDir(), { recursive: true })
   fs.mkdirSync(coverDir(), { recursive: true })
 }
 
@@ -47,6 +48,16 @@ export function iconCacheDir(): string {
 
 export function breakdownCacheDir(): string {
   return path.join(dataDir, 'cache', 'breakdown')
+}
+
+/**
+ * The walkthrough index, kept whole so searching it costs no request.
+ *
+ * A copy rather than a query is what stops the site being asked which game anybody is
+ * playing, and it is why a search still answers while the site is down.
+ */
+export function guideCacheDir(): string {
+  return path.join(dataDir, 'cache', 'guides')
 }
 
 /** User-supplied cover images are copied here so the library keeps working if the source moves. */

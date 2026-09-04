@@ -3528,6 +3528,60 @@ select.field {
   color: var(--ink-soft);
 }
 
+/*
+ * Walkthrough search, in the drawer.
+ *
+ * The query is an input rather than a label because a folder name is often the one string
+ * neither site indexes by; being able to correct it is what stops an unmatched game being
+ * a dead end.
+ */
+.guide-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 6px;
+}
+
+.guide-query {
+  flex: 1;
+  min-width: 0;
+  padding: var(--btn-sm-pad-y) var(--btn-sm-pad-x);
+  font-size: 12px;
+}
+
+.guide-block {
+  margin-bottom: 10px;
+}
+
+.guide-site {
+  margin: 6px 0 2px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
+.guide-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* A whole row is the target, not just the words in it: this is reached by a finger too. */
+.guide-row {
+  display: block;
+  padding: var(--btn-sm-pad-y) 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 8%, transparent);
+  overflow-wrap: anywhere;
+}
+
+.guide-row:hover {
+  text-decoration: underline;
+}
+
 .stat-strong {
   font-size: 14px;
   font-weight: 700;

@@ -1532,6 +1532,72 @@ export type UpdateVerdict =
       retryAt?: number
     }
 
+/** The two walkthrough sites this program knows how to read. */
+export type GuideProvider = 'saiga' | '2dfan'
+
+/** One walkthrough, as offered to the user. */
+export interface GuideHit {
+  provider: GuideProvider
+  title: string
+  url: string
+  /** How alike the title is to the game, 0 to 1. Zero means it was not ranked at all. */
+  score: number
+}
+
+/**
+ * What one site had to say.
+ *
+ * `failed` is deliberately not folded into `none`. The two sites fail differently and one
+ * of them fails often: 誠也の部屋 is a static page kept on disk, so it answers even while
+ * the site is down, whereas 2DFan is asked live and hands back an HTML fragment that will
+ * change shape one day. Reporting that change as “no walkthrough found” would make a
+ * broken reader look like a fact about the game.
+ */
+export interface GuideProviderResult {
+  provider: GuideProvider
+  state: 'hits' | 'none' | 'failed'
+  hits: GuideHit[]
+  /**
+   * 2DFan only: their keyword search returned rows, but none of them look like this game.
+   * Shown as “what their search returned” rather than as an answer.
+   */
+  loose?: boolean
+  /** When the kept copy of a static index was fetched. 誠也の部屋 only. */
+  fetchedAt?: number
+}
+
+/** One press of the button. `query` is the title that was searched, and is editable. */
+export interface GuideSearch {
+  query: string
+  results: GuideProviderResult[]
+}
+
+/**
+ * Where to go when neither site had it.
+ *
+ * Always offered, so the feature is never a dead end — a folder called `032601` that has
+ * never been looked up has nothing either site can match, and the honest answer is a
+ * search box somewhere else rather than silence.
+ */
+export const GUIDE_FALLBACKS: readonly { key: string; url: (query: string) => string }[] = [
+  {
+    key: 'google',
+    url: (q) => `https://www.google.com/search?q=${encodeURIComponent(`${q} 攻略`)}`
+  },
+  {
+    key: 'bing',
+    url: (q) => `https://www.bing.com/search?q=${encodeURIComponent(`${q} 攻略`)}`
+  },
+  {
+    key: 'saiga',
+    url: () => 'https://seiya-saiga.com/game/kouryaku.html'
+  },
+  {
+    key: '2dfan',
+    url: (q) => `https://2dfan.com/subjects/search?keyword=${encodeURIComponent(q)}`
+  }
+]
+
 /** How a download ended. `path` is where it landed. */
 export type UpdateDownload =
   | { ok: true; path: string }

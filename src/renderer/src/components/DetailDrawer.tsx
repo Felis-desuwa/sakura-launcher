@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Breakdown, DiskInfo, Game } from '../../../shared/types'
+import type {
+  Breakdown,
+  DiskInfo,
+  Game,
+  GuideProvider,
+  GuideSearch
+} from '../../../shared/types'
 import {
   formatDuration,
+  GUIDE_FALLBACKS,
   SUMMARY_SOURCE_LABEL,
   TAG_SOURCE_LABEL,
   tagLabel,
@@ -50,6 +57,17 @@ interface Props {
   showAdult: boolean
   /** Strike an automatic tag out, or put every struck-out one back. */
   onTagHidden: (gameId: string, tagId: string, hidden: boolean) => Promise<void>
+  /** What the last walkthrough search found, or null when none has been made. */
+  guide: GuideSearch | null
+  guideBusy: boolean
+  /** Look for a walkthrough. An empty query means “work one out from the game”. */
+  onSearchGuide: (query: string) => void
+}
+
+/** Which site a result came from. Proper nouns, so they are the same in both languages. */
+const GUIDE_SITE: Record<GuideProvider, string> = {
+  saiga: '誠也の部屋',
+  '2dfan': '2DFan'
 }
 
 export default function DetailDrawer({
@@ -61,8 +79,13 @@ export default function DetailDrawer({
   onChooseExe,
   showSpoilers,
   showAdult,
-  onTagHidden
+  onTagHidden,
+  guide,
+  guideBusy,
+  onSearchGuide
 }: Props): React.JSX.Element {
+  /** The box, once a search has filled it in. Null means “whatever was searched”. */
+  const [guideEdit, setGuideEdit] = useState<string | null>(null)
   const t = useT()
   const lang = useLang()
 
@@ -497,6 +520,88 @@ export default function DetailDrawer({
                   })}
                 </p>
               </>
+            )}
+
+            {/* Walkthroughs. The button is the only route to this — nothing is looked up
+                until somebody asks. What leaves the machine is the title in the box, and
+                only 2DFan is asked live: 誠也の部屋 publishes one index, which is kept
+                on disk and searched here, so it never learns which game was opened. */}
+            <div className="section-title">{t('drawer.guides')}</div>
+            <div className="guide-box">
+              {guide && (
+                <input
+                  className="guide-query"
+                  value={guideEdit ?? guide.query}
+                  onChange={(e) => setGuideEdit(e.target.value)}
+                  placeholder={t('drawer.guideQuery')}
+                />
+              )}
+              <button
+                type="button"
+                className="btn ghost"
+                disabled={guideBusy}
+                onClick={() => onSearchGuide(guideEdit ?? guide?.query ?? '')}
+              >
+                {guideBusy
+                  ? t('drawer.guideSearching')
+                  : guide
+                    ? t('drawer.guideAgain')
+                    : t('drawer.guideSearch')}
+              </button>
+            </div>
+            {!guide && !guideBusy && (
+              <p className="drawer-note dim">{t('drawer.guideHint')}</p>
+            )}
+
+            {guide && !guideBusy && (
+              <div className="guide-results">
+                {guide.results.map((result) => (
+                  <div key={result.provider} className="guide-block">
+                    <div className="guide-site">{GUIDE_SITE[result.provider]}</div>
+                    {result.state === 'failed' ? (
+                      /* Said out loud rather than shown as an empty list: a reader that
+                         cannot make sense of what came back is not a fact about the game. */
+                      <p className="drawer-note dim">{t('drawer.guideFailed')}</p>
+                    ) : result.state === 'none' ? (
+                      <p className="drawer-note dim">{t('drawer.guideNone')}</p>
+                    ) : (
+                      <>
+                        {result.loose && (
+                          <p className="drawer-note dim">{t('drawer.guideLoose')}</p>
+                        )}
+                        <div className="guide-list">
+                          {result.hits.map((hit) => (
+                            <a
+                              key={hit.url}
+                              className="guide-row"
+                              href={hit.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={hit.url}
+                            >
+                              {hit.title}
+                            </a>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+                <p className="drawer-note dim">
+                  {t('drawer.guideFallback')}
+                  {GUIDE_FALLBACKS.map((site) => (
+                    <a
+                      key={site.key}
+                      className="linkish"
+                      href={site.url(guideEdit ?? guide.query)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {site.key === 'saiga' ? GUIDE_SITE.saiga : site.key === '2dfan' ? GUIDE_SITE['2dfan'] : site.key}
+                    </a>
+                  ))}
+                </p>
+              </div>
             )}
           </>
         )}

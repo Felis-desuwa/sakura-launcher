@@ -39,6 +39,8 @@ import { setMainLang, t } from './i18n'
 import { cancelWatch, onLaunchTrouble } from './launch-watch'
 import { launchElevated, launchGame, revealInExplorer, spawnDetached } from './launcher'
 // `cancelDownload` is already taken here by the downloader, which cancels one job by id.
+import { guideQuery } from './guide-rules'
+import { searchGuides } from './guides'
 import {
   cancelDownload as cancelUpdateDownload,
   checkForUpdate,
@@ -63,6 +65,7 @@ import { onPlaytimeChange, playingIds, runningInDir, shutdownPlaytime } from './
 import {
   classifyExes,
   collectSubExes,
+  displayNameFor,
   exeKindLabel,
   isUnder,
   listDirShallow,
@@ -1247,6 +1250,27 @@ function registerIpc(): void {
     // the user's to do.
     if (result.ok) revealInExplorer(result.path)
     return result
+  })
+
+  /**
+   * Look for a walkthrough for one game.
+   *
+   * **Reached only from the button in the drawer**, like the update check and for the
+   * same reason. The query is worked out here when the renderer does not supply one, so
+   * the Japanese original the catalogue recorded is preferred over the folder's name —
+   * a folder called `032601` has nothing either site can match.
+   */
+  ipcMain.handle('guide:search', async (_e, id: string, query?: string) => {
+    const game = db.findGame(id)
+    if (!game) return { query: query ?? '', results: [] }
+    const wanted = query?.trim() || guideQuery(game, displayNameFor(game.dir))
+    return searchGuides(wanted)
+  })
+
+  /** What the box starts with, so the renderer never has to guess the title itself. */
+  ipcMain.handle('guide:query', (_e, id: string) => {
+    const game = db.findGame(id)
+    return game ? guideQuery(game, displayNameFor(game.dir)) : ''
   })
 
   ipcMain.handle('update:cancelDownload', () => {
