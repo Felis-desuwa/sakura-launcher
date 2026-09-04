@@ -66,6 +66,15 @@ export default function App(): React.JSX.Element {
   const [groups, setGroups] = useState<Group[]>([])
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [loaded, setLoaded] = useState(false)
+  /**
+   * `settings.touchMode` resolved to a yes or no, for the parts of the interface that have
+   * to *think* differently rather than just measure differently.
+   *
+   * CSS reads the same answer off `data-touch` on the root. This exists because a handful
+   * of decisions are not stylistic — whether to offer rearrange mode at all, whether to
+   * show a way out of it — and those live in components, not in a stylesheet.
+   */
+  const [touch, setTouch] = useState(false)
 
   const [page, setPage] = useState<PageKey>('desktop')
   const [tab, setTab] = useState<TabKey>('all')
@@ -191,6 +200,41 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     document.documentElement.dataset.theme = settings.theme
   }, [settings.theme])
+
+  /*
+   * Touch mode rides the same root attribute, so the CSS reads it the way it reads themes.
+   *
+   * `auto` is re-evaluated on the media query's own change event rather than read once:
+   * a coarse pointer can arrive mid-session — a tablet plugged in, a remote client that
+   * switches to injecting real touch — and a value sampled at mount would sit there stale
+   * with every target still 13px wide.
+   */
+  useEffect(() => {
+    const set = (on: boolean): void => {
+      document.documentElement.dataset.touch = on ? 'on' : 'off'
+      setTouch(on)
+    }
+    if (settings.touchMode !== 'auto') {
+      set(settings.touchMode === 'on')
+      return
+    }
+    const query = window.matchMedia('(pointer: coarse)')
+    const apply = (): void => set(query.matches)
+    apply()
+    query.addEventListener('change', apply)
+    return () => query.removeEventListener('change', apply)
+  }, [settings.touchMode])
+
+  /**
+   * What this build was packaged as, for the top bar and the settings page.
+   *
+   * Empty until it arrives, and the places that show it render nothing while it is — a
+   * version that flickers in as a blank chip is worse than one that appears a frame late.
+   */
+  const [version, setVersion] = useState('')
+  useEffect(() => {
+    void window.sakura.appVersion().then(setVersion)
+  }, [])
 
   const refresh = useCallback(async (): Promise<void> => {
     const snap = await window.sakura.snapshot()
@@ -658,6 +702,7 @@ export default function App(): React.JSX.Element {
 
       <TopBar
         page={page}
+        version={version}
         tab={tab}
         counts={counts}
         search={search}
@@ -709,6 +754,7 @@ export default function App(): React.JSX.Element {
             tab={tab}
             sortKey={settings.sortKey}
             tileSize={settings.tileSize}
+            touch={touch}
             search={search}
             activeTags={activeTags}
             showSpoilers={settings.spoilerTags}
@@ -803,6 +849,7 @@ export default function App(): React.JSX.Element {
         ) : (
           <SettingsPage
             settings={settings}
+            version={version}
             onChange={updateSettings}
             onRescanFolder={(folder) => void previewInto(folder)}
             onRemoveRoot={(folder) => setRemovingRoot(folder)}

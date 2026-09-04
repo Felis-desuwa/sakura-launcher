@@ -38,6 +38,13 @@ import { diagnoseGame } from './diagnose'
 import { setMainLang, t } from './i18n'
 import { cancelWatch, onLaunchTrouble } from './launch-watch'
 import { launchElevated, launchGame, revealInExplorer, spawnDetached } from './launcher'
+// `cancelDownload` is already taken here by the downloader, which cancels one job by id.
+import {
+  cancelDownload as cancelUpdateDownload,
+  checkForUpdate,
+  downloadAsset,
+  offeredAsset
+} from './update'
 import {
   onUpscaleNotice,
   openUpscalerSettings,
@@ -330,6 +337,27 @@ function registerIpc(): void {
   ipcMain.handle('win:close', () => mainWindow?.close())
   ipcMain.handle('win:isMaximized', () => mainWindow?.isMaximized() ?? false)
 
+  /*
+   * Dragging the window with a finger.
+   *
+   * The top bar *is* the title bar, and `-webkit-app-region: drag` is how it moves the
+   * window — but that is a mouse-only mechanism in Chromium. Under touch it does nothing
+   * at all, which leaves a frameless window that cannot be moved off the spot it opened
+   * on. So the renderer measures the gesture itself and asks for the position outright.
+   *
+   * `win:dragStart` hands back where the window is now, and the renderer adds the
+   * pointer's own displacement to it — deltas rather than absolute pointer coordinates,
+   * because the pointer is inside the window it is moving and using its screen position
+   * would snap the bar under the finger on the first event.
+   */
+  ipcMain.handle('win:dragStart', () => mainWindow?.getPosition() ?? [0, 0])
+  ipcMain.handle('win:dragMove', (_e, x: number, y: number) => {
+    // Never while maximised: a maximised window has no position to move, and Windows
+    // itself only offers this after a restore.
+    if (!mainWindow || mainWindow.isMaximized()) return
+    mainWindow.setPosition(Math.round(x), Math.round(y))
+  })
+
   ipcMain.handle('db:snapshot', () => ({
     games: db.getGames(),
     groups: db.getGroups(),
@@ -340,7 +368,8 @@ function registerIpc(): void {
     const settings = db.setSettings(patch)
     // Switching upscaling on is the moment to lay Magpie's copy down, rather than making
     // the first launch afterwards wait ten megabytes for it — and switching away from
-    // Lossless Scaling is the moment to take our profiles back out of its configuration.
+    // Lossless Scaling is the moment to take our profiles back out of its configuration,
+    // and to end a pointer mapper that is still rewriting somebody's clicks.
     upscaleSettingsChanged(patch)
     return settings
   })
@@ -1171,6 +1200,58 @@ function registerIpc(): void {
       properties: ['openDirectory', 'createDirectory']
     })
     return res.canceled ? null : res.filePaths[0]
+  })
+
+  // The version this build was packaged as. The splash already shows it; the top bar and
+  // the settings page need the same string, and there was no route to it from the renderer.
+  ipcMain.handle('app:version', () => app.getVersion())
+
+  /**
+   * Ask GitHub whether there is a newer release.
+   *
+   * **The only route to this in the whole program is the button in the settings page.**
+   * Nothing calls it on startup, on a scan, on a refresh or on a launch, which is what
+   * leaves the promise on the front page of both READMEs true. The channel is read from
+   * the settings here rather than taken from the renderer, the same way the catalogue
+   * switch is: a stale renderer must not be able to pick a line the settings did not.
+   */
+  ipcMain.handle('update:check', () => checkForUpdate(db.getSettings().updateChannel))
+
+  /**
+   * Fetch one file of the release the last check found.
+   *
+   * The renderer names a `kind` and never an address: the URL comes out of the verdict
+   * this process worked out itself, the same rule that keeps a cover candidate's path in
+   * the main process. The folder is chosen here too, so nothing is ever written to a path
+   * that arrived over IPC.
+   */
+  ipcMain.handle('update:download', async (e, kind: 'portable' | 'setup') => {
+    const asset = offeredAsset(kind)
+    if (!asset) return { ok: false, error: 'refused' as const, detail: 'no such asset' }
+    if (!mainWindow) return { ok: false, error: 'refused' as const }
+
+    const picked = await dialog.showOpenDialog(mainWindow, {
+      title: t('pick.updateDir'),
+      properties: ['openDirectory']
+    })
+    if (picked.canceled || !picked.filePaths[0]) {
+      // Closing the dialog is not a refusal to be reported — it is a decision not to.
+      return { ok: false, error: 'refused' as const, detail: 'cancelled' }
+    }
+    const dir = picked.filePaths[0]
+
+    const result = await downloadAsset(asset.url, asset.name, dir, asset.size, (received, total) => {
+      if (!e.sender.isDestroyed()) e.sender.send('update:progress', { received, total })
+    })
+    // Nothing is installed and nothing is replaced: the folder is opened and the rest is
+    // the user's to do.
+    if (result.ok) revealInExplorer(result.path)
+    return result
+  })
+
+  ipcMain.handle('update:cancelDownload', () => {
+    cancelUpdateDownload()
+    return true
   })
 
   // The renderer has rendered the library. Nothing depends on the payload — the message

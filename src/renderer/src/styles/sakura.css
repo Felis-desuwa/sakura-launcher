@@ -56,6 +56,31 @@
   --radius: 16px;
   --topbar-h: 60px;
 
+  /*
+   * How big the things you press are.
+   *
+   * These were hard-coded literals in a dozen unrelated rules until touch needed them to
+   * move together. The values below are exactly what those rules already said, so nothing
+   * changes for a mouse; the block under `[data-touch='on']` is the only place that
+   * departs from them.
+   */
+  --hit-round: 30px;
+  --hit-tiny: 13px;
+  --switch-w: 44px;
+  --switch-h: 25px;
+  --btn-pad-y: 9px;
+  --btn-pad-x: 18px;
+  --btn-sm-pad-y: 5px;
+  --btn-sm-pad-x: 12px;
+  --menu-pad-y: 7px;
+  --menu-pad-x: 10px;
+  --tab-pad-y: 8px;
+  --tab-pad-x: 14px;
+  --pagebtn-pad-y: 7px;
+  --pagebtn-pad-x: 12px;
+  --crumb-pad-y: 3px;
+  --crumb-pad-x: 8px;
+
   /* The one colour that is deliberately not a theme hue: destructive means the same red
      in every theme, and a matcha-green delete button would be a joke at the user's
      expense. Declared here rather than in each theme block precisely so no theme can
@@ -254,11 +279,49 @@ body,
   margin: 0;
 }
 
+/*
+ * A window is not a document. Dragging the left button across a menu row or a button's
+ * label used to smear it blue — an interaction that is only ever a slip here, since there
+ * is nothing on a button worth copying and the highlight then sits there until something
+ * else is clicked. Selection is off for the shell and switched back on, by name, for the
+ * few places where the text is a *fact* rather than a control: a path, a command line, the
+ * engine's own error message, a description.
+ *
+ * Opt-in rather than opt-out, on purpose. A button added tomorrow is right without anybody
+ * remembering this rule, and the list below doubles as the answer to "what in here can be
+ * pasted somewhere else" — which carries more weight than usual, because nothing in this
+ * program puts anything on the clipboard for you.
+ */
 body {
   font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
   color: var(--ink);
   overflow: hidden;
   background: var(--bg-2);
+  user-select: none;
+  /* Text that cannot be selected must not offer an I-beam either. The cursor is the tell. */
+  cursor: default;
+}
+
+input,
+textarea,
+[contenteditable='true'],
+/* below here: the machine's own words, never the interface's. Nothing on this list may
+   sit inside a <label> or a clickable row — there a drag would both paint a selection and
+   still fire the click, which is worse than either on its own. */
+.drawer-title,
+.drawer-sub,
+.drawer-summary,
+.settings-path,
+.root-row > span,
+.share-result .share-rel,
+.share-result .share-why,
+.saves-name,
+.diag-detail,
+.diag-why,
+.diag-log,
+.diag-facts {
+  user-select: text;
+  cursor: auto;
 }
 
 button {
@@ -316,6 +379,9 @@ button {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 22px 26px 60px;
+  /* A finger that reaches the end of this list keeps pushing, and without this the
+     page behind it takes over and scrolls away underneath. */
+  overscroll-behavior: contain;
 }
 
 /* ---------- top bar ---------- */
@@ -336,7 +402,11 @@ button {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 18px;
+  /* Tightens as the window narrows, which buys back about 56px across the eight gaps at
+     the minimum size — the cheapest space on the bar, and the only kind nobody misses.
+     Purely density: what keeps the bar from overflowing is the flex arrangement below,
+     which answers to the width the bar is actually given rather than to the viewport. */
+  gap: clamp(10px, 1.1vw, 18px);
   /* No padding on the right: the close button's box has to reach the window edge, or the
      screen corner — the one target you can throw the pointer at without aiming — lands on
      dead bar instead of close. The dot inside it stays visually inset. */
@@ -361,7 +431,27 @@ button {
   -webkit-app-region: no-drag;
 }
 
+/*
+ * The bar is one flex row and it has to survive being narrower than its contents.
+ *
+ * The window's minimum is 900px and the bar's natural width is half again that, so this is
+ * not an edge case — it is what the bar looks like at the size the user is allowed to drag
+ * it to. Left alone, flex lets the overflow run off the right-hand end and the window edge
+ * clips it, which costs the controls in this order: the caption buttons, the page nav, the
+ * refresh button. **The caption buttons are the serious one.** This window has no frame, so
+ * `.wctl` is the only way to close it; pushed off the edge, the program cannot be shut
+ * except through Task Manager.
+ *
+ * So the right-hand half is `flex: none` — it is never what gives way — and the give is put
+ * where losing it costs the least, in this order: the search box shrinks first (a narrower
+ * box still takes typing), then the sort dropdown, and last the tab strip, which scrolls
+ * rather than shrinking so no tab is ever lost, only pushed out of sight.
+ *
+ * Deliberately flex rather than a media query: this way the bar answers to the width it is
+ * actually given, which is the thing a harness can set and check.
+ */
 .brand {
+  flex: none;
   font-weight: 700;
   font-size: 16px;
   letter-spacing: 0.5px;
@@ -372,13 +462,28 @@ button {
 .tabs {
   display: flex;
   gap: 4px;
+  /* `min-width: 0` is the whole trick: a flex item defaults to `min-width: auto`, which
+     means "never narrower than my contents" — which is exactly how the overflow got out. */
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* A scrollbar inside a 60px bar would be worse than the problem. Both spellings: Firefox
+     is not the target but this file is not the place to guess about that. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
   position: relative;
+  flex: none;
   border: 0;
   background: transparent;
-  padding: 8px 14px;
+  padding: var(--tab-pad-y) var(--tab-pad-x);
   border-radius: 10px;
   font-size: 14px;
   color: var(--ink-soft);
@@ -405,7 +510,10 @@ button {
   position: absolute;
   left: 14px;
   right: 14px;
-  bottom: -1px;
+  /* Was -1px, sitting on the bar's own bottom border. The tab strip is a scroll container
+     now, and `overflow-x: auto` forces `overflow-y` to clip — a rule one pixel outside the
+     box would simply be cut off, taking the marker for which tab is active with it. */
+  bottom: 0;
   height: 2.5px;
   border-radius: 2px;
   background: var(--accent);
@@ -421,8 +529,51 @@ button {
   color: var(--accent);
 }
 
+/*
+ * The build's version, beside the brand.
+ *
+ * `flex: none` because the top bar's right-hand half is deliberately not negotiable and
+ * the give is taken from the search box first; a chip that joined that negotiation would
+ * cost a tab at the 900px minimum window width.
+ */
+.version-chip {
+  flex: none;
+  white-space: nowrap;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
 .topbar-spacer {
   flex: 1;
+}
+
+/*
+ * At the window's minimum width the tab strip is down to about a hundred pixels, which
+ * shows one tab out of four and scrolls the rest out of sight. They are the library's main
+ * navigation, so the wordmark gives way to them — it is the one thing on this bar that is
+ * decoration rather than a control, and the flower in the corner still says whose window
+ * this is.
+ *
+ * This is the only rule here keyed to the viewport, and it is deliberately not what keeps
+ * the bar from overflowing — that is the flex arrangement above, which answers to the width
+ * the bar is actually handed and can therefore be measured. This only ever *removes*
+ * content, so it cannot put the overflow back.
+ */
+@media (max-width: 1000px) {
+  .brand,
+  .version-chip {
+    display: none;
+  }
+
+  .tab {
+    padding: 8px 10px;
+  }
+
+  .tab.active::after {
+    left: 10px;
+    right: 10px;
+  }
 }
 
 .back-btn {
@@ -432,6 +583,13 @@ button {
 }
 
 .search {
+  /* Shrinks three times as readily as the tab strip, so the box narrows well before a tab
+     goes out of view — but not to nothing. Left at `min-width: 0` it reached 26px at the
+     window's own minimum size, which is narrower than one character: still technically a
+     search box, and of no use to anybody. Below this it stops and the tab strip, which can
+     scroll, takes the rest. */
+  flex: 0 3 190px;
+  min-width: 88px;
   width: 190px;
   padding: 7px 12px;
   border-radius: 10px;
@@ -444,13 +602,27 @@ button {
 
 .sort-select {
   width: auto;
-  min-width: 118px;
+  flex: 0 2 auto;
+  /* Not zero: this one is read rather than typed into, and a dropdown too narrow to show
+     which sort is in force is the same as no dropdown. */
+  min-width: 72px;
   cursor: pointer;
 }
 
 .search:focus {
   border-color: var(--brand);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 18%, transparent);
+}
+
+/*
+ * The right-hand half, none of which may shrink or be pushed off the edge. `.wctl` is the
+ * load-bearing one — see the note above `.brand`.
+ */
+.topbar > .btn,
+.back-btn,
+.pagebtns,
+.wctl {
+  flex: none;
 }
 
 .pagebtns {
@@ -461,7 +633,7 @@ button {
 .pagebtn {
   border: 0;
   background: transparent;
-  padding: 7px 12px;
+  padding: var(--pagebtn-pad-y) var(--pagebtn-pad-x);
   border-radius: 10px;
   font-size: 13px;
   color: var(--ink-soft);
@@ -504,8 +676,8 @@ button {
 
 .wctl-btn {
   position: relative;
-  width: 30px;
-  height: 30px;
+  width: var(--hit-round);
+  height: var(--hit-round);
   display: grid;
   place-items: center;
   border: 0;
@@ -525,7 +697,18 @@ button {
   height: 13px;
   border-radius: 50%;
   background: color-mix(in srgb, var(--brand) 78%, transparent);
+  transform: scale(var(--wctl-dot, 1));
   transition: background 0.16s, transform 0.16s;
+}
+
+/* Only ever different from the other two once the glyphs are drawn at rest — see the
+   touch note below. Left at the resting colour otherwise, as it has always been. */
+.wctl-btn.close::before {
+  background: var(--wctl-close, color-mix(in srgb, var(--brand) 78%, transparent));
+}
+
+.wctl-btn.close {
+  color: var(--wctl-close-ink, var(--panel));
 }
 
 /* Grows to very nearly the button's own 30px, so the dot the pointer is over is
@@ -572,13 +755,75 @@ button {
   stroke-width: 1.25;
   stroke-linecap: round;
   stroke-linejoin: round;
-  opacity: 0;
+  opacity: var(--wctl-glyph, 0);
   transition: opacity 0.16s;
 }
 
 .wctl-btn:hover svg,
 .wctl-btn:focus-visible svg {
   opacity: 1;
+}
+
+/*
+ * A glyph revealed by hovering cannot be revealed by a finger, and what is left is three
+ * identical dots — one of which closes the program. Hiding the mark is a choice that only
+ * makes sense when something can arrive to uncover it, so where nothing can, the buttons
+ * are simply drawn in the state hovering would have put them in: mark visible, dot grown,
+ * and close in its own red, which is the one distinction that must never be a guess.
+ *
+ * Both routes are needed and they are not redundant. `hover: none` catches a real touch
+ * screen; the setting catches the case this was actually built for, a streaming client
+ * injecting *mouse* events, where hover works perfectly and the finger still cannot use it.
+ */
+@media (hover: none) {
+  :root {
+    --wctl-glyph: 1;
+    --wctl-dot: 1.9;
+    --wctl-close: var(--danger);
+    --wctl-close-ink: var(--danger-ink);
+  }
+}
+
+:root[data-touch='on'] {
+  --wctl-glyph: 1;
+  --wctl-dot: 1.9;
+  --wctl-close: var(--danger);
+  --wctl-close-ink: var(--danger-ink);
+
+  /*
+   * Touch sizing. 44px is the figure every platform's guidance converges on for a
+   * fingertip, and it is what the round buttons and the switch are raised to; the padded
+   * controls are given the vertical room that lands them in the same place.
+   *
+   * The tag "x" is the extreme case — 13px, which is a quarter of a finger — and it is
+   * also the one that used to sit at 45% opacity, so it was neither visible nor hittable.
+   *
+   * Tiles are deliberately absent: `tileSize` is already the user's own slider, and
+   * doubling a shelf nobody asked to have thinned out would be the wrong kind of help.
+   */
+  --hit-round: 44px;
+  --hit-tiny: 28px;
+  --switch-w: 56px;
+  --switch-h: 32px;
+  --btn-pad-y: 13px;
+  --btn-pad-x: 20px;
+  --btn-sm-pad-y: 11px;
+  --btn-sm-pad-x: 16px;
+  --menu-pad-y: 13px;
+  --menu-pad-x: 14px;
+  --tab-pad-y: 13px;
+  --tab-pad-x: 16px;
+  --pagebtn-pad-y: 12px;
+  --pagebtn-pad-x: 14px;
+  --crumb-pad-y: 9px;
+  --crumb-pad-x: 12px;
+}
+
+/* The drawer's close button overrides `.btn` padding inline, which no token can reach —
+   so it is given the room back here instead. */
+:root[data-touch='on'] .drawer-head .btn.ghost {
+  min-width: var(--hit-round);
+  min-height: var(--hit-round);
 }
 
 .wctl-btn:focus-visible {
@@ -595,6 +840,45 @@ button {
   align-content: start;
 }
 
+/*
+ * Rearrange mode: the shelf hands its pan gesture over to the tiles.
+ *
+ * This one declaration is the whole reason the mode has to exist. `touch-action` is read
+ * when a gesture *begins* and never again, so a finger pressed on a tile has already been
+ * promised to the scroller before any amount of holding could prove it meant to drag.
+ * Setting it permanently would be worse than the problem — the shelf is nearly all tiles,
+ * so the library could not be scrolled by finger at all.
+ */
+.grid.rearranging {
+  touch-action: none;
+}
+
+/* Enough to say "these are loose" without the whole shelf moving — the tiles are already
+   the thing being looked at, and a jiggling grid is hard to aim at. */
+.grid.rearranging .tile {
+  cursor: grab;
+  box-shadow: var(--shadow-md);
+}
+
+.rearrange-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 18px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--glass-strong);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-md);
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
 .tile {
   position: relative;
   aspect-ratio: 1;
@@ -605,7 +889,6 @@ button {
   background: var(--glass-strong);
   box-shadow: var(--shadow-sm);
   transition: transform 0.16s ease, box-shadow 0.16s ease;
-  user-select: none;
   text-align: left;
 
   /*
@@ -689,7 +972,6 @@ button {
 /* While a drag is in flight the pointer owns the grid; hover states only add noise. */
 body.tiles-dragging {
   cursor: grabbing;
-  user-select: none;
 }
 
 body.tiles-dragging .tile:hover {
@@ -959,6 +1241,39 @@ body.tiles-dragging .tile.drop-target:hover {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
 }
 
+/*
+ * The names beside the status flowers, and the words beside the folder window's two icon
+ * buttons. Both are hidden for a mouse, which has a tooltip and wants the density; both
+ * are drawn under touch, where `title` never appears at all and ✿ / ❀ / ✓ are the only
+ * thing left saying which shelf a game is on.
+ */
+.flag-label,
+.iconbtn-label {
+  display: none;
+}
+
+:root[data-touch='on'] .flag-label,
+:root[data-touch='on'] .iconbtn-label {
+  display: inline;
+  margin-left: 4px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+:root[data-touch='on'] .flag,
+:root[data-touch='on'] .iconbtn {
+  width: auto;
+  min-width: var(--hit-round);
+  padding: 0 8px;
+}
+
+:root[data-touch='on'] .flag {
+  height: auto;
+  min-height: 20px;
+  border-radius: 10px;
+  grid-auto-flow: column;
+}
+
 /* The star rating lives in the label row (.tile-stars); the corners carry status only. */
 
 /* ---------- group tile: drawn as a folder ---------- */
@@ -1127,13 +1442,16 @@ body.tiles-dragging .tile.drop-target:hover {
   min-height: 0;
   overflow-y: auto;
   padding: 18px 20px 26px;
+  /* A finger that reaches the end of this list keeps pushing, and without this the
+     page behind it takes over and scrolls away underneath. */
+  overscroll-behavior: contain;
 }
 
 .iconbtn {
   border: 0;
   background: color-mix(in srgb, var(--panel) 72%, transparent);
-  width: 30px;
-  height: 30px;
+  width: var(--hit-round);
+  height: var(--hit-round);
   border-radius: 9px;
   display: grid;
   place-items: center;
@@ -1165,7 +1483,6 @@ body.tiles-dragging .tile.drop-target:hover {
   padding: 8px 10px;
   border-radius: 9px;
   font-size: 13px;
-  user-select: none;
 }
 
 .file-row:hover {
@@ -1234,7 +1551,7 @@ body.tiles-dragging .tile.drop-target:hover {
   width: 100%;
   border: 0;
   background: transparent;
-  padding: 7px 10px;
+  padding: var(--menu-pad-y) var(--menu-pad-x);
   border-radius: 8px;
   font-size: 13px;
   white-space: nowrap;
@@ -1330,6 +1647,9 @@ body.tiles-dragging .tile.drop-target:hover {
   flex: 1;
   overflow-y: auto;
   padding: 16px 18px 24px;
+  /* A finger that reaches the end of this list keeps pushing, and without this the
+     page behind it takes over and scrolls away underneath. */
+  overscroll-behavior: contain;
 }
 
 .donut-wrap {
@@ -1370,7 +1690,7 @@ body.tiles-dragging .tile.drop-target:hover {
 .crumbs button {
   border: 0;
   background: color-mix(in srgb, var(--panel) 70%, transparent);
-  padding: 3px 8px;
+  padding: var(--crumb-pad-y) var(--crumb-pad-x);
   border-radius: 7px;
   font-size: 11.5px;
   color: var(--accent);
@@ -1493,6 +1813,15 @@ body.tiles-dragging .tile.drop-target:hover {
   place-items: center;
   cursor: grab;
   transition: transform 0.13s;
+  /*
+   * The finger's movement belongs to the icon, not to the page.
+   *
+   * Safe here in a way it would not be on the shelf: an icon is 96px in a row that also
+   * has a label, background and page margin to scroll from, whereas the shelf is tiles
+   * wall to wall. It is what lets a press-and-move be a drag on this page without the
+   * rearrange mode the grid needs.
+   */
+  touch-action: none;
 }
 
 .tier-icon:hover {
@@ -1531,8 +1860,8 @@ body.tiles-dragging .tile.drop-target:hover {
 
 .switch {
   flex: none;
-  width: 44px;
-  height: 25px;
+  width: var(--switch-w);
+  height: var(--switch-h);
   border-radius: 13px;
   border: 0;
   padding: 0;
@@ -1550,8 +1879,10 @@ body.tiles-dragging .tile.drop-target:hover {
   position: absolute;
   top: 3px;
   left: 3px;
-  width: 19px;
-  height: 19px;
+  /* Sized off the track it runs in, so raising the track cannot leave a small dot
+     rattling around inside a large groove. 25 - 6 is the 19px this always was. */
+  width: calc(var(--switch-h) - 6px);
+  height: calc(var(--switch-h) - 6px);
   border-radius: 50%;
   background: var(--panel);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.24);
@@ -1559,7 +1890,9 @@ body.tiles-dragging .tile.drop-target:hover {
 }
 
 .switch.on::after {
-  transform: translateX(19px);
+  /* The travel is whatever the track has left over once the knob is in it: 44 - 25 is
+     the same 19px, and it stays right at any size the tokens are given. */
+  transform: translateX(calc(var(--switch-w) - var(--switch-h)));
 }
 
 /* ---------- disk page ---------- */
@@ -1641,7 +1974,7 @@ input[type='range'] {
 .btn {
   border: 0;
   border-radius: 10px;
-  padding: 9px 18px;
+  padding: var(--btn-pad-y) var(--btn-pad-x);
   font-size: 13.5px;
   font-weight: 600;
   /* English labels run two or three words where the Chinese ran two characters. A button
@@ -1673,7 +2006,7 @@ input[type='range'] {
 }
 
 .btn.small {
-  padding: 5px 12px;
+  padding: var(--btn-sm-pad-y) var(--btn-sm-pad-x);
   font-size: 12px;
 }
 
@@ -1713,6 +2046,9 @@ input[type='range'] {
   box-shadow: var(--shadow-lg);
   padding: 26px 28px;
   animation: pop-in 0.18s ease;
+  /* A finger that reaches the end of this list keeps pushing, and without this the
+     page behind it takes over and scrolls away underneath. */
+  overscroll-behavior: contain;
 }
 
 @keyframes pop-in {
@@ -1864,7 +2200,6 @@ input[type='range'] {
   background: transparent;
   display: grid;
   place-items: center;
-  user-select: none;
   touch-action: none;
 }
 
@@ -2099,28 +2434,28 @@ input[type='range'] {
   border: 1px solid var(--glass-border);
 }
 
+/*
+ * These three ride on the app-wide `user-select: none` and must never be handed an
+ * exception: the step is called 手抄, and a name that can be dragged into the box below
+ * is no slower to get past than no name at all.
+ */
 .flower-en {
   font-size: 21px;
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--ink);
-  /* Not selectable on purpose: the step is called 手抄, and a name that can be dragged
-     into the box below is no slower to get past than no name at all. */
-  user-select: none;
 }
 
 .flower-cn {
   margin-top: 4px;
   font-size: 12.5px;
   color: var(--ink-soft);
-  user-select: none;
 }
 
 .flower-meaning {
   margin-top: 4px;
   font-size: 12.5px;
   color: var(--accent);
-  user-select: none;
 }
 
 .ritual-target {
@@ -2314,6 +2649,9 @@ input[type='range'] {
   background: color-mix(in srgb, var(--ink) 5%, transparent);
   font-size: 11.5px;
   color: var(--ink-soft);
+  /* A finger that reaches the end of this list keeps pushing, and without this the
+     page behind it takes over and scrolls away underneath. */
+  overscroll-behavior: contain;
 }
 
 /* One archive per line, never wrapped: a truncated name still identifies the file,
@@ -2560,6 +2898,9 @@ select.field {
   border-radius: 12px;
   background: color-mix(in srgb, var(--bg-1) 55%, transparent);
   padding: 6px;
+  /* A finger that reaches the end of this list keeps pushing, and without this the
+     page behind it takes over and scrolls away underneath. */
+  overscroll-behavior: contain;
 }
 
 .import-section + .import-section {
@@ -2859,6 +3200,9 @@ select.field {
   padding: 6px;
   border-radius: 12px;
   background: color-mix(in srgb, var(--bg-1) 55%, transparent);
+  /* A finger that reaches the end of this list keeps pushing, and without this the
+     page behind it takes over and scrolls away underneath. */
+  overscroll-behavior: contain;
 }
 
 .bulk-row {
@@ -2959,8 +3303,8 @@ select.field {
 .tag-hide {
   border: 0;
   padding: 0;
-  width: 13px;
-  height: 13px;
+  width: var(--hit-tiny);
+  height: var(--hit-tiny);
   line-height: 1;
   border-radius: 50%;
   font-size: 12px;
@@ -3207,6 +3551,23 @@ select.field {
   line-height: 1.6;
   font-weight: 400;
   color: var(--ink-soft);
+}
+
+/* The emphasised clause in a hint — see `emph()`. Darker rather than heavy: at 11.5px a
+   full bold reads as shouting, and what these mark is the one phrase worth catching on a
+   skim, not a second voice. */
+.settings-hint strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Where a settings row shows a path the program found or was pointed at, rather than
+   prose about one. It is on the short list of selectable text for that reason. */
+.settings-path {
+  flex: 1;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  word-break: break-all;
 }
 
 /* ---------- motion ---------- */
@@ -3506,6 +3867,9 @@ select.field {
   color: var(--ink);
   white-space: pre-wrap;
   word-break: break-all;
+  /* A finger that reaches the end of this list keeps pushing, and without this the
+     page behind it takes over and scrolls away underneath. */
+  overscroll-behavior: contain;
 }
 
 .diag-clean {

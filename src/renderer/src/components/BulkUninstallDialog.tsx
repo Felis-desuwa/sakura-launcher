@@ -53,7 +53,18 @@ export default function BulkUninstallDialog({
   }
 
   return (
-    <div className="modal-backdrop">
+    /*
+     * Tapping outside closes it, the way every other dialog here already does. This was
+     * the only one that did not, which left Escape and one button as the entire way out —
+     * and a finger has no Escape key. Guarded on `running` for the same reason the button
+     * is disabled: an uninstall in flight is not something to walk away from by accident.
+     */
+    <div
+      className="modal-backdrop"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !running) onCancel()
+      }}
+    >
       <div className="modal">
         <div className="step">{t('bulk.step')}</div>
         <h2>{t('bulk.title', { n: games.length })}</h2>

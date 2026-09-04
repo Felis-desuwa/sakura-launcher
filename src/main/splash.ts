@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { t } from './i18n'
 import { splashHtml } from './splash-html'
 
@@ -88,7 +88,7 @@ export function showSplash(): void {
   })
 
   void win.loadURL(
-    'data:text/html;charset=utf-8,' + encodeURIComponent(splashHtml(t('splash.preparing')))
+    'data:text/html;charset=utf-8,' + encodeURIComponent(splashHtml(t('splash.preparing'), app.getVersion()))
   )
 }
 

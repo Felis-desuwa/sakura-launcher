@@ -23,6 +23,10 @@ import type {
   SharePlan,
   ShareResult,
   PendingMatch,
+  UpdateAssetKind,
+  UpdateDownload,
+  UpdateProgress,
+  UpdateVerdict,
   WorkMatch
 } from '../shared/types'
 
@@ -139,6 +143,10 @@ const api = {
   toggleMaximizeWindow: (): Promise<void> => ipcRenderer.invoke('win:toggleMaximize'),
   closeWindow: (): Promise<void> => ipcRenderer.invoke('win:close'),
   isWindowMaximized: (): Promise<boolean> => ipcRenderer.invoke('win:isMaximized'),
+  /** Where the window is now, so a touch drag can measure from it. See `win:dragMove`. */
+  startWindowDrag: (): Promise<[number, number]> => ipcRenderer.invoke('win:dragStart'),
+  moveWindow: (x: number, y: number): Promise<void> =>
+    ipcRenderer.invoke('win:dragMove', x, y),
   /** Fires for every route to maximised, including Win+↑ and a double-click on the bar. */
   onMaximizeChange: (cb: (maximized: boolean) => void): (() => void) => {
     const handler = (_e: unknown, maximized: boolean): void => cb(maximized)
@@ -273,6 +281,35 @@ const api = {
    * only be another way to keep the window hidden.
    */
   ready: (): void => ipcRenderer.send('app:ready'),
+
+  /** What this build was packaged as — `app.getVersion()`, i.e. package.json's version. */
+  appVersion: (): Promise<string> => ipcRenderer.invoke('app:version'),
+
+  /**
+   * Ask GitHub whether there is a newer release. **Only ever from the settings button.**
+   *
+   * The channel comes from the settings, read in the main process. Nothing here runs on
+   * its own — there is no subscription, no timer and no startup call, which is the whole
+   * shape of the promise.
+   */
+  checkUpdate: (): Promise<UpdateVerdict> => ipcRenderer.invoke('update:check'),
+
+  /**
+   * Fetch one file of the release the last check found, into a folder chosen there.
+   *
+   * A `kind`, never an address: the URL is resolved in the main process against the
+   * verdict it worked out itself.
+   */
+  downloadUpdate: (kind: UpdateAssetKind): Promise<UpdateDownload> =>
+    ipcRenderer.invoke('update:download', kind),
+
+  cancelUpdateDownload: (): Promise<boolean> => ipcRenderer.invoke('update:cancelDownload'),
+
+  onUpdateProgress: (fn: (progress: UpdateProgress) => void): (() => void) => {
+    const handler = (_e: unknown, progress: UpdateProgress): void => fn(progress)
+    ipcRenderer.on('update:progress', handler)
+    return () => ipcRenderer.off('update:progress', handler)
+  },
 
   reveal: (id: string): Promise<boolean> => ipcRenderer.invoke('game:reveal', id),
   breakdown: (dir: string): Promise<Breakdown | null> => ipcRenderer.invoke('game:breakdown', dir),

@@ -7,11 +7,19 @@ import type {
   Settings,
   SortKey,
   TabKey,
+  TouchMode,
+  UpdateAssetKind,
+  UpdateChannel,
+  UpdateDownload,
+  UpdateProgress,
+  UpdateVerdict,
   Upscaler,
   UpscaleStatus
 } from '../../../shared/types'
 import {
   DOWNLOADERS,
+  GITHUB_ISSUES_URL,
+  GITHUB_URL,
   isIntegratedGpu,
   LOSSLESS_PRESETS,
   MAGPIE_MODES,
@@ -22,10 +30,13 @@ import {
   TAB_KEYS,
   THEMES
 } from '../../../shared/types'
-import { useT } from '../lib/i18n'
+import { formatBytes } from '../lib/format'
+import { emph, useT } from '../lib/i18n'
 
 interface Props {
   settings: Settings
+  /** What this build was packaged as. Empty until the main process has answered. */
+  version: string
   onChange: (patch: Partial<Settings>) => void
   /** Re-run the import preview for one folder, so new games in it can be picked up. */
   onRescanFolder: (folder: string) => void
@@ -54,6 +65,7 @@ interface Props {
 
 export default function SettingsPage({
   settings,
+  version,
   onChange,
   onRescanFolder,
   onRemoveRoot,
@@ -72,6 +84,18 @@ export default function SettingsPage({
 }: Props): React.JSX.Element {
   const t = useT()
   const [has7z, setHas7z] = useState<boolean | null>(null)
+  /**
+   * What the last press of the check button found.
+   *
+   * `null` until it has been pressed, and it renders as nothing rather than as “up to
+   * date” — a check that has never run has not found anything, and saying otherwise is
+   * the one lie this whole feature is built to avoid.
+   */
+  const [verdict, setVerdict] = useState<UpdateVerdict | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [progress, setProgress] = useState<UpdateProgress | null>(null)
+  const [saved, setSaved] = useState<string | null>(null)
+  const [dlError, setDlError] = useState<UpdateDownload | null>(null)
   /** undefined while the probe is still running, so "not found" is not shown too early. */
   const [detected, setDetected] = useState<string | null | undefined>(undefined)
   /** The suggested backup folder, shown when the user has not named one. */
@@ -185,6 +209,69 @@ export default function SettingsPage({
   // Only the discouraging half of the annotation is ever shown — see `isIntegratedGpu`.
   const heavyForThisGpu =
     lossless?.gpu != null && isIntegratedGpu(lossless.gpu.name) && presetIsHeavy(chosenMode)
+
+  useEffect(() => window.sakura.onUpdateProgress(setProgress), [])
+
+  const runCheck = async (): Promise<void> => {
+    setChecking(true)
+    setSaved(null)
+    setDlError(null)
+    try {
+      setVerdict(await window.sakura.checkUpdate())
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const runDownload = async (kind: UpdateAssetKind): Promise<void> => {
+    setSaved(null)
+    setDlError(null)
+    setProgress({ received: 0, total: 0 })
+    try {
+      const result = await window.sakura.downloadUpdate(kind)
+      if (result.ok) setSaved(result.path)
+      // Closing the folder dialog is a decision not to, not a failure to report.
+      else if (result.detail !== 'cancelled') setDlError(result)
+    } finally {
+      setProgress(null)
+    }
+  }
+
+  /** The one sentence a verdict comes to. */
+  const verdictLine = (v: UpdateVerdict): string => {
+    switch (v.kind) {
+      case 'available':
+        return t('settings.updateAvailable', { version: v.release.version })
+      case 'upToDate':
+        return t('settings.updateUpToDate')
+      case 'ahead':
+        return t('settings.updateAhead', {
+          version: v.release.version,
+          channel: t(
+            v.channel === 'beta' ? 'settings.updateChannelBeta' : 'settings.updateChannelStable'
+          )
+        })
+      case 'noRelease':
+        return t('settings.updateNone')
+      default:
+        switch (v.reason) {
+          case 'offline':
+            return t('settings.updateFailOffline')
+          case 'rateLimited':
+            return t('settings.updateFailRate')
+          case 'serverError':
+            return t('settings.updateFailServer', { detail: v.detail ?? '' })
+          case 'badResponse':
+            return t('settings.updateFailBody')
+          case 'unreadableReleases':
+            return t('settings.updateFailTags', { detail: v.detail ?? '' })
+          case 'unreadableVersion':
+            return t('settings.updateFailVersion', { detail: v.detail ?? '' })
+          default:
+            return t('settings.updateFailRefused', { detail: v.detail ?? '' })
+        }
+    }
+  }
 
   return (
     <div className="page">
@@ -384,6 +471,24 @@ export default function SettingsPage({
         </div>
 
         <div className="settings-row">
+          <label htmlFor="touchMode">
+            {t('settings.touchMode')}
+            <span className="settings-hint" style={{ whiteSpace: 'pre-line' }}>
+              {emph(t('settings.touchModeHint'))}
+            </span>
+          </label>
+          <select
+            id="touchMode"
+            value={settings.touchMode}
+            onChange={(e) => onChange({ touchMode: e.target.value as TouchMode })}
+          >
+            <option value="auto">{t('settings.touchModeAuto')}</option>
+            <option value="on">{t('settings.touchModeOn')}</option>
+            <option value="off">{t('settings.touchModeOff')}</option>
+          </select>
+        </div>
+
+        <div className="settings-row">
           <label htmlFor="petals">{t('settings.petals')}</label>
           <button
             id="petals"
@@ -489,7 +594,7 @@ export default function SettingsPage({
                     than after it. The link opens in their own browser through the window
                     handler in `index.ts`; this program still opens no socket of its own. */}
                 <p className="settings-hint" style={{ marginTop: 0 }}>
-                  {t('settings.losslessWrites')}{' '}
+                  {emph(t('settings.losslessWrites'))}{' '}
                   <a
                     className="linkish"
                     href="https://store.steampowered.com/app/993090/"
@@ -579,7 +684,7 @@ export default function SettingsPage({
                         fabrication as the stale value that made this necessary. */}
                     <div className="section-title">{t('settings.displaySection')}</div>
                     <p className="settings-hint" style={{ marginTop: 0 }}>
-                      {t('settings.displayHint')}
+                      {emph(t('settings.displayHint'))}
                     </p>
                     <div className="settings-row">
                       <label htmlFor="displayRefresh">
@@ -622,7 +727,7 @@ export default function SettingsPage({
                     <div className="settings-row">
                       <label htmlFor="losslessHdr">
                         {t('settings.losslessHdr')}
-                        <span className="settings-hint">{t('settings.losslessHdrHint')}</span>
+                        <span className="settings-hint">{emph(t('settings.losslessHdrHint'))}</span>
                       </label>
                       <select
                         id="losslessHdr"
@@ -635,6 +740,84 @@ export default function SettingsPage({
                         <option value="off">{t('settings.losslessHdrOff')}</option>
                       </select>
                     </div>
+
+                    <div className="settings-row">
+                      <label htmlFor="pointerMap">
+                        {t('settings.pointerMap')}
+                        <span className="settings-hint">{emph(t('settings.pointerMapHint'))}</span>
+                      </label>
+                      <button
+                        id="pointerMap"
+                        type="button"
+                        className={`switch${settings.losslessPointerMap ? ' on' : ''}`}
+                        onClick={() =>
+                          onChange({ losslessPointerMap: !settings.losslessPointerMap })
+                        }
+                      />
+                    </div>
+
+                    {/* The limits are shown with the switch rather than behind it. Every one
+                        of them is something the user would otherwise find out by being
+                        surprised — most of all that this is not touch support, which is the
+                        thing somebody switching it on is most likely to think they bought. */}
+                    {settings.losslessPointerMap && (
+                      <>
+                        <p
+                          className="settings-hint"
+                          style={{ marginTop: 0, whiteSpace: 'pre-line' }}
+                        >
+                          {emph(t('settings.pointerMapRing'))}
+                        </p>
+                        <p
+                          className="settings-hint"
+                          style={{ marginTop: 0, whiteSpace: 'pre-line' }}
+                        >
+                          {emph(t('settings.pointerMapLimits'))}
+                        </p>
+                        {/* "Switched on" and "working" look identical from the outside until
+                            a tap lands in the wrong place, so the difference is stated. */}
+                        <p
+                          className="settings-hint"
+                          style={{
+                            marginTop: 0,
+                            color: lossless.pointerMap.error ? 'var(--warn)' : undefined
+                          }}
+                        >
+                          {lossless.pointerMap.error
+                            ? t('settings.pointerMapFailed')
+                            : !lossless.pointerMap.running
+                              ? t('settings.pointerMapWaiting')
+                              : lossless.pointerMap.active
+                                ? t('settings.pointerMapWorking')
+                                : t('settings.pointerMapIdle')}
+                          {lossless.pointerMap.mapped > 0 && (
+                            <>
+                              {' · '}
+                              {t('settings.pointerMapMapped', {
+                                n: lossless.pointerMap.mapped
+                              })}
+                            </>
+                          )}
+                        </p>
+                        {/* Its own line, and a warning colour, because it is the one
+                            outcome with no other symptom: the press was swallowed here and
+                            then refused by the system, so it did not land somewhere wrong
+                            — it did not land at all, while the count above it says the
+                            event was handled. */}
+                        {lossless.pointerMap.blocked > 0 && (
+                          <p
+                            className="settings-hint"
+                            style={{ marginTop: 0, whiteSpace: 'pre-line', color: 'var(--warn)' }}
+                          >
+                            {emph(
+                              t('settings.pointerMapBlocked', {
+                                n: lossless.pointerMap.blocked
+                              })
+                            )}
+                          </p>
+                        )}
+                      </>
+                    )}
 
                     {/* A standing line, not the toast `lossless.configLocked` raises. That
                         toast lasts four seconds; this state lasts until they close the
@@ -650,10 +833,12 @@ export default function SettingsPage({
                           color: lossless.running ? 'var(--warn)' : undefined
                         }}
                       >
-                        {t(
-                          lossless.running
-                            ? 'settings.losslessPendingLocked'
-                            : 'settings.losslessPendingNext'
+                        {emph(
+                          t(
+                            lossless.running
+                              ? 'settings.losslessPendingLocked'
+                              : 'settings.losslessPendingNext'
+                          )
                         )}
                       </p>
                     )}
@@ -724,7 +909,7 @@ export default function SettingsPage({
               // choices and which to pick, and collapsed into a single block nobody reads
               // past the first line. The blank lines in the dictionary entry are the layout.
               <p className="settings-hint" style={{ marginTop: 0, whiteSpace: 'pre-line' }}>
-                {t('settings.losslessPresetHint')}
+                {emph(t('settings.losslessPresetHint'))}
               </p>
             )}
             {/* The same rule that paragraph states, worked out on the screen actually
@@ -934,7 +1119,7 @@ export default function SettingsPage({
           <div className="settings-row">
             <label htmlFor="translateSummary">
               {t('settings.translateSummary')}
-              <span className="settings-hint">{t('settings.translateSummaryNote')}</span>
+              <span className="settings-hint">{emph(t('settings.translateSummaryNote'))}</span>
             </label>
             <button
               id="translateSummary"
@@ -1038,7 +1223,7 @@ export default function SettingsPage({
             </span>
           </label>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <span style={{ flex: 1, fontSize: 12.5, color: 'var(--ink-soft)', wordBreak: 'break-all' }}>
+            <span className="settings-path">
               {settings.downloadDir ?? settings.roots[0] ?? t('settings.noDirYet')}
               {settings.downloadDir === null && settings.roots[0] && t('settings.followsRoot')}
             </span>
@@ -1084,7 +1269,7 @@ export default function SettingsPage({
           <div className="settings-row">
             <label>{t('settings.downloaderProgram')}</label>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <span style={{ flex: 1, fontSize: 12.5, color: 'var(--ink-soft)', wordBreak: 'break-all' }}>
+              <span className="settings-path">
                 {settings.downloaderPath ??
                   (settings.downloader === 'idm'
                     ? detected === undefined
@@ -1157,10 +1342,10 @@ export default function SettingsPage({
         <div className="settings-row">
           <label>
             {t('settings.backupDir')}
-            <span className="settings-hint">{t('settings.backupDirHint')}</span>
+            <span className="settings-hint">{emph(t('settings.backupDirHint'))}</span>
           </label>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <span style={{ flex: 1, fontSize: 12.5, color: 'var(--ink-soft)', wordBreak: 'break-all' }}>
+            <span className="settings-path">
               {settings.backupDir ?? backupDir}
               {settings.backupDir === null && t('settings.backupDirDefault')}
             </span>
@@ -1189,7 +1374,7 @@ export default function SettingsPage({
         <div className="settings-row">
           <label>Geek Uninstaller</label>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <span style={{ flex: 1, fontSize: 12.5, color: 'var(--ink-soft)', wordBreak: 'break-all' }}>
+            <span className="settings-path">
               {settings.geekPath ?? t('settings.geekNotSet')}
             </span>
             <button
@@ -1220,6 +1405,180 @@ export default function SettingsPage({
                 : t('settings.7zMissing')}
           </span>
         </div>
+      </div>
+
+      <div className="card" style={{ maxWidth: 760 }}>
+        <div className="section-title" style={{ marginTop: 0 }}>
+          {t('settings.aboutSection')}
+        </div>
+
+        <div className="settings-row">
+          <label>{t('settings.version')}</label>
+          {/* Both links open in the user's own browser through the window handler in
+              `index.ts`; this program opens no socket for them. */}
+          <span className="settings-hint" style={{ margin: 0 }}>
+            {version}
+            <a className="linkish" href={GITHUB_URL} target="_blank" rel="noreferrer">
+              {t('settings.repo')}
+            </a>
+            <a className="linkish" href={GITHUB_ISSUES_URL} target="_blank" rel="noreferrer">
+              {t('settings.issues')}
+            </a>
+          </span>
+        </div>
+
+        <div className="settings-row">
+          <label htmlFor="updateChannel">
+            {t('settings.updateChannel')}
+            <span className="settings-hint" style={{ whiteSpace: 'pre-line' }}>
+              {emph(t('settings.updateChannelHint'))}
+            </span>
+          </label>
+          <select
+            id="updateChannel"
+            value={settings.updateChannel}
+            onChange={(e) => onChange({ updateChannel: e.target.value as UpdateChannel })}
+          >
+            <option value="stable">{t('settings.updateChannelStable')}</option>
+            <option value="beta">{t('settings.updateChannelBeta')}</option>
+          </select>
+        </div>
+
+        {/* This button is the only thing in the program that reaches api.github.com, and
+            nothing calls it on startup, on a scan, on a refresh or on a launch. What goes
+            out is a GET naming the program and its version, and nothing else. */}
+        <div className="settings-row">
+          <label>
+            {t('settings.checkUpdate')}
+            <span className="settings-hint">{emph(t('settings.checkUpdateHint'))}</span>
+          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {progress ? (
+              <>
+                <span className="settings-hint" style={{ margin: 0 }}>
+                  {t('settings.updateDownloading', {
+                    done: formatBytes(progress.received),
+                    total: progress.total ? formatBytes(progress.total) : '?'
+                  })}
+                </span>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => void window.sakura.cancelUpdateDownload()}
+                >
+                  {t('settings.updateCancel')}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="btn primary"
+                disabled={checking}
+                onClick={() => void runCheck()}
+              >
+                {checking ? t('settings.checking') : t('settings.checkUpdate')}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {verdict && (
+          <div style={{ padding: '4px 0 12px' }}>
+            <p
+              className="settings-hint"
+              style={{
+                marginTop: 0,
+                ...(verdict.kind === 'failed' ? { color: 'var(--danger-text)' } : {})
+              }}
+            >
+              {verdictLine(verdict)}
+            </p>
+
+            {/* What the comparison could not see. Carried on every answer and not only on
+                the one where nothing could be read: the release that would have
+                contradicted “up to date” is exactly the one that got dropped. */}
+            {verdict.kind !== 'failed' && verdict.unreadableTags.length > 0 && (
+              <p className="settings-hint" style={{ marginTop: 4 }}>
+                {t('settings.updateUnread', {
+                  n: verdict.unreadableTags.length,
+                  tags: verdict.unreadableTags.join('、')
+                })}
+              </p>
+            )}
+            {verdict.kind !== 'failed' && verdict.newerPrerelease > 0 && (
+              <p className="settings-hint" style={{ marginTop: 4 }}>
+                {t('settings.updateNewerBeta', { n: verdict.newerPrerelease })}
+              </p>
+            )}
+
+            {(verdict.kind === 'available' || verdict.kind === 'ahead') && (
+              <>
+                {verdict.release.rejectedAssets.length > 0 && (
+                  <p className="settings-hint" style={{ marginTop: 4 }}>
+                    {t('settings.updateRejected', {
+                      n: verdict.release.rejectedAssets.length,
+                      names: verdict.release.rejectedAssets.join('、')
+                    })}
+                  </p>
+                )}
+                <p className="settings-hint" style={{ marginTop: 6 }}>
+                  <a
+                    className="linkish"
+                    href={verdict.release.notesUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {t('settings.updateNotes')}
+                  </a>
+                </p>
+                {verdict.kind === 'available' &&
+                  (verdict.release.assets.length === 0 ? (
+                    <p className="settings-hint" style={{ marginTop: 4 }}>
+                      {t('settings.updateNoAssets')}
+                    </p>
+                  ) : (
+                    <span style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                      {verdict.release.assets.map((a) => (
+                        <button
+                          key={a.kind}
+                          type="button"
+                          className="btn ghost"
+                          disabled={!!progress}
+                          onClick={() => void runDownload(a.kind)}
+                        >
+                          {t('settings.updateDownload', {
+                            kind: t(
+                              a.kind === 'portable'
+                                ? 'settings.updateKindPortable'
+                                : 'settings.updateKindSetup'
+                            )
+                          })}
+                        </button>
+                      ))}
+                    </span>
+                  ))}
+              </>
+            )}
+
+            {saved && (
+              <p className="settings-hint" style={{ marginTop: 8 }}>
+                {t('settings.updateSaved')}
+                <span className="settings-path" style={{ display: 'block' }}>
+                  {saved}
+                </span>
+              </p>
+            )}
+            {dlError && !dlError.ok && (
+              <p className="settings-hint" style={{ marginTop: 8, color: 'var(--danger-text)' }}>
+                {dlError.error === 'truncated'
+                  ? t('settings.updateDlFailTruncated', { detail: dlError.detail ?? '' })
+                  : dlError.error === 'write'
+                    ? t('settings.updateDlFailWrite', { detail: dlError.detail ?? '' })
+                    : t('settings.updateDlFailNetwork')}
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

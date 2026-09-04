@@ -33,6 +33,8 @@ interface Props {
   tab: TabKey
   sortKey: SortKey
   tileSize: number
+  /** Whether the interface is being driven by a finger. See `Settings.touchMode`. */
+  touch: boolean
   search: string
   /** Auto-tag ids currently narrowing the grid. Every one of them has to match. */
   activeTags: string[]
@@ -180,6 +182,7 @@ export default function DesktopPage(props: Props): React.JSX.Element {
     tab,
     sortKey,
     tileSize,
+    touch,
     search,
     activeTags,
     showSpoilers,
@@ -199,6 +202,20 @@ export default function DesktopPage(props: Props): React.JSX.Element {
   } = props
 
   const [menu, setMenu] = useState<MenuState>(null)
+  /**
+   * Rearrange mode: the shelf stops scrolling under a finger so tiles can be dragged.
+   *
+   * A mode rather than a gesture, and it is forced rather than chosen. Dragging a tile
+   * and scrolling the shelf are the same movement of the same finger, and the browser
+   * decides which one it is when the gesture *starts* — `touch-action` is not consulted
+   * again afterwards, so no amount of holding, waiting or measuring can take the pan back
+   * once it has been given away. The only way to have both gestures is to let the user
+   * say which one this is, and the only honest place to say it is up front.
+   *
+   * A mouse never enters it: a mouse has a scroll wheel, so pressing a tile was never
+   * ambiguous, and every mouse gesture works exactly as it did before.
+   */
+  const [rearranging, setRearranging] = useState(false)
   const [openGroup, setOpenGroup] = useState<string | null>(null)
   const [nudgeId, setNudgeId] = useState<string | null>(null)
   const [groupPrompt, setGroupPrompt] = useState<
@@ -688,6 +705,16 @@ export default function DesktopPage(props: Props): React.JSX.Element {
 
   const blankMenu = (): MenuItem[] => [
     { label: t('menu.newGroup'), onClick: () => setGroupPrompt({ mode: 'create' }) },
+    // Offered only to a finger. A mouse can already drag a tile whenever it likes, so for
+    // a mouse this would be a mode that turns nothing on.
+    ...(touch
+      ? [
+          {
+            label: t(rearranging ? 'menu.rearrangeDone' : 'menu.rearrange'),
+            onClick: () => setRearranging((on) => !on)
+          }
+        ]
+      : []),
     { type: 'separator' },
     { label: t('menu.addGame'), onClick: props.onAddGame },
     { label: t('menu.addFolder'), onClick: props.onAddFolder },
@@ -838,7 +865,32 @@ export default function DesktopPage(props: Props): React.JSX.Element {
       const target = games.find((g) => g.id === targetId)
       return !!source && !!target && source.groupId === target.groupId
     },
-    onDrop: commitDrop
+    onDrop: commitDrop,
+    rearranging,
+    /*
+     * A held finger opens exactly the menu the right button opens, and it has to: that
+     * menu is the only route to marking a game played, rating it, renaming it, editing
+     * its tags, fetching its cover, sharing it, backing up its saves, removing it or
+     * uninstalling it. Without this every one of those is out of reach on a tablet.
+     */
+    onLongPress: (id, kind, x, y) => {
+      cancelPendingClick()
+      if (kind === 'group') {
+        const group = groups.find((g) => g.id === id)
+        if (group) setMenu({ kind: 'group', x, y, group })
+        return
+      }
+      const game = games.find((g) => g.id === id)
+      if (!game) return
+      if (selection.has(id) && selectedGames.length > 1) {
+        setMenu({ kind: 'bulk', x, y, targets: selectedGames })
+        return
+      }
+      // Same as the right-click path: holding outside the selection replaces it.
+      onSelectionChange([id])
+      anchorRef.current = id
+      setMenu({ kind: 'game', x, y, game })
+    }
   })
 
   const dragging = useMemo(() => new Set(drag.dragIds), [drag.dragIds])
@@ -961,7 +1013,11 @@ export default function DesktopPage(props: Props): React.JSX.Element {
       }}
     >
 
-      <div className="grid" ref={gridRef} style={{ ['--tile' as string]: `${tileSize}px` }}>
+      <div
+        className={`grid${rearranging ? ' rearranging' : ''}`}
+        ref={gridRef}
+        style={{ ['--tile' as string]: `${tileSize}px` }}
+      >
         {shownGroups.map(({ group, members }) => (
           <GroupTile
             key={group.id}
@@ -972,6 +1028,7 @@ export default function DesktopPage(props: Props): React.JSX.Element {
             hole={drag.dragKind === 'group' && drag.dragIds.includes(group.id)}
             onPointerDown={(e) => drag.start(e, group.id, 'group')}
             onToggle={() => setOpenGroup(openGroup === group.id ? null : group.id)}
+            suppressClick={drag.didDrag}
             onContextMenu={(e) => {
               e.preventDefault()
               e.stopPropagation()
@@ -982,6 +1039,17 @@ export default function DesktopPage(props: Props): React.JSX.Element {
 
         {mainList.map((game) => renderTile(game))}
       </div>
+
+      {/* The way out. A mode with no visible exit is a trap, and this one has taken the
+          shelf's scrolling away — so it says both what it is doing and how to stop. */}
+      {rearranging && (
+        <div className="rearrange-bar">
+          <span>{t('desk.rearranging')}</span>
+          <button type="button" className="btn" onClick={() => setRearranging(false)}>
+            {t('menu.rearrangeDone')}
+          </button>
+        </div>
+      )}
 
       {openGroup &&
         groupsWithMembers
@@ -1202,6 +1270,8 @@ interface GroupTileProps {
   onPointerDown: (e: React.PointerEvent) => void
   onToggle: () => void
   onContextMenu: (e: React.MouseEvent) => void
+  /** True for the click a finished drag or long press is about to produce. */
+  suppressClick: () => boolean
 }
 
 function GroupTile({
@@ -1212,9 +1282,19 @@ function GroupTile({
   hole,
   onPointerDown,
   onToggle,
-  onContextMenu
+  onContextMenu,
+  suppressClick
 }: GroupTileProps): React.JSX.Element {
   const t = useT()
+  /*
+   * Which device pressed last, so a tap can open the folder without giving a mouse a
+   * second way in. A folder used to open on a double-click alone — a single tap was a
+   * complete no-op and its menu offers only rename and dissolve, so with a finger there
+   * was no way to look inside one at all. Double-click stays exactly as it was: for a
+   * mouse this branch never runs, and firing on both would toggle the folder open and
+   * shut again on every double-click.
+   */
+  const pressedWith = useRef<string>('mouse')
   const shown = members.slice(0, 4)
   const classes = [
     'tile',
@@ -1235,7 +1315,15 @@ function GroupTile({
       // carried, be dragged without any either.
       data-group-id={group.id}
       data-flip-id={`group-${group.id}`}
-      onPointerDown={onPointerDown}
+      onPointerDown={(e) => {
+        pressedWith.current = e.pointerType
+        onPointerDown(e)
+      }}
+      onClick={() => {
+        // A long press already opened this folder's menu; the click it leaves behind
+        // would swing the folder open behind it.
+        if (pressedWith.current !== 'mouse' && !suppressClick()) onToggle()
+      }}
       onDoubleClick={onToggle}
       onContextMenu={onContextMenu}
       title={t('group.tileTitle', { name: group.name })}

@@ -148,7 +148,23 @@ function MenuLevel({
               disabled={item.disabled}
               style={item.disabled ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
               onClick={() => {
-                if (hasSub || item.disabled) return
+                if (item.disabled) return
+                /*
+                 * A row with a submenu opens it on click as well as on hover, and that is
+                 * the only way in without a mouse. Hovering is the whole of the mouse
+                 * story, so under touch — where `mouseenter` never fires — this used to
+                 * return here and do nothing at all, which left the star rating, the
+                 * upscale mode and "move to group" with no route in the entire program.
+                 *
+                 * It opens rather than toggles on purpose. A mouse has already opened this
+                 * one by hovering to reach it, so a toggle would close the list under the
+                 * very click that was meant to commit to it.
+                 */
+                if (hasSub) {
+                  cancelClose()
+                  setOpenSub(i)
+                  return
+                }
                 item.onClick?.()
                 if (!item.keepOpen) onClose()
               }}
@@ -187,17 +203,23 @@ export default function ContextMenu({ x, y, items, onClose }: Props): React.JSX.
   }, [x, y])
 
   useEffect(() => {
-    const onDown = (e: MouseEvent): void => {
+    /*
+     * `pointerdown` rather than `mousedown`. A tap does produce a compatibility
+     * `mousedown`, but only when nothing upstream has already called `preventDefault()`
+     * on the touch that produced it — and the tile drag does exactly that once a drag is
+     * live. A pointer event is the thing itself rather than an echo of it.
+     */
+    const onDown = (e: PointerEvent): void => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose()
     }
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose()
     }
-    window.addEventListener('mousedown', onDown)
+    window.addEventListener('pointerdown', onDown)
     window.addEventListener('keydown', onKey)
     window.addEventListener('resize', onClose)
     return () => {
-      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('pointerdown', onDown)
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('resize', onClose)
     }

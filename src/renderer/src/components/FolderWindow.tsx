@@ -58,7 +58,7 @@ export default function FolderWindow({
             disabled={!canGoBack}
             title={t('folder.back')}
           >
-            ←
+            ←<span className="iconbtn-label">{t('folder.back')}</span>
           </button>
           <div className="window-title">
             <span>{glyph}</span>
@@ -68,7 +68,7 @@ export default function FolderWindow({
           <span style={{ flex: 1 }} />
           {actions}
           <button type="button" className="iconbtn" onClick={onClose} title={t('folder.close')}>
-            ✕
+            ✕<span className="iconbtn-label">{t('folder.close')}</span>
           </button>
         </div>
         <div className="window-body">{children}</div>

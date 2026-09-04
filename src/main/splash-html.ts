@@ -3,7 +3,7 @@
  * No external font, image or script — anything that has to be fetched is a chance for
  * the splash to appear after the thing it was meant to cover.
  */
-export function splashHtml(preparing: string): string {
+export function splashHtml(preparing: string, version: string): string {
   const petal =
     'M 0,-8 C -14,-14 -20,-32 -11,-41 C -6,-46 -2,-44 0,-36 ' +
     'C 2,-44 6,-46 11,-41 C 20,-32 14,-14 0,-8 Z'
@@ -57,6 +57,10 @@ export function splashHtml(preparing: string): string {
     margin-top: 14px; font-size: 18px; font-weight: 600;
     letter-spacing: 0.16em; color: #8f4364;
   }
+  /* The build's own version, so a hand-built copy can be told from a release. */
+  .ver {
+    margin-top: 5px; font-size: 11px; letter-spacing: 0.08em; color: #d3a3b8;
+  }
   .stage {
     margin-top: 7px; font-size: 12.5px; letter-spacing: 0.05em; color: #bb849e;
     transition: opacity 0.2s ease;
@@ -93,6 +97,7 @@ export function splashHtml(preparing: string): string {
       </g>
     </svg>
     <div class="title">Sakura Launcher</div>
+    <div class="ver">${version}</div>
     <div class="stage" id="stage">${preparing}</div>
     <div class="bar"><span></span></div>
   </div>

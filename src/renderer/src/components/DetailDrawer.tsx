@@ -80,6 +80,8 @@ export default function DetailDrawer({
     for (const tagId of game.hiddenTags ?? []) await onTagHidden(game.id, tagId, false)
   }
   const [mode, setMode] = useState<Mode>('usage')
+  /** Which auto tag has been asked to explain itself. Its reason is a tooltip otherwise. */
+  const [openReason, setOpenReason] = useState<string | null>(null)
   const [stack, setStack] = useState<string[]>([game.dir])
   const [data, setData] = useState<Breakdown | null>(null)
   const [loading, setLoading] = useState(false)
@@ -408,20 +410,39 @@ export default function DetailDrawer({
                 <div className="tag-row">
                   {autoTags.map((tag) => (
                     /* The reason on hover, and one click to strike it out. A tag the user
-                       cannot argue with is one they stop believing altogether. */
-                    <span className="tag auto" key={tag.id} title={tagReason(tag, t)}>
+                       cannot argue with is one they stop believing altogether — which is
+                       also why the reason is not left to a tooltip alone: a finger never
+                       raises one, so the tag itself opens it. */
+                    <span
+                      className="tag auto"
+                      key={tag.id}
+                      title={tagReason(tag, t)}
+                      onClick={() => setOpenReason((cur) => (cur === tag.id ? null : tag.id))}
+                    >
                       {tagLabel(tag, t, lang)}
                       <button
                         type="button"
                         className="tag-hide"
                         title={t('tags.hide')}
-                        onClick={() => void hideTag(tag.id)}
+                        onClick={(e) => {
+                          // Striking the tag out is not asking why it is there.
+                          e.stopPropagation()
+                          void hideTag(tag.id)
+                        }}
                       >
                         ×
                       </button>
                     </span>
                   ))}
                 </div>
+                {openReason !== null && (
+                  <p className="drawer-note">
+                    {tagReason(
+                      autoTags.find((tag) => tag.id === openReason) ?? autoTags[0],
+                      t
+                    )}
+                  </p>
+                )}
                 {/* Said out loud rather than left as a shorter list. A count that is simply
                     smaller than it should be reads as the lookup having failed. */}
                 {adultHidden > 0 && (

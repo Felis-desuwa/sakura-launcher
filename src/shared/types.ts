@@ -443,6 +443,25 @@ export interface MachineFacts {
  */
 export type LosslessHdr = 'auto' | 'on' | 'off'
 
+/**
+ * Whether the interface is being driven by a finger.
+ *
+ * Three positions rather than a switch, and `auto` is not enough on its own — which is the
+ * whole reason this setting exists rather than a media query.
+ *
+ * `auto` asks `(pointer: coarse)`, which answers correctly for a touch screen attached to
+ * this machine and for a client that injects genuine `WM_POINTER` touch. It answers
+ * **wrongly, and confidently, for the case this was built for**: a remote-desktop client
+ * that injects ordinary *mouse* events. Windows then has a real cursor, Chromium reports
+ * `pointerType: 'mouse'`, `hover` works — and none of that is true of the hand at the far
+ * end, which is on a tablet and cannot hover, cannot hit a 13px target, and has no
+ * keyboard to press Escape with. No query can see through the injection, so the user says.
+ *
+ * `off` is the other direction and just as necessary: a machine with a touch screen it is
+ * never used by ends up with a coarse pointer reported and a mouse in somebody's hand.
+ */
+export type TouchMode = 'auto' | 'on' | 'off'
+
 /** What the settings page shows about the bundled copy. */
 export interface MagpieStatus {
   backend: 'magpie'
@@ -533,6 +552,22 @@ export interface LosslessStatus {
    * thing that will ever be said, because that path clones and overrides nothing.
    */
   hdrMismatch: boolean
+  /**
+   * What the pointer mapper is doing, when `Settings.losslessPointerMap` is on.
+   *
+   * Free to ask on the five-second poll: it is a value the main process already holds, not
+   * a query. `active` is the one the user needs — it says the hook can see both windows,
+   * which is the difference between "switched on" and "working", and those two look
+   * identical from the outside until a tap lands in the wrong place.
+   */
+  pointerMap: {
+    running: boolean
+    active: boolean
+    mapped: number
+    /** Presses the system refused to re-inject — destroyed, not misplaced. */
+    blocked: number
+    error?: string
+  }
 }
 
 /** Whichever backend is in force. Discriminated so the settings page can switch on it. */
@@ -1377,6 +1412,138 @@ export interface MultiArchiveNotice {
   sets: { name: string; volumes: number }[]
 }
 
+/**
+ * Which release line an update check looks at.
+ *
+ * `stable` is the published releases; `beta` also sees the ones GitHub marks as
+ * prereleases. The channel widens what counts rather than pinning a line: somebody on
+ * `beta` is still offered a stable release that is newer than the newest beta, or they
+ * would be stranded on a test build the moment testing stopped.
+ */
+export type UpdateChannel = 'stable' | 'beta'
+
+/**
+ * Where this program is published.
+ *
+ * Here rather than in `src/main` because the settings page links to both and the renderer
+ * cannot reach into the main process — the same reason `MAGPIE_MODES` lives in this file.
+ */
+export const GITHUB_OWNER = 'Felis-desuwa'
+export const GITHUB_REPO = 'sakura-launcher'
+export const GITHUB_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}`
+export const GITHUB_ISSUES_URL = `${GITHUB_URL}/issues`
+export const GITHUB_RELEASES_URL = `${GITHUB_URL}/releases`
+
+/** The two shapes this program is published in. Nothing else is ever offered. */
+export type UpdateAssetKind = 'portable' | 'setup'
+
+/**
+ * How a release asset is recognised.
+ *
+ * By suffix, and deliberately not by the name the build wrote: `electron-builder.yml`
+ * produces `Sakura Launcher-<version>-portable.exe` with a space, and GitHub stores it
+ * back with the space normalised to a dot. Anchoring on the product name matches nothing
+ * that is actually on a release, and does it silently. Lower case; the match is too.
+ */
+export const ASSET_SUFFIX: Record<UpdateAssetKind, string> = {
+  portable: '-portable.exe',
+  setup: '-setup.exe'
+}
+
+/** Both are always offered, always in this order, whatever order they were uploaded in. */
+export const ASSET_ORDER: readonly UpdateAssetKind[] = ['portable', 'setup']
+
+/** One downloadable file of a release. */
+export interface UpdateAsset {
+  kind: UpdateAssetKind
+  name: string
+  url: string
+  /** Bytes, as the release declared them. Zero when it declared nothing. */
+  size: number
+}
+
+/** A release, stripped to what the settings page shows. */
+export interface UpdateRelease {
+  tag: string
+  /** The tag with its leading `v` removed — what the user reads. */
+  version: string
+  prerelease: boolean
+  publishedAt: string | null
+  notesUrl: string
+  assets: UpdateAsset[]
+  /**
+   * Names this program refused.
+   *
+   * Shown, not swallowed: a release whose assets were all rejected would otherwise look
+   * exactly like one that published nothing, which is the shape an upstream naming change
+   * would take.
+   */
+  rejectedAssets: string[]
+}
+
+/** Why a check came back with nothing. Each one gets its own sentence on screen. */
+export type UpdateFailure =
+  | 'offline'
+  | 'rateLimited'
+  | 'refused'
+  | 'serverError'
+  | 'badResponse'
+  | 'unreadableReleases'
+  | 'unreadableVersion'
+
+/**
+ * What one press of the button found.
+ *
+ * A discriminated union rather than a message key, so the harness can assert a verdict
+ * without a dictionary and the settings page can style a rate limit differently from a
+ * 404. `newerPrerelease` counts what the channel filter dropped that is newer than this
+ * build — it is what stops a stable user being told they are current while a newer test
+ * build sits one dropdown away.
+ */
+export interface UpdateSeen {
+  channel: UpdateChannel
+  running: string
+  /** Releases the channel filter dropped that are newer than this build. */
+  newerPrerelease: number
+  /**
+   * Tags that could not be read.
+   *
+   * On every answered verdict, not only the one where nothing could be read. A list of
+   * two releases where the newer one is tagged `nightly-2026-09-03` and the older one
+   * matches this build otherwise produces a confident “up to date” — and the release that
+   * would have contradicted it is the one that was dropped. What cannot be read has to
+   * travel with the answer, or the answer is only true about the part we understood.
+   */
+  unreadableTags: string[]
+}
+
+export type UpdateVerdict =
+  | ({ kind: 'available'; release: UpdateRelease } & UpdateSeen)
+  | ({ kind: 'upToDate' } & UpdateSeen)
+  | ({ kind: 'ahead'; release: UpdateRelease } & UpdateSeen)
+  | ({ kind: 'noRelease' } & UpdateSeen)
+  | {
+      kind: 'failed'
+      channel: UpdateChannel
+      running: string
+      reason: UpdateFailure
+      detail?: string
+      /** Epoch ms when a rate limit lifts, when that is knowable. */
+      retryAt?: number
+    }
+
+/** How a download ended. `path` is where it landed. */
+export type UpdateDownload =
+  | { ok: true; path: string }
+  | { ok: false; error: 'refused' | 'network' | 'truncated' | 'write'; detail?: string }
+
+/** Bytes so far, for the one download in flight. */
+export interface UpdateProgress {
+  received: number
+  /** Zero when the server declared no length. */
+  total: number
+}
+
 export interface Settings {
   /**
    * Interface language.
@@ -1392,6 +1559,19 @@ export interface Settings {
   sortKey: SortKey
   theme: ThemeKey
   tileSize: number
+  /**
+   * Make the controls big enough for a finger.
+   *
+   * Only the things that genuinely trade against mouse use live behind this — hit-target
+   * size and the spacing that comes with it. Everything a finger simply **could not
+   * reach** (a submenu that only opened on hover, a folder that only opened on a
+   * double-click, a window button whose glyph was invisible until hovered) is fixed for
+   * everyone, because none of those were better for a mouse either.
+   *
+   * `tileSize` is deliberately left alone by it. Tiles are already the one thing the user
+   * can resize, and a shelf is read at arm's length whatever is pointing at it.
+   */
+  touchMode: TouchMode
   petals: boolean
   geekPath: string | null
   /**
@@ -1487,6 +1667,43 @@ export interface Settings {
    */
   losslessHdr: LosslessHdr
   /**
+   * Put a streamed tap back where the enlarged picture says it should go.
+   *
+   * Off by default, and only worth switching on for one situation — but that situation is
+   * completely broken without it. An upscaler of this kind never makes the game's window
+   * bigger: it captures that window and draws the enlarged picture on a second window
+   * covering the screen, leaving the game where it was, a small rectangle in the middle.
+   * Input never passes through it.
+   *
+   * With a mouse in your hand nobody notices, because the capture includes the cursor
+   * (this is what `CaptureApi: WGC` buys — see `LOSSLESS_PRESETS`): the pointer on the
+   * enlarged picture *is* the real pointer, magnified, so it is over the button it looks
+   * like it is over. A streaming client that sends **absolute** coordinates has no such
+   * luck. Tapping the screen teleports the pointer to the screen coordinate under your
+   * finger, which is a point on the enlarged picture and almost never inside the game's
+   * small rectangle — so the tap lands on whatever else happens to be there.
+   *
+   * Switched on, a hook process started alongside the upscaler maps those coordinates back
+   * (`pointer-map.ts`). Three properties are what make it safe to offer at all:
+   *
+   *  - **It only ever touches injected events.** A mouse plugged into this machine does not
+   *    set `LLMHF_INJECTED` and is unaffected. **A streaming client's events all do** — every
+   *    move as much as every click — which is the point, and also means the pointer at the
+   *    far end goes through this entirely while scaling is active. It cannot tell that
+   *    client's injection from any other program's either, so a macro or accessibility tool
+   *    is mapped along with it. Closing the game or the launcher ends it within a second.
+   *  - **A point on the letterbox is clamped onto the picture, never dropped.** Dropping it
+   *    deadlocks the pointer there: the moves that would carry it off the letterbox are the
+   *    very events being dropped. That shipped once and stopped the mouse dead.
+   *  - **It is inert unless the upscaler is demonstrably scaling.** It has to be able to
+   *    see both a window covering a whole monitor and a game window to map onto.
+   *  - **It is not touch support.** Real touch input travels as `WM_POINTER`, which a mouse
+   *    hook cannot see and which needs `RegisterPointerInputTarget` and a UIAccess process
+   *    to redirect. Magpie ships one and this program does not, which is the honest reason
+   *    to reach for that backend instead when a client sends genuine touch.
+   */
+  losslessPointerMap: boolean
+  /**
    * Let Magpie run elevated for a game that was launched as administrator.
    *
    * Off by default, and the cost is why. Windows will not let an unelevated program touch
@@ -1578,6 +1795,14 @@ export interface Settings {
   downloaderArgs: string
   /** Send the archive to the recycle bin once it has been extracted. */
   trashArchiveAfterExtract: boolean
+
+  /**
+   * Which release line the update check looks at.
+   *
+   * It decides what the button in the settings page finds, not how often anything
+   * happens: the check runs when that button is pressed and at no other time.
+   */
+  updateChannel: UpdateChannel
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -1587,6 +1812,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sortKey: 'manual',
   theme: 'sakura',
   tileSize: 180,
+  touchMode: 'auto',
   petals: true,
   geekPath: null,
   ignoredDirs: [],
@@ -1600,6 +1826,7 @@ export const DEFAULT_SETTINGS: Settings = {
   losslessPath: null,
   losslessDelay: 2,
   losslessHdr: 'auto',
+  losslessPointerMap: false,
   magpieElevate: false,
   onlineTags: false,
   spoilerTags: false,
@@ -1612,7 +1839,8 @@ export const DEFAULT_SETTINGS: Settings = {
   downloader: 'idm',
   downloaderPath: null,
   downloaderArgs: '{url} -o {dir}',
-  trashArchiveAfterExtract: false
+  trashArchiveAfterExtract: false,
+  updateChannel: 'stable'
 }
 
 export const POLL_CHOICES = [15, 30, 60]
