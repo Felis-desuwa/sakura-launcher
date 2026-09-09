@@ -12,6 +12,8 @@ import {
   pickErrorDialog,
   runtimeFor,
   searchDirsFor,
+  sxsAssemblyFor,
+  sxsDirPrefix,
   unmojibake,
   type ForeignWindow
 } from '../src/main/diagnose-rules.ts'
@@ -170,6 +172,54 @@ check('其它引擎不去 LocalLow', !logHintsFor('kirikiri').localLow && !logHi
 check('Ren’Py 认 traceback.txt', logHintsFor('renpy').inGameDir.some((re) => re.test('traceback.txt')))
 check('通用规则认 error.log', logHintsFor(null).inGameDir.some((re) => re.test('error.log')))
 check('通用规则不认随便一个 .log', !logHintsFor(null).inGameDir.some((re) => re.test('install.log')))
+
+console.log('\n[7b] 并行程序集 —— VC80/VC90 的 CRT 只在 WinSxS 里')
+{
+  // 这是这套诊断以前最大的一处误报，而且恰好命中这个程序服务的那一代游戏：
+  // VS2005/2008 编的东西导入 msvcr80/msvcp90 这些，它们不在 System32 也不在 SysWOW64，
+  // 只在 WinSxS 的 Fusion 程序集里。按目录顺序找必然找不到，于是每一个 2005–2012 年的
+  // 日文引擎游戏都会被报「缺 Visual C++ 运行库」，还是 blocker，排在第一条 —— 而游戏跑得好好的。
+  check('msvcr80 认得出属于 vc80.crt', sxsAssemblyFor('msvcr80.dll')?.assembly === 'microsoft.vc80.crt')
+  check('msvcp90 认得出属于 vc90.crt', sxsAssemblyFor('MSVCP90.DLL')?.assembly === 'microsoft.vc90.crt')
+  check('mfc90u 归到 vc90.mfc 而不是 crt', sxsAssemblyFor('mfc90u.dll')?.assembly === 'microsoft.vc90.mfc')
+  // 只认真正按这种方式分发的那几个。msvcr100 起就是普通的 System32 文件了，
+  // 放进来会让「装了运行库才有」的判断失效。
+  check('msvcr100 不走并行程序集', sxsAssemblyFor('msvcr100.dll') === null)
+  check('vcruntime140 不走并行程序集', sxsAssemblyFor('vcruntime140.dll') === null)
+  check('随便一个 DLL 不走并行程序集', sxsAssemblyFor('kernel32.dll') === null)
+
+  // 架构不是装饰：32 位游戏不能拿 amd64 的程序集充数。反过来放宽就是把误报换成漏报，
+  // 而漏报更糟 —— 它是不出声的那一种。
+  check('x86 前缀', sxsDirPrefix('microsoft.vc80.crt', 'x86') === 'x86_microsoft.vc80.crt_')
+  check('x64 前缀用 amd64', sxsDirPrefix('microsoft.vc80.crt', 'x64') === 'amd64_microsoft.vc80.crt_')
+
+  // 拿这台机器的真实情况兜底 —— 和上面 PE 解析一样，不往仓库里放样本。
+  const win = process.env.SystemRoot ?? 'C:\\Windows'
+  const sxs = path.join(win, 'WinSxS')
+  let names: string[] = []
+  try {
+    names = fs.readdirSync(sxs)
+  } catch {
+    names = []
+  }
+  if (names.length === 0) {
+    console.log('  跳过 —— 读不到 WinSxS')
+  } else {
+    const prefix = sxsDirPrefix('microsoft.vc90.crt', 'x86')
+    const hit = names.find((n) => n.toLowerCase().startsWith(prefix))
+    if (!hit) {
+      console.log('  跳过 —— 这台机器没有 vc90.crt 程序集，那样的话报缺运行库是对的')
+    } else {
+      check('WinSxS 里确实有 x86 的 vc90.crt', true, hit)
+      check(
+        'System32 里确实没有 msvcp90.dll（这就是误报的来源）',
+        !fs.existsSync(path.join(win, 'System32', 'msvcp90.dll')) &&
+          !fs.existsSync(path.join(win, 'SysWOW64', 'msvcp90.dll'))
+      )
+      check('程序集目录里有 msvcp90.dll', fs.existsSync(path.join(sxs, hit, 'msvcp90.dll')))
+    }
+  }
+}
 
 console.log('\n[8] PE 解析 —— 拿真实系统二进制验，仓库里不放样本')
 

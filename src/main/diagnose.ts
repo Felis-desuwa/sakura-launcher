@@ -13,7 +13,9 @@ import {
   logHintsFor,
   pickErrorDialog,
   searchDirsFor,
-  SEVERITY_RANK
+  SEVERITY_RANK,
+  sxsAssemblyFor,
+  sxsDirPrefix
 } from './diagnose-rules.ts'
 import { t } from './i18n.ts'
 import { readWindowsIn } from './window-text.ts'
@@ -98,6 +100,74 @@ function dllResolves(dll: string, searchDirs: string[], exeDir: string): boolean
     if (found) return true
   }
   return false
+}
+
+/**
+ * The `WinSxS` directory listing, read once.
+ *
+ * It holds tens of thousands of entries on an ordinary machine, so this is a single
+ * `readdir` kept for the process lifetime rather than a `stat` per candidate. Failure is
+ * an empty list, which makes every side-by-side probe say "not here" — and that is the
+ * safe direction only because the caller falls back to the ordinary search first.
+ */
+let sxsNames: string[] | null = null
+
+function winSxsDirs(windir: string): string[] {
+  if (sxsNames) return sxsNames
+  try {
+    sxsNames = fs.readdirSync(path.join(windir, 'WinSxS'))
+  } catch {
+    sxsNames = []
+  }
+  return sxsNames
+}
+
+/**
+ * Whether a side-by-side assembly on this machine carries this DLL.
+ *
+ * Two places, and both are ones the loader reaches through the activation context rather
+ * than through any directory order: the machine-wide store, and the copy a release
+ * shipped for itself in `Microsoft.VC90.CRT` beside the executable.
+ */
+function sxsResolves(dll: string, exeDir: string, arch: string, windir: string): boolean {
+  const entry = sxsAssemblyFor(dll)
+  if (!entry) return false
+
+  const local = path.join(exeDir, entry.appLocal, path.basename(dll))
+  try {
+    if (fs.existsSync(local)) return true
+  } catch {
+    /* fall through to the store */
+  }
+
+  const prefix = sxsDirPrefix(entry.assembly, arch).toLowerCase()
+  const store = path.join(windir, 'WinSxS')
+  for (const name of winSxsDirs(windir)) {
+    if (!name.toLowerCase().startsWith(prefix)) continue
+    try {
+      if (fs.existsSync(path.join(store, name, path.basename(dll)))) return true
+    } catch {
+      /* next candidate */
+    }
+  }
+  return false
+}
+
+/**
+ * Whether the loader would find this DLL at all, by either route.
+ *
+ * The ordinary search first because it answers for almost everything and costs one cached
+ * `stat`; the side-by-side probe only for the handful of names that are shipped that way.
+ */
+function dllAvailable(
+  dll: string,
+  searchDirs: string[],
+  exeDir: string,
+  arch: string,
+  windir: string
+): boolean {
+  if (dllResolves(dll, searchDirs, exeDir)) return true
+  return sxsResolves(dll, exeDir, arch, windir)
 }
 
 /** Decode a log tail, trying the two encodings these games actually use. */
@@ -269,7 +339,7 @@ export async function diagnoseGame(game: Game, since?: number): Promise<Diagnosi
   const searchDirs = searchDirsFor(exeDir, pe.arch, windir, pathEntries)
 
   const realImports = pe.imports.filter((d) => !isVirtualDll(d))
-  const missing = realImports.filter((d) => !dllResolves(d, searchDirs, exeDir))
+  const missing = realImports.filter((d) => !dllAvailable(d, searchDirs, exeDir, pe.arch, windir))
   checked.push(t('diag.checked.dlls', { n: realImports.length }))
 
   if (missing.length > 0) {
@@ -302,7 +372,7 @@ export async function diagnoseGame(game: Game, since?: number): Promise<Diagnosi
 
   const missingDelay = pe.delayImports
     .filter((d) => !isVirtualDll(d))
-    .filter((d) => !dllResolves(d, searchDirs, exeDir))
+    .filter((d) => !dllAvailable(d, searchDirs, exeDir, pe.arch, windir))
   if (missingDelay.length > 0) {
     checks.push({
       code: 'delay-missing',
