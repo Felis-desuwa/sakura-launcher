@@ -120,6 +120,52 @@ export const RUNTIME_PACKAGES: RuntimePackage[] = [
   }
 ]
 
+/**
+ * The side-by-side assembly that carries a DLL, for the ones that live nowhere else.
+ *
+ * This was the largest source of false positives in this diagnosis, and it fired on
+ * exactly the population the program exists for. The VC80 and VC90 C runtimes are
+ * **Fusion assemblies**: bound through the executable's `RT_MANIFEST`, resolved by the
+ * activation context, and absent from `System32` and `SysWOW64` entirely. Measured on a
+ * stock Windows 11: `msvcr80.dll`, `msvcp80.dll`, `msvcr90.dll` and `msvcp90.dll` are in
+ * neither system directory, while
+ * `WinSxS\x86_microsoft.vc80.crt_1fc8b3b9a1e18e3b_8.0.50727.9680_none_...` holds all of
+ * them. A search that walks the loader's *directory* order therefore reports every game
+ * built with Visual Studio 2005 or 2008 as missing its runtime — as a `blocker`, sorted
+ * to the top — which is most of a library of 2005-2012 Japanese visual novels, every one
+ * of them starting perfectly.
+ *
+ * Deliberately narrow, and the MFC and ATL rows are the point of the narrowness. They are
+ * listed so that a machine which *does* carry those assemblies is read correctly; on one
+ * that does not — this machine has `vc80.crt` and `vc90.crt` and no MFC or ATL assembly at
+ * all — the finding stands, because then the redistributable really is what is missing.
+ */
+export const SXS_ASSEMBLIES: { assembly: string; appLocal: string; test: RegExp }[] = [
+  { assembly: 'microsoft.vc80.crt', appLocal: 'Microsoft.VC80.CRT', test: /^msvc[mpr]80\.dll$/i },
+  { assembly: 'microsoft.vc80.mfc', appLocal: 'Microsoft.VC80.MFC', test: /^mfcm?80u?\.dll$/i },
+  { assembly: 'microsoft.vc80.atl', appLocal: 'Microsoft.VC80.ATL', test: /^atl80\.dll$/i },
+  { assembly: 'microsoft.vc90.crt', appLocal: 'Microsoft.VC90.CRT', test: /^msvc[mpr]90\.dll$/i },
+  { assembly: 'microsoft.vc90.mfc', appLocal: 'Microsoft.VC90.MFC', test: /^mfcm?90u?\.dll$/i },
+  { assembly: 'microsoft.vc90.atl', appLocal: 'Microsoft.VC90.ATL', test: /^atl90\.dll$/i }
+]
+
+/** Which side-by-side assembly would carry this DLL, or null for one that is not shipped that way. */
+export function sxsAssemblyFor(dll: string): (typeof SXS_ASSEMBLIES)[number] | null {
+  const name = path.basename(dll).toLowerCase()
+  return SXS_ASSEMBLIES.find((a) => a.test.test(name)) ?? null
+}
+
+/**
+ * The `WinSxS` directory-name prefix an assembly takes for a given architecture.
+ *
+ * The architecture is not decoration. A 32-bit game is not satisfied by the `amd64_`
+ * assembly, and matching either one would trade a false positive for a false negative —
+ * the worse of the two, because it is the one that stays quiet.
+ */
+export function sxsDirPrefix(assembly: string, arch: string): string {
+  return (arch === 'x64' ? 'amd64_' : 'x86_') + assembly + '_'
+}
+
 /** Which redistributable a missing DLL points at, or null if it is not a known one. */
 export function runtimeFor(dll: string): RuntimePackage | null {
   const name = path.basename(dll).toLowerCase()

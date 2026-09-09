@@ -245,6 +245,67 @@ export function activeHdrSupport(xml: string, mode: string): boolean | null {
   return text === null ? null : text.trim().toLowerCase() === 'true'
 }
 
+/**
+ * How the profile driving `mode` fits the picture into the screen.
+ *
+ * Read for the pointer mapper, which has to know where the enlarged picture actually
+ * lands before it can put a tap back on the game — the letterbox a 4:3 game leaves on a
+ * 16:9 screen is a third of the width, and a mapping that ignores it is wrong everywhere.
+ *
+ * Read from **our** profile in the file, for the same reason `activeHdrSupport` is: ours is
+ * the one Lossless Scaling will use, and what a preset *says* is not what the file *holds*
+ * until the file can be rewritten — which it cannot while that program is running.
+ *
+ * **A preset is not exempt from that**, and the version that treated it as exempt is the
+ * same bug `activeHdrSupport` was written to avoid, one function down. Switch a game from
+ * `Sakura:Integer` to `Sakura:Quality` with Lossless Scaling open: the write is refused
+ * (`pendingWrite`), the live profile is still whole-multiple with a border on four sides,
+ * and answering from the new preset's own fields tells the mapper the picture fills the
+ * screen. Every tap then lands somewhere else while the settings page reports "mapping".
+ * The preset's fields are the fallback for the one case where reading cannot answer —
+ * our profile is not in the file at all, so nothing is scaling from it yet.
+ *
+ * `ScalingMode` is read as well as the other two because it decides whether the scale is
+ * derived from the screen at all; see `fitModeOf`. A `Custom` profile names its own
+ * multiple in `ScaleFactor`, and a mode pointing at one of the user's own profiles is
+ * cloned verbatim, so this is an ordinary thing to find rather than an exotic one.
+ *
+ * Every element missing is not an error — Lossless Scaling omits what is at its default,
+ * and the default is the proportional fit.
+ */
+export interface ScalingFit {
+  type: string | null
+  fit: string | null
+  mode: string | null
+  /** `ScaleFactor`, when `mode` is Custom and it parsed. Null means "do not guess". */
+  factor: number | null
+}
+
+export function activeScalingFit(xml: string, mode: string): ScalingFit {
+  const preset = losslessPresetFor(mode)
+  const want = ourProfileTitle(preset ? preset.title : mode.trim()).trim().toLowerCase()
+  const ours = parseProfiles(xml).find((p) => p.ours && p.title.trim().toLowerCase() === want)
+  if (ours) {
+    const raw = elementText(ours.block, 'ScaleFactor')
+    const factor = raw === null ? Number.NaN : Number.parseFloat(raw.trim())
+    return {
+      type: elementText(ours.block, 'ScalingType'),
+      fit: elementText(ours.block, 'ScalingFitMode'),
+      mode: elementText(ours.block, 'ScalingMode'),
+      factor: Number.isFinite(factor) && factor > 0 ? factor : null
+    }
+  }
+  if (preset) {
+    return {
+      type: preset.fields.ScalingType ?? null,
+      fit: preset.fields.ScalingFitMode ?? null,
+      mode: preset.fields.ScalingMode ?? null,
+      factor: null
+    }
+  }
+  return { type: null, fit: null, mode: null, factor: null }
+}
+
 export interface DesiredLossless {
   targets: UpscaleTarget[]
   /** Seconds after a matching window appears. Clamped here, not trusted from settings. */

@@ -1,6 +1,7 @@
 import type { Game, UpscaleNotice, UpscaleStatus } from '../shared/types'
 import { MAGPIE_MODES } from '../shared/types'
 import * as db from './db'
+import { stopPointerMap } from './pointer-map'
 import {
   magpieBeforeLaunch,
   magpieModes,
@@ -128,10 +129,18 @@ export function onUpscaleNotice(fn: (notice: UpscaleNotice) => void): () => void
  * Magpie needs no equivalent of the clearing: its config file is a private copy under
  * `%APPDATA%`, and deleting the folder is already offered as one button.
  */
-export function upscaleSettingsChanged(patch: { upscale?: boolean; upscaler?: string }): void {
+export function upscaleSettingsChanged(patch: {
+  upscale?: boolean
+  upscaler?: string
+  losslessPointerMap?: boolean
+}): void {
   const settings = db.getSettings()
   const leftLossless =
     (patch.upscaler !== undefined && settings.upscaler !== 'lossless') || patch.upscale === false
   if (leftLossless) void clearLosslessProfiles()
+  // Switching the pointer mapper off has to take effect now rather than at the end of the
+  // session: it is the switch somebody reaches for *because* their taps are landing in the
+  // wrong place, and leaving the hook up until the game exits would leave them reaching.
+  if (leftLossless || patch.losslessPointerMap === false) stopPointerMap()
   if (patch.upscale === true || (patch.upscaler !== undefined && settings.upscale)) warmUpscale()
 }

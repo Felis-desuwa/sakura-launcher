@@ -78,20 +78,23 @@ export default function Tile({
     >
       <Artwork game={game} />
 
+      {/* Each flower carries its own name. Hidden for a mouse, which has the tooltip and
+          a shelf it wants dense; drawn under touch, where a tooltip never appears and
+          three unexplained glyphs are all a finger would ever get. */}
       <span className="tile-flags">
         {game.wishlist && (
           <span className="flag" title={t('tab.wishlist')}>
-            ✿
+            ✿<span className="flag-label">{t('tab.wishlist')}</span>
           </span>
         )}
         {game.playing && (
           <span className="flag" title={t('tab.playing')} style={{ color: 'var(--accent)' }}>
-            ❀
+            ❀<span className="flag-label">{t('tab.playing')}</span>
           </span>
         )}
         {game.played && (
           <span className="flag" title={t('tab.played')}>
-            ✓
+            ✓<span className="flag-label">{t('tab.played')}</span>
           </span>
         )}
       </span>

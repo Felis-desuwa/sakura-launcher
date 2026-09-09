@@ -86,8 +86,8 @@ export const MESSAGES = {
   'settings.appearance': { zh: '外观与行为', en: 'Appearance and behaviour' },
   'settings.language': { zh: '语言', en: 'Language' },
   'settings.languageHint': {
-    zh: '同时决定写进每个游戏文件夹的 sakura-launcher.md 用哪种语言。两种格式都能读回，所以切换不会弄丢任何已记录的内容 —— 只是下次同步会把那些文件重写一遍。',
-    en: 'Also sets the language of the sakura-launcher.md written into each game folder. Both formats are read back, so switching loses nothing already recorded — it only means the next sync rewrites those files.'
+    zh: '也决定写进每个游戏文件夹的 sakura-launcher.md 用哪种语言。两种都读得回来，切换不会弄丢已记录的内容。',
+    en: 'Also sets the language of the sakura-launcher.md written into each game folder. Both are read back, so switching loses nothing already recorded.'
   },
   'settings.theme': { zh: '主题', en: 'Theme' },
   'settings.defaultTab': { zh: '默认启动标签页', en: 'Tab to open on start' },
@@ -740,6 +740,16 @@ export const MESSAGES = {
   'menu.markPlayed': { zh: '标记为玩过', en: 'Mark as played' },
   'menu.newGroupWith': { zh: '新建分组并放入…', en: 'New group with these…' },
   'menu.newGroup': { zh: '新建分组', en: 'New group' },
+  /*
+   * Rearrange mode. Shown only to a finger — a mouse drags a tile whenever it likes, and
+   * the mode exists because a finger's drag and its scroll are the same movement.
+   */
+  'menu.rearrange': { zh: '整理磁贴', en: 'Rearrange tiles' },
+  'menu.rearrangeDone': { zh: '完成整理', en: 'Done rearranging' },
+  'desk.rearranging': {
+    zh: '整理中：拖动磁贴排序，此时列表不会滚动',
+    en: 'Rearranging: drag tiles to reorder — the shelf will not scroll'
+  },
   'menu.addGame': { zh: '添加游戏…', en: 'Add a game…' },
   'menu.addFolder': { zh: '导入文件夹…', en: 'Import a folder…' },
   'menu.builtinGroup': { zh: '内置分组，无法修改', en: 'Built-in group — cannot be changed' },
@@ -862,6 +872,19 @@ export const MESSAGES = {
     en: 'Drop it from this list without adding it back'
   },
   'settings.tileSize': { zh: '磁贴尺寸', en: 'Tile size' },
+  /*
+   * Touch. The hint has to say what `auto` cannot see, because the case it misses is the
+   * one most people switching this on are actually in — remote desktop from a tablet,
+   * where the client injects mouse events and every automatic check says "mouse".
+   */
+  'settings.touchMode': { zh: '触控模式', en: 'Touch mode' },
+  'settings.touchModeAuto': { zh: '自动', en: 'Automatic' },
+  'settings.touchModeOn': { zh: '开', en: 'On' },
+  'settings.touchModeOff': { zh: '关', en: 'Off' },
+  'settings.touchModeHint': {
+    zh: '把按钮和开关放大到手指点得中的尺寸。**自动只能认出真正的触摸屏** —— 远程桌面从平板连过来时，客户端注入的是鼠标事件，系统里有真光标，自动会判成鼠标。那种情况请手动选「开」。\n右键子菜单可以点开、长按出菜单、单击打开分组这些不受此开关影响，一直都在。',
+    en: 'Enlarges buttons and switches to a size a finger can hit. **Automatic can only detect a real touch screen** — when you connect from a tablet over remote desktop the client injects mouse events, so there is a real cursor and automatic reads it as a mouse. Choose On by hand in that case.\nTapping a submenu open, long-press for the menu and single-tap to open a folder are not affected by this switch; they are always on.'
+  },
   'settings.petals': { zh: '花瓣动画', en: 'Falling petals' },
   'settings.pollInterval': { zh: '游玩时长检查间隔', en: 'Playtime check interval' },
   'settings.pollHint': {
@@ -878,8 +901,8 @@ export const MESSAGES = {
   /* ---- scaling the game's window ---- */
   'settings.upscaleSection': { zh: '超分放大', en: 'Upscaling' },
   'settings.magpieNote': {
-    zh: '用 Magpie 把游戏窗口实时放大到屏幕大小。老游戏常常只有 800×600，在高分屏上是邮票大的一块；这是把它撑开而不糊掉的办法。Magpie 是随本程序一起分发的独立程序（GPLv3），第一次开启时复制到本程序自己的目录，配置也只写在那里，不会碰你自己装的那一份。',
-    en: "Magpie scales the game's window up to fill the screen in real time. These games are often 800×600, which is a postage stamp on a high-resolution display; this is how to fill it without turning it to mush. Magpie is a separate program shipped alongside this one (GPLv3). It is copied into this program's own folder the first time you switch this on, and configured only there — a copy you installed yourself is never touched."
+    zh: '把游戏窗口实时放大到铺满屏幕 —— 这些老游戏常常只有 800×600，在高分屏上是邮票大的一块。Magpie 随本程序分发（GPLv3），复制进本程序目录后单独配置，不碰你自己装的那一份。',
+    en: 'Scales the game’s window up to fill the screen in real time — these games are often 800×600, a postage stamp on a high-resolution display. Magpie ships alongside this program (GPLv3), copied into its own folder and configured only there; a copy you installed yourself is never touched.'
   },
   'settings.upscale': { zh: '启用超分放大', en: 'Scale game windows' },
   'settings.upscaleHint': {
@@ -909,8 +932,8 @@ export const MESSAGES = {
   'upscale.presetGroup': { zh: '预设（本程序配好）', en: 'Presets (set up for you)' },
   'upscale.profileGroup': { zh: '你自己建的配置', en: 'Your own profiles' },
   'settings.losslessPresetHint': {
-    zh: '拿不准就选「**锐利**」—— 它先按整数倍放大再补余数，线条粗细一致、文字不变形、铺满屏幕，开销几乎为零，而且不挑分辨率。这个库里的游戏它基本都合适。\n\n「**画质优先 / 极致画质**」用 Anime4K，训练来放大**手绘动画画面**的，对立绘和背景有用，但**对文字层不友好** —— 文字是引擎实时渲染的，神经网络会给它加描边光晕、把笔画搞扭。文字多的游戏看着「怪」，多半就是这个原因。\n\n「**整数倍**」只用整数倍，倍率正好时是像素级还原，但**除不尽就一点都不放大** —— 它不会报错，只是悄悄按 1.00 倍输出。注意窗口边框也算在内：多出来的那几个像素足以让 2 倍塞不下，于是直接退回 1 倍。想用这档，得先让游戏窗口的**客户区**正好能整除。\n\n「**性能优先**」用锐化双三次，最省，什么都不挑。\n\n五档都**保持比例**（不然 4:3 拉成 16:9，脸会变宽）、**都关掉插帧**，并且**捕获方式都用 WGC**。最后这一项是为了鼠标：DXGI 抓到的桌面图像里不含光标，LS 只能自己画一个，而它只在拿到新画面时才画 —— 文字冒险游戏画面是静止的，指针就会卡在原地不动，只有点亮一个按钮之类的重绘才会跳一下。WGC 让系统把光标合成进捕获帧，于是它自己就跟手了。WGC 需要 Win11 24H2 以上，旧系统 LS 会自动退回 DXGI，不用管。\n\n还有两项是跟着 WGC 一起改的，单看没道理，配上 WGC 才对：**关掉 G-Sync 支持**、**捕获队列设为 0**。静止画面本来就几乎不出帧，再让可变刷新率跟着这个帧率走，屏幕会一直掉到刷新率下限；而 LS 自己在捕获那一栏就写着「当显示硬件光标时，WGC 需要 MPO 支持才能使 VRR 正常运作」—— 两件事撞在一起，刚刚才看得见的指针就会一闪一闪地卡。捕获队列同理：它的说明把 1 和 2 留给「基础帧率无上限或不稳定、GPU 高负载」的场景，把 0 写成「始终使用最后捕获的帧」。一秒才填一次的队列不是缓冲，是延迟。\n\n显卡选择、鼠标灵敏度、光标是否限制在窗口内这些照你在 Lossless Scaling 里设的来，预设不动。',
-    en: 'When in doubt pick **Sharp**: it goes up by a whole multiple first and covers the remainder after, so line weights stay uniform, text keeps its shape, the screen fills, it costs almost nothing, and it is fussy about no resolution at all. It suits nearly everything in a library like this one.\n\n**Quality / Maximum quality** use Anime4K, trained to upscale **hand-drawn animation** — good for character art and backgrounds, but **unkind to the text layer**, which the engine renders crisply and which a neural upscaler gives halos and wobbly strokes. On a text-heavy game that is usually what "the scaling looks wrong" means.\n\n**Whole multiples** uses nothing but whole numbers. When the factor divides it is pixel-exact, but **when it does not divide it scales by nothing at all** — no error, it just quietly outputs at 1.00×. Window borders count towards this: the few extra pixels they add are enough to put 2× past the edge of the screen, and it falls straight back to 1×. To use this one, the game window\'s **client area** has to divide evenly first.\n\n**Performance** is sharpened bicubic: the cheapest, and fussy about nothing.\n\nAll five **keep the proportions** (stretching 4:3 into 16:9 makes every face wide), all five **turn frame generation off**, and all five **capture through WGC**. That last one is about the mouse: what DXGI captures is the desktop image, which does not contain the cursor, so Lossless Scaling has to draw one itself — and it only draws when a new frame arrives. A visual novel is a still picture, so the pointer freezes where it was and only jumps when something redraws, like a button lighting up. WGC has the system composite the cursor into the captured frame, and it simply follows the mouse. WGC needs Windows 11 24H2 or newer; on anything older Lossless Scaling falls back to DXGI by itself.\n\nTwo more settings move with that choice and would be wrong without it: **G-Sync support off** and **capture queue 0**. A still picture produces almost no frames, and pointing variable refresh at that frame rate drives the panel down to its floor — while the note Lossless Scaling gives on capture warns that a hardware cursor under WGC needs multi-plane overlay support before variable refresh behaves. Between them, the pointer WGC has just made visible blinks and stutters. The capture queue is the same shape of mistake: its own description offers depths 1 and 2 for "uncapped or unstable frame rates under GPU load", and depth 0 as "always use the last captured frame". A queue that fills once a second is not a buffer, it is a delay.\n\nGPU selection, mouse sensitivity and whether the cursor is confined to the window stay as you set them in Lossless Scaling; a preset does not touch those.'
+    zh: '拿不准就选「**锐利**」—— 先按整数倍放大再补余数，线条粗细一致、文字不变形、铺满屏幕，几乎不吃性能，也不挑分辨率。这个库里的游戏它基本都合适。\n\n「**画质优先 / 极致画质**」用 Anime4K，是训练来放大手绘动画画面的，立绘和背景有用，但**对文字层不友好** —— 引擎实时渲染的文字会被加上描边光晕、笔画变形。文字多的游戏看着「怪」，多半是这个。\n\n「**整数倍**」倍率正好时是像素级还原，但**除不尽就一点都不放大** —— 它不报错，只是悄悄按 1.00 倍输出。窗口边框也算在内：多出的那几像素就足以让 2 倍塞不下。\n\n「**性能优先**」是锐化双三次，最省，什么都不挑。\n\n五档都保持比例、都关掉插帧，捕获方式都用 WGC —— 只有 WGC 能让光标自己跟手（旧系统会自动退回 DXGI，不用管）。显卡选择、鼠标灵敏度这些照你在 Lossless Scaling 里设的来，预设不动。',
+    en: 'When in doubt pick **Sharp**: it goes up by a whole multiple first and covers the remainder after, so line weights stay uniform, text keeps its shape, the screen fills, it costs almost nothing, and it is fussy about no resolution at all. It suits nearly everything in a library like this one.\n\n**Quality / Maximum quality** use Anime4K, trained to upscale hand-drawn animation — good for character art and backgrounds, but **unkind to the text layer**, which the engine renders crisply and which a neural upscaler gives halos and wobbly strokes. On a text-heavy game that is usually what “the scaling looks wrong” means.\n\n**Whole multiples** is pixel-exact when the factor divides, and **scales by nothing at all when it does not** — no error, it just quietly outputs at 1.00×. Window borders count towards this: the few extra pixels they add are enough to put 2× past the edge of the screen.\n\n**Performance** is sharpened bicubic: the cheapest, and fussy about nothing.\n\nAll five keep the proportions, turn frame generation off, and capture through WGC — the one capture path where the cursor follows the mouse on its own (older systems fall back to DXGI by themselves). GPU selection, mouse sensitivity and the rest stay as you set them in Lossless Scaling.'
   },
   // Said while the first status is still outstanding. Without it a null answer falls
   // through to "not found", which is a claim rather than a wait — and for Lossless Scaling
@@ -933,16 +956,16 @@ export const MESSAGES = {
   },
   'settings.upscaleMode': { zh: '默认缩放模式', en: 'Default scaling mode' },
   'settings.magpieModeHint': {
-    zh: 'Lanczos 最省，什么显卡都跑得动；Anime4K 对动画风格的立绘最好看，也最吃显卡；FSR 是给 3D 游戏做的。单个游戏可以在右键菜单里另选。这里列的是 Magpie 配置里现有的模式 —— 你在它自己的界面里新建的模式也会出现在这里。',
-    en: "Lanczos is the cheapest and runs on anything; Anime4K looks best on anime-style art and costs the most; FSR was made for 3D games. A single game can be given its own in its right-click menu. This list is whatever modes Magpie's config holds, so one you build in its own interface appears here too."
+    zh: 'Lanczos 最省，什么显卡都跑得动；Anime4K 对动画风格的立绘最好看，也最吃显卡；FSR 是给 3D 游戏做的。单个游戏可以在右键菜单里另选。',
+    en: 'Lanczos is the cheapest and runs on anything; Anime4K looks best on anime-style art and costs the most; FSR was made for 3D games. A single game can be given its own in its right-click menu.'
   },
   'settings.magpieElevate': {
     zh: '提权启动的游戏也提权 Magpie',
     en: 'Elevate Magpie for games run as administrator'
   },
   'settings.magpieElevateHint': {
-    zh: 'Windows 不许未提权的程序操作管理员权限的窗口，所以以管理员身份启动的游戏放大不了。开启后会多一次 UAC 询问，而且那个 Magpie 本程序关不掉，要自己从托盘退出。更省事的办法是以管理员身份运行本启动器。',
-    en: "Windows does not let an unelevated program touch an administrator's window, so a game started as administrator cannot be scaled. Turning this on adds a second UAC prompt, and that copy of Magpie cannot be closed from here — you quit it from the tray. The easier route is to run this launcher as administrator."
+    zh: '提权启动的游戏放大不了 —— Windows 不许未提权的程序操作管理员窗口。开启后会多一次 UAC 询问，那份 Magpie 也只能从托盘退出。更省事的办法是以管理员身份运行本启动器。',
+    en: 'A game started as administrator cannot be scaled: Windows does not let an unelevated program touch an administrator’s window. Turning this on adds a UAC prompt, and that copy of Magpie can only be quit from the tray. The easier route is to run this launcher as administrator.'
   },
   'settings.magpieUnsupported': {
     zh: 'Magpie 需要 Windows 10 1903 或更新的版本',
@@ -957,8 +980,8 @@ export const MESSAGES = {
   // it without already knowing what Magpie is called.
   'settings.upscaleOpen': { zh: '画质设置…', en: 'Picture settings…' },
   'settings.magpieOpenHint': {
-    zh: '打开 Magpie 自己的界面：着色器参数、捕获方式、帧率限制、光标缩放，以及新建你自己的缩放模式（effects 目录里有一百多个着色器，本程序只预置了七种组合）。在那里改的东西本程序不会覆盖，改完即时生效，不用手动退出它。新建的模式会直接出现在上面的下拉框和右键菜单里。',
-    en: "Opens Magpie's own interface: shader parameters, capture method, frame limiter, cursor scaling, and building scaling modes of your own — the effects folder holds well over a hundred shaders and this program seeds only seven combinations of them. Nothing you change there is overwritten from here, and it is saved as you go, so there is no need to quit it afterwards. A mode you build there appears in the list above and in the right-click menu."
+    zh: '打开 Magpie 自己的界面：着色器参数、捕获方式、帧率限制，以及新建你自己的缩放模式。新建的模式会出现在上面的下拉框和右键菜单里。',
+    en: 'Opens Magpie’s own interface — shader parameters, capture method, frame limiter, and building scaling modes of your own. A mode you build there appears in the list above and in the right-click menu.'
   },
   'settings.upscaleFolder': { zh: '打开所在文件夹', en: 'Open its folder' },
   'settings.magpieNotInstalled': { zh: '尚未复制', en: 'Not set up yet' },
@@ -983,19 +1006,19 @@ export const MESSAGES = {
   // leave everyone who happens to have it installed never told that this program does not
   // supply it, and that it writes into its settings.
   'settings.losslessNote': {
-    zh: 'Lossless Scaling 是 Steam 上的付费第三方软件，需要你自己购买并安装。本程序不分发、不代下、也不会替你安装它 —— 只是在它已经装好时驱动它。它除了放大还能插帧（LSFG）。',
-    en: 'Lossless Scaling is paid third-party software sold on Steam; you buy and install it yourself. This program does not ship it, download it, or install it for you — it only drives the copy you already have. Besides upscaling it can also generate frames (LSFG).'
+    zh: 'Steam 上的付费第三方软件，需要你自己购买安装。本程序不分发、不代下、也不代装，只在它已经装好时驱动它。除了放大它还能插帧。',
+    en: 'Paid third-party software sold on Steam; you buy and install it yourself. This program does not ship it, download it or install it — it only drives the copy you already have. Besides upscaling it can also generate frames.'
   },
   'settings.losslessStore': { zh: '在 Steam 上查看', en: 'View on Steam' },
   // Said before the first write rather than after it. Editing somebody else's configuration
   // file is the kind of thing a person should hear about in advance.
   'settings.losslessWrites': {
-    zh: '开启后，本程序会往 Lossless Scaling 自己的配置里加几条以「Sakura · 」开头的游戏配置，内容整份复制自你选定的那一条 —— 插帧、捕获方式等设置照抄，不作改动。第一次写入前会先把原文件备份到本程序目录。你自己建的配置一条也不会动；关掉这个后端时，我们加的那几条会被删干净。',
-    en: 'When on, this program adds a few game profiles named with a Sakura prefix to Lossless Scaling’s own settings. Each is copied wholesale from a profile of yours — frame generation, capture method and everything else come along unchanged. Your original file is backed up into this program’s folder before the first write. None of your own profiles are ever modified, and the ones we added are removed again when you switch this backend off.'
+    zh: '会往 Lossless Scaling 的配置里加几条以「Sakura · 」开头的游戏配置，每条都整份复制自你选定的那一条。**你自己建的配置一条也不动**；第一次写入前先备份原文件，关掉这个后端时我们加的会被删干净。',
+    en: 'Adds a few game profiles named with a Sakura prefix to Lossless Scaling’s settings, each copied wholesale from a profile of yours. **None of your own profiles are modified.** Your original file is backed up before the first write, and the ones we added are removed when you switch this backend off.'
   },
   'settings.losslessModeHint': {
-    zh: '这里列的是你在 Lossless Scaling 里建的游戏配置。选中的那一条会被整份复制成一条自动放大的配置，所以画质、插帧、捕获方式全都照你在它界面里设的来。单个游戏可以在右键菜单里另选。',
-    en: 'This list is the game profiles you made in Lossless Scaling. The one you pick is copied whole into an auto-scaling profile, so picture settings, frame generation and capture method all follow what you set in its own interface. A single game can be given its own in its right-click menu.'
+    zh: '这里列的是你在 Lossless Scaling 里建的游戏配置。选中的那条会被整份复制，画质、插帧、捕获方式都照你设的来。单个游戏可以在右键菜单里另选。',
+    en: 'These are the game profiles you made in Lossless Scaling. The one you pick is copied whole, so picture settings, frame generation and capture method all follow yours. A single game can be given its own in its right-click menu.'
   },
   // Switching backends reinterprets one stored name against the other's list, so the
   // setting can quite reasonably be pointing at a Magpie mode. Said here rather than left
@@ -1018,8 +1041,8 @@ export const MESSAGES = {
   // Offered at all times, not only after a failure: the automatic route can land on a stale
   // or wrong install and still look like it worked.
   'settings.losslessPickHint': {
-    zh: '自动查找走的是 Steam 自己的库记录。Steam 装在别处、库文件夹搬过、目录被整个拷走、注册表被清理过，都可能找不着或者找错。手动指定优先于自动查找；按「回到自动查找」可以撤销 —— 换过一次位置就被自己当初的选择锁死是不行的。',
-    en: 'The automatic search reads Steam’s own library records, which can come up empty or wrong if Steam is installed somewhere unusual, a library folder moved, the folder was copied out whole, or the registry was cleaned. A path you pick here wins over it, and the button beside it undoes that — being locked to one choice after moving the install once is not acceptable.'
+    zh: '自动查找读的是 Steam 的库记录 —— 装在别处、库文件夹搬过、目录被整个拷走都可能落空。这里指定的路径优先于自动查找，按旁边的按钮可以撤销。',
+    en: 'The automatic search reads Steam’s library records, which come up empty often enough: an install somewhere unusual, a library folder that moved, a folder copied out whole. A path picked here wins over it, and the button beside it undoes that.'
   },
   'settings.losslessClear': { zh: '回到自动查找', en: 'Use automatic search again' },
   'settings.losslessWrongExe': {
@@ -1052,8 +1075,8 @@ export const MESSAGES = {
   },
   'settings.displayRefresh': { zh: '重新检测', en: 'Measure again' },
   'settings.displayHint': {
-    zh: '只读，只在本机。用来决定放大配置里那个 HDR 开关 —— 它描述的是**屏幕**，不是游戏：桌面开着 HDR 时，放大程序抓到的画面就是 HDR 格式的，无论游戏本身是不是。设错了颜色就不对，而且不会报任何错。',
-    en: 'Read-only, and never leaves this machine. It decides the HDR switch in the scaling profiles, which describes the **screen** rather than the game: with HDR on, what an upscaler captures arrives in a high-dynamic-range format whether the game is HDR or not. Get it wrong and the colour is wrong, with nothing reporting a fault.'
+    zh: '只读，不出本机。用来决定放大配置里的 HDR 开关 —— 它描述的是**屏幕**而不是游戏：桌面开着 HDR 时，放大器抓到的画面就是 HDR 格式的。设错了颜色不对，而且不会报错。',
+    en: 'Read-only, and never leaves this machine. It decides the HDR switch in the scaling profiles, which describes the **screen** rather than the game: with HDR on, what an upscaler captures arrives in a high-dynamic-range format either way. Get it wrong and the colour is wrong, with nothing reporting a fault.'
   },
   'settings.displayGpu': { zh: '显卡：{name}', en: 'Graphics: {name}' },
   // Only the discouraging case is ever said. A model name tells you a marketing string,
@@ -1076,12 +1099,62 @@ export const MESSAGES = {
   'settings.losslessHdrOn': { zh: '强制开启', en: 'Always on' },
   'settings.losslessHdrOff': { zh: '强制关闭', en: 'Always off' },
   'settings.losslessHdrHint': {
-    zh: '只写进本程序建的**预设**配置。你自己建的配置被整份克隆、一个字段都不改，这一项也不例外 —— 那是你的设置。留着手动挡，是因为「这个开关跟着屏幕走而不是跟着游戏走」这个判断是从画面出问题的方式反推的，Lossless Scaling 自己没有写明。',
-    en: 'Written only into the **preset** profiles this program creates. A profile of your own is cloned whole with nothing overridden, and this is no exception — it is your setting. The manual positions exist because the reading behind "automatic" — that this switch follows the screen rather than the game — was worked out from how the picture went wrong, not from anything its authors documented.'
+    zh: '只写进本程序建的**预设**配置 —— 你自己建的配置被整份克隆，一个字段都不改。留着手动挡，是因为这个开关跟着屏幕走而不是跟着游戏走，而 Lossless Scaling 自己没有写明这一点。',
+    en: 'Written only into the **preset** profiles this program creates — a profile of your own is cloned whole with nothing overridden. The manual positions exist because this switch follows the screen rather than the game, which its own documentation never says.'
   },
   'settings.losslessHdrMismatch': {
     zh: '屏幕的 HDR 状态和「{mode}」里的 HDR 支持对不上，颜色会不正常。本程序不改你自己建的配置 —— 请在 Lossless Scaling 里改这一项。',
     en: 'The screen’s HDR state and the HDR support inside “{mode}” do not agree, which makes the colour wrong. This program does not edit profiles of yours — change it inside Lossless Scaling.'
+  },
+
+  // ---- Putting a streamed tap back on the game ---------------------------
+  // The one situation an upscaler of this kind cannot answer for itself: it enlarges the
+  // picture and leaves the window where it was, so a client that sends absolute screen
+  // coordinates taps a point that is on the picture and not on the game.
+  'settings.pointerMap': { zh: '映射串流点击坐标', en: 'Map streamed tap coordinates' },
+  'settings.pointerMapHint': {
+    zh: '放大器只放大画面，游戏窗口还留在原来那一小块，输入从来不经过它。用鼠标看不出来 —— 画面里那个光标就是真光标的放大影像。但串流设备发的是**绝对坐标**：你点屏幕哪儿光标就跳到哪儿，那多半在游戏窗口之外，于是点到了别的软件。开启后会把这类坐标换算回游戏窗口上对应的位置。',
+    en: 'The upscaler enlarges the picture and leaves the game’s window where it was — a small rectangle in the middle — and input never passes through it. With a mouse you would never notice: the pointer on the enlarged picture is the real one, magnified. A streaming client sends **absolute** coordinates instead, so tapping the screen teleports the pointer to a point that is almost never inside that rectangle, and the tap lands on whatever else is there. Switched on, those coordinates are mapped back onto the game.'
+  },
+  // Why a ring appears. Said out loud because an unexplained mark following your finger
+  // around somebody else's fullscreen picture reads as a fault, not a feature — and
+  // because the reason it is there is also the answer to "why is the picture so far
+  // behind my finger", which is the complaint that produced it.
+  'settings.pointerMapRing': {
+    zh: '开启后画面上会跟着一个白色小圆环，标出手指对应的位置。它不是装饰：串流那头看到的光标是**放大器抓拍下来的**，只在游戏重绘时才更新 —— 视觉小说是一张静止的画，所以那个光标会一直停在原处。圆环由本程序自己绘制，实时跟手；屏幕一直在变，串流客户端也就不会掉进静止画面的低帧率待机。',
+    en: 'A small white ring follows your finger on the picture. It is not decoration: the pointer the stream shows you is **a photograph taken by the upscaler**, updated only when the game redraws — and a visual novel is a still page, so it sits where it was. The ring is drawn by this program and moves as you do. It also keeps the screen changing, which stops the streaming client dropping into the idle frame rate a still picture puts it in.'
+  },
+
+  // Three limits, and each one is a different kind of "no". Written out rather than
+  // softened because every one of them is something the user would otherwise discover by
+  // being surprised.
+  'settings.pointerMapLimits': {
+    zh: '**只动被系统标记为「注入」的鼠标事件。** 直接插在这台机器上的鼠标不带这个标记，完全不受影响 —— 但**串流客户端发来的每一个事件都带**，包括每一次移动，也就是说放大期间你在串流那头的鼠标是整个经由它的。它同样分不清串流和宏、辅助工具。**出问题时有两条退路**：关掉游戏（放大一停，映射自动失效），或者关掉本程序（映射进程一秒内自己退出）。**这不是触控支持** —— 真正的触控走 WM_POINTER，鼠标钩子看不见它；客户端发的是真触控时该换用 Magpie 后端。',
+    en: '**Only mouse events the system marks as injected are touched.** A mouse plugged into this machine does not carry that mark and is unaffected — but **every event a streaming client sends does**, including every move, so while scaling is active the mouse at the far end of the stream goes through it entirely. It equally cannot tell that client from a macro or accessibility tool. **Two ways out if it misbehaves**: close the game (mapping goes inert as soon as scaling stops), or close this program (the mapping process exits within a second). **This is not touch support** — genuine touch travels as WM_POINTER, which a mouse hook cannot see; a client sending real touch wants the Magpie backend instead.'
+  },
+  'settings.pointerMapWorking': {
+    zh: '正在映射：已找到放大输出窗口和游戏窗口。',
+    en: 'Mapping: both the scaling output window and the game window have been found.'
+  },
+  'settings.pointerMapWaiting': {
+    zh: '下次启动带放大的游戏时开始工作。',
+    en: 'It starts with the next game launched with scaling on.'
+  },
+  'settings.pointerMapIdle': {
+    zh: '已启动，但还没有可映射的画面 —— 要等放大真的开始、游戏窗口出现之后。',
+    en: 'Started, but there is nothing to map yet — it waits until scaling is actually running and the game has a window.'
+  },
+  'settings.pointerMapMapped': { zh: '本次已映射 {n} 次点击', en: '{n} events mapped this session' },
+  // A state with no other symptom. The press is not landing in the wrong place — it is
+  // gone — and every other number on this page counts it as handled, so if this line does
+  // not say it, nothing does.
+  'settings.pointerMapBlocked': {
+    zh: '有 {n} 次按键被系统拒绝重新注入，这些点击**没有送达**。通常是游戏以管理员身份运行而本程序不是 —— 两边一致（都提权或都不提权）即可。',
+    en: '{n} presses were refused by the system and **did not reach the game**. This is normally a game running as administrator while this program is not — matching the two (both elevated, or neither) is the fix.'
+  },
+  'settings.pointerMapFailed': {
+    zh: '映射进程没能启动，点击不会被换算。',
+    en: 'The mapping process could not start, so taps are not being translated.'
   },
 
   // ---- A write that has not landed ---------------------------------------
@@ -1114,8 +1187,8 @@ export const MESSAGES = {
   'settings.losslessRunning': { zh: '正在运行', en: 'Running' },
   'settings.losslessRunningFor': { zh: '正在为 {name} 运行', en: 'Running for {name}' },
   'settings.losslessOpenHint': {
-    zh: '打开 Lossless Scaling 自己的界面：缩放算法与参数、插帧倍率、捕获方式、光标处理，以及新建你自己的游戏配置。在那里新建的配置会出现在上面的下拉框和右键菜单里。注意它运行期间本程序不会改它的配置文件 —— 它退出时会按内存整份写回去，那时候改了也会被吞掉。',
-    en: 'Opens Lossless Scaling’s own interface: scaling algorithms and their parameters, frame generation, capture method, cursor handling, and making game profiles of your own. A profile you build there appears in the list above and in the right-click menu. Note that this program will not touch its settings file while it is running — it saves that file over from memory when it quits, so anything written underneath would be swallowed.'
+    zh: '打开 Lossless Scaling 自己的界面：缩放算法、插帧、捕获方式，以及新建你自己的游戏配置。新建的配置会出现在上面的下拉框和右键菜单里。它开着的时候本程序不会改它的配置。',
+    en: 'Opens Lossless Scaling’s own interface — scaling algorithms, frame generation, capture method, and making game profiles of your own. A profile you build there appears in the list above and in the right-click menu. Nothing is written to its settings while it is running.'
   },
   'settings.downloadSection': { zh: '下载', en: 'Downloads' },
   'settings.downloadDir': { zh: '默认下载目录', en: 'Download folder' },
@@ -1149,8 +1222,8 @@ export const MESSAGES = {
   'settings.backupSection': { zh: '存档备份', en: 'Save backups' },
   'settings.backupDir': { zh: '备份到', en: 'Back saves up to' },
   'settings.backupDirHint': {
-    zh: '右键游戏「备份存档…」时把找到的存档复制到这里，每次一个带时间的新文件夹，不覆盖上一次。不指定时用「文档\\Sakura Launcher Saves」。别选在游戏库里面 —— 那样删游戏会连备份一起删掉。',
-    en: 'Where “Back up saves…” copies what it finds — a new timestamped folder each time, never overwriting the last. Defaults to Documents\\Sakura Launcher Saves. Do not put it inside the library: deleting a game would take the backup with it.'
+    zh: '每次备份存进一个带时间的新文件夹，不覆盖上一次。默认在「文档\\Sakura Launcher Saves」。**别选在游戏库里面** —— 删游戏会连备份一起删掉。',
+    en: 'Each backup goes into its own timestamped folder, never overwriting the last. Defaults to Documents\\Sakura Launcher Saves. **Do not put it inside the library** — deleting a game would take the backup with it.'
   },
   'settings.backupDirDefault': { zh: '（默认位置）', en: ' (the default)' },
   'settings.openBackupDir': { zh: '打开', en: 'Open' },
@@ -1162,6 +1235,277 @@ export const MESSAGES = {
   'settings.7zChecking': { zh: '检测中…', en: 'Checking…' },
   'settings.7zFound': { zh: '已检测到，可解压压缩包条目', en: 'Found — archive entries can be extracted' },
   'settings.7zMissing': { zh: '未检测到，无法解压', en: 'Not found — extraction is unavailable' },
+
+  /* ---- repairs the machine can make ---- */
+  'repair.section': { zh: '可以试的修复', en: 'What can be done about it' },
+  'repair.none': {
+    zh: '没有能自动做的修复。上面的判断该怎么处理，得你来定。',
+    en: 'There is nothing here that can be done automatically. What to do about the findings above is yours to decide.'
+  },
+  'repair.changes': { zh: '它会改动：', en: 'It will change:' },
+  'repair.apply': { zh: '执行', en: 'Do it' },
+  'repair.applying': { zh: '正在执行…', en: 'Working…' },
+  'repair.undo': { zh: '撤销', en: 'Undo' },
+  'repair.undone': { zh: '已撤销', en: 'Put back' },
+  'repair.notUndoable': {
+    zh: '这一项做完之后无法精确还原',
+    en: 'This one cannot be put back exactly'
+  },
+  'repair.needsAdmin': { zh: '需要管理员权限', en: 'Needs administrator rights' },
+  'repair.copyCommand': { zh: '复制命令', en: 'Copy the command' },
+  'repair.copied': { zh: '已复制', en: 'Copied' },
+  'repair.failed': { zh: '没做成：{why}', en: 'It did not work: {why}' },
+
+  'repair.unblock.title': { zh: '清掉「来自网络」的标记', en: 'Clear the “came from the internet” mark' },
+  'repair.unblock.detail': {
+    zh: '从压缩包解出来的文件会带一个记录来源的附加数据流，SmartScreen 和一部分引擎会因此拒绝加载。清掉它等同于文件属性里的「解除锁定」，不会削弱 SmartScreen 本身，也不动文件内容。',
+    en: 'Files extracted from a downloaded archive carry a small stream recording where they came from, and SmartScreen — and some engines loading their own DLLs — refuse them because of it. Clearing it is what “Unblock” in the file’s properties does: it weakens no policy and touches no content.'
+  },
+  'repair.unblock.reason': { zh: '{n} 个可执行文件带着这个标记，例如 {names}', en: '{n} executables carry the mark, among them {names}' },
+  'repair.unblock.change': { zh: '{n} 个文件的 Zone.Identifier 数据流会被删除', en: 'The Zone.Identifier stream on {n} files is deleted' },
+
+  'repair.readonly.title': { zh: '去掉只读属性', en: 'Clear the read-only attribute' },
+  'repair.readonly.detail': {
+    zh: '整个文件夹几乎每个文件都是只读的 —— 这是从光盘或只读介质整份拷出来的样子。引擎写不了自己的配置和存档就会当场退出。只改属性，不动内容，而且记下改了哪些，随时能原样放回去。',
+    en: 'Nearly every file in the folder is read-only, which is the shape a folder has after being copied whole off a disc or other read-only media. An engine that cannot write its own config or save gives up on the spot. Only the attribute changes, never the content, and which files were changed is recorded so they can be put back exactly.'
+  },
+  'repair.readonly.reason': { zh: '{total} 个文件里有 {n} 个是只读的', en: '{n} of {total} files are read-only' },
+  'repair.readonly.change': { zh: '{n} 个文件的只读属性会被清除', en: 'The read-only attribute is cleared on {n} files' },
+
+  'repair.notWritable.title': { zh: '这个文件夹写不进去', en: 'This folder cannot be written to' },
+  'repair.notWritable.detail': {
+    zh: '在这个文件夹里连一个临时文件都建不出来。老引擎把配置和存档就写在自己旁边，写不了通常就是一声不响地退出。可以给这个程序加一条「以管理员身份运行」——写在当前用户的兼容性设置里，不需要管理员权限就能加，也随时能撤销。',
+    en: 'Not even a throwaway file can be created here. Older engines write their config and saves next to themselves, and one that cannot usually exits without a word. A “run as administrator” flag can be set for this program — written to the current user’s compatibility settings, which needs no elevation to set and can be undone at any time.'
+  },
+  'repair.notWritable.already': {
+    zh: '已经设了「以管理员身份运行」，但文件夹还是写不进去。多半是它在 Program Files 下面，或者在只读的盘上 —— 这种情况唯一干净的办法是把游戏挪到别处，而这个程序不会替你搬动游戏文件夹。',
+    en: 'A “run as administrator” flag is already set and the folder still cannot be written to. It is most likely under Program Files, or on a read-only volume — and the only clean answer there is to move the game somewhere else, which this program will not do to a game folder on its own.'
+  },
+  'repair.notWritable.reason': { zh: '在游戏文件夹里建临时文件失败了', en: 'Creating a throwaway file in the game folder failed' },
+
+  'repair.virtualStore.title': {
+    zh: '这个游戏一直在正常存档，只是不存在你以为的地方',
+    en: 'This game has been saving fine — just not where you would think'
+  },
+  'repair.virtualStore.detail': {
+    zh: '游戏文件夹确实写不进去，但 Windows 一直在替它改道：老程序写受保护目录时会被悄悄重定向到 VirtualStore，游戏自己读得到，所以一直是好的。\n\n**所以这里什么都不做，尤其不会加「以管理员身份运行」** —— 提权的进程不走这套重定向，游戏会改去写真实路径，于是那边攒下的存档会一次性从读取画面上消失。要备份存档的话，去下面这个目录取。',
+    en: 'The game folder really is unwritable, but Windows has been redirecting around it all along: an older program writing to a protected location is silently sent to the VirtualStore instead, and the game reads it back, so nothing has ever been wrong.\n\n**So nothing is offered here, least of all “run as administrator”** — an elevated process is not redirected, the game would start writing to the real path, and every save built up over there would vanish from its load screen at once. To back the saves up, take them from the folder below.'
+  },
+  'repair.virtualStore.reason': { zh: '存档实际在：{path}', en: 'The saves are actually in: {path}' },
+  'repair.notWritable.change': { zh: '在 {key} 下为这个程序加一条 RUNASADMIN', en: 'A RUNASADMIN entry for this program is added under {key}' },
+
+  'repair.locale.title': { zh: '用 {tool} 启动', en: 'Start it through {tool}' },
+  'repair.locale.detail': {
+    zh: '下面这条命令会经由区域模拟器启动这个游戏。**如果这个游戏打了中文补丁，别用** —— 中文补丁要的正是系统当前的中文代码页，强行套成日文反而会让文字出问题。\n\n觉得可行的话，在「更换主程序…」里把模拟器设成主程序、把这条命令后面的部分设成启动参数，双击磁贴就是完整的这一串。这里不替你改，因为主程序同时也是这个程序记录游戏身份的地方 —— 换掉它会波及随文件夹走的 `sakura-launcher.md`、重新扫描时的还原，以及兼容性选项写在谁头上。',
+    en: 'The command below starts this game through a locale emulator. **Do not use it on a game with a Chinese fan translation** — that patch wants the machine’s own Chinese codepage, and forcing Japanese on it breaks the text rather than fixing it.\n\nIf it looks right, set the emulator as the main program under “Change main program…” and the rest of the line as its arguments; double-clicking the tile then runs the whole chain. It is not done for you here because the main program is also how this program knows which game this is — changing it reaches the travelling `sakura-launcher.md`, what a rescan puts back, and which executable a compatibility setting lands on.'
+  },
+  'repair.locale.needsProfile': {
+    zh: 'Locale Remulator 必须先在它自己的界面里建一个配置，启动命令的第一个参数是那个配置的 GUID，这里没法替你编出来。打开它建好配置之后，用它自己的右键菜单启动游戏。',
+    en: 'Locale Remulator needs a profile authored in its own window first: the launch command takes that profile’s GUID as its first argument, and there is no way to invent one here. Create one there, then start the game from its own context menu.'
+  },
+  'repair.locale.reason': { zh: '这台机器上找到了 {path}', en: 'Found on this machine: {path}' },
+  'repair.locale.change': { zh: '这条磁贴的主程序改成 {tool}，游戏本体作为参数', en: 'This tile’s main program becomes {tool}, with the game itself as its argument' },
+  'repair.locale.name.le': { zh: 'Locale Emulator', en: 'Locale Emulator' },
+  'repair.locale.name.lr': { zh: 'Locale Remulator', en: 'Locale Remulator' },
+  'repair.locale.name.ntleas': { zh: 'ntleas', en: 'ntleas' },
+  'repair.locale.noneTitle': { zh: '这台机器上没有区域模拟器', en: 'No locale emulator on this machine' },
+  'repair.locale.noneDetail': {
+    zh: '这类工具是你自己装的东西，这个程序不带、也不会去下载。装好之后再回来看这里，它会被自动认出来。',
+    en: 'These are your own tools; this program ships none and downloads none. Install one and come back — it will be recognised automatically.'
+  },
+  'repair.locale.wrongArch': {
+    zh: '找到的模拟器带不动 {arch} 的程序。Locale Emulator 只能驱动 32 位进程，对 64 位游戏是彻底的空操作 —— 不报错，也不生效。64 位要用 Locale Remulator 或 ntleas 的 x64 版。',
+    en: 'The emulator found here cannot drive a {arch} program. Locale Emulator handles 32-bit processes only, and pointing it at a 64-bit game is a complete no-op — no error, no locale. For 64-bit use Locale Remulator or the x64 build of ntleas.'
+  },
+
+  'repair.fonts.title': { zh: '缺日文字体', en: 'The Japanese fonts are missing' },
+  'repair.fonts.detail': {
+    zh: 'Windows 10/11 只带 MS Gothic，**不带 MS Mincho** —— 它在可选功能「日语补充字体」里。引擎向 GDI 要一个不存在的字体，有的会画不出字，有的会直接抛异常。装它需要管理员权限，所以这里只给出命令；也可以在「设置 → 系统 → 可选功能」里点着装。',
+    en: 'Windows 10 and 11 ship MS Gothic but **not MS Mincho** — it lives in the “Japanese Supplemental Fonts” optional feature. An engine asking GDI for a font that is not there either draws nothing or throws. Installing it needs administrator rights, so what is offered here is the command; Settings → System → Optional features does the same thing by hand.'
+  },
+  'repair.fonts.reason': { zh: '找不到：{names}', en: 'Not present: {names}' },
+
+  'repair.layers.title': { zh: '有别人设过的兼容性选项', en: 'Somebody has set compatibility options here' },
+  'repair.layers.detail': {
+    zh: 'Windows 的程序兼容性助手会在游戏崩过一次之后自己加上兼容性选项，而且不会告诉你。这些选项本身可能就是现在起不来的原因。清掉之后如果更糟，可以原样放回去。',
+    en: 'Windows’ Program Compatibility Assistant applies compatibility shims by itself after a program has crashed once, and does not mention it. Those shims can be the reason it will not start now. If clearing them makes things worse, they can be put back exactly.'
+  },
+  'repair.layers.reason': { zh: '当前设着：{tokens}', en: 'Currently set: {tokens}' },
+  'repair.layers.change': { zh: '{key} 下这个程序的那一条会被删除', en: 'This program’s entry under {key} is removed' },
+
+  'repair.done.unblock': { zh: '清掉了 {n} 个文件的来源标记', en: 'Cleared the mark on {n} files' },
+  'repair.left.unblock': {
+    zh: '还有 {n} 个没清掉 —— 多半是被别的进程占着，关掉游戏再试一次',
+    en: '{n} could not be cleared — most likely another process has them open. Close the game and try again'
+  },
+  'repair.done.readonly': { zh: '去掉了 {n} 个文件的只读属性', en: 'Cleared the read-only attribute on {n} files' },
+  'repair.undone.readonly': { zh: '{n} 个文件的只读属性已放回去', en: 'The read-only attribute is back on {n} files' },
+  'repair.done.runAsAdmin': {
+    zh: '已设成以管理员身份运行。下次启动会弹 UAC。',
+    en: 'Set to run as administrator. The next launch will raise a UAC prompt.'
+  },
+  'repair.done.layersCleared': { zh: '已清掉：{tokens}', en: 'Cleared: {tokens}' },
+  'repair.done.locale': {
+    zh: '这条磁贴改成经由 {tool} 启动了',
+    en: 'This tile now starts through {tool}'
+  },
+  'repair.already.layer': { zh: '已经设过了，没有可改的', en: 'It is already set; there was nothing to change' },
+  'repair.already.noLayer': { zh: '现在并没有设任何兼容性选项', en: 'No compatibility options are set right now' },
+  'repair.regFailed': { zh: '注册表写不进去', en: 'the registry write was refused' },
+  'repair.guideOnly': { zh: '这一条只能你自己做', en: 'This one is yours to do' },
+  'repair.doneSection': { zh: '已经做过的', en: 'Already done' },
+
+  /* ---- the byte-level fix, when a build has one written for it ---- */
+  'settings.fixSection': { zh: '逐版本启动修复', en: 'Per-build launch fixes' },
+  'settings.fixHint': {
+    zh: '有些游戏起不来，原因在它自己的可执行文件里 —— 比如引擎硬性要求系统语言是日文，否则一声不吭地退出。这类问题装什么运行库都没用，只能改字节。修复只写进**运行中进程的内存**，不动磁盘上的任何文件：不想要了，下次直接启动就是原样。特征码对不上就什么都不做，并且会说出来。',
+    en: 'Some games fail for a reason that is inside their own executable — an engine that demands a Japanese system language and exits without a word on anything else, say. No runtime install touches that; only bytes do. A fix is written to the **running process’s memory** and to nothing on disk, so undoing it means launching without it. A signature that does not match does nothing at all, and says so.'
+  },
+  'settings.fixShelf': { zh: '已装的修复包', en: 'Packs installed' },
+  'settings.fixChecking': { zh: '正在读…', en: 'Reading…' },
+  'settings.fixEmpty': { zh: '一个都没有', en: 'None' },
+  'settings.fixCount': { zh: '{n} 个', en: '{n}' },
+  'settings.fixOpenFolder': { zh: '打开目录', en: 'Open the folder' },
+  'settings.fixPackLine': {
+    zh: '{n} 处补丁，对应 exe 的 SHA-256 以 {sha} 开头',
+    en: '{n} patches, for the executable whose SHA-256 starts {sha}'
+  },
+  'fix.section': { zh: '启动修复', en: 'Launch fix' },
+  'fix.applied': {
+    zh: '已按「{pack}」修补了这次启动',
+    en: 'This launch was patched from “{pack}”'
+  },
+  'fix.partial': {
+    zh: '「{pack}」只有一部分对得上这个版本，已修补的那些生效了',
+    en: 'Only part of “{pack}” matched this build; what did match was applied'
+  },
+  'fix.notFound': {
+    zh: '「{pack}」里的特征在这次启动的内存里没找到 —— 多半不是它写的那个版本，游戏照常运行，只是没打补丁',
+    en: 'Nothing in “{pack}” matched what was in memory — most likely a different build. The game ran as usual, unpatched'
+  },
+  'fix.ambiguous': {
+    zh: '「{pack}」里的特征在内存里对上了太多处，无法确定该改哪个，**一个字节都没有写**',
+    en: 'Signatures in “{pack}” matched more places than the pack expects, so which one to write to is not decided — **nothing was written**'
+  },
+  'fix.patchApplied': { zh: '{name} —— 已写入 {at}', en: '{name} — written at {at}' },
+  'fix.patchAmbiguous': {
+    zh: '{name} —— 对上了 {hits} 处，超出预期，没有写入',
+    en: '{name} — matched {hits} places, more than expected, so nothing was written'
+  },
+  'fix.patchNotFound': { zh: '{name} —— 没找到', en: '{name} — not found' },
+  'fix.patchSkipped': { zh: '{name} —— 已不需要，跳过', en: '{name} — no longer needed, skipped' },
+  'fix.patchWriteFailed': { zh: '{name} —— 找到了但写不进去', en: '{name} — found, but could not be written' },
+  'fix.broken': {
+    zh: '{file} 不是一份能用的修复包：{problems}',
+    en: '{file} is not a usable fix pack: {problems}'
+  },
+  'fix.err.plan': {
+    zh: '这份修复包读进来了却拼不出补丁计划 —— 这是程序自己的问题，请报告',
+    en: 'The pack parsed but no patch plan could be built from it — that is a fault here, please report it'
+  },
+  'fix.err.timeout': {
+    zh: '修补程序超时了，游戏没有被改动',
+    en: 'The patcher timed out. Nothing was written to the game'
+  },
+  'fix.err.noAnswer': {
+    zh: '修补程序没有给出结果 —— 可能被安全软件拦下了',
+    en: 'The patcher returned no answer — a security product may have stopped it'
+  },
+  'fix.err.openProcess': {
+    zh: '打不开游戏进程。游戏若以管理员身份运行，启动器也要以管理员身份运行才行',
+    en: 'Could not open the game process. A game running as administrator needs the launcher to be running as administrator too'
+  },
+  'fix.err.exited': {
+    zh: '还没来得及修补，游戏就已经退出了',
+    en: 'The game exited before it could be patched'
+  },
+
+  /* ---- walkthroughs ---- */
+  'drawer.guides': { zh: '攻略', en: 'Walkthroughs' },
+  'drawer.guideSearch': { zh: '搜索攻略', en: 'Search for a walkthrough' },
+  'drawer.guideSearching': { zh: '搜索中…', en: 'Searching…' },
+  'drawer.guideAgain': { zh: '重新搜索', en: 'Search again' },
+  'drawer.guideQuery': { zh: '改个名字再搜', en: 'Try another name' },
+  'drawer.guideHint': {
+    zh: '去两个攻略站找这个游戏。**只在你按下时发生**，扫描、刷新、启动都不会。优先用联网查到的日文原名，因为两个站都是按它编目录的。',
+    en: 'Looks for this game on two walkthrough sites. **Only when you press it** — never on a scan, a refresh or a launch. It searches with the Japanese original the catalogue recorded, because that is what both sites index by.'
+  },
+  'drawer.guideNone': { zh: '没找到这个游戏', en: 'Nothing here matches this game' },
+  'drawer.guideFailed': {
+    zh: '这次没读懂——可能没连上，也可能是人家改版了。这不等于没有攻略',
+    en: 'This one could not be read — either it was unreachable or its markup changed. That is not the same as there being no walkthrough'
+  },
+  'drawer.guideLoose': {
+    zh: '下面是它搜出来的，但没有一条看起来是这个游戏',
+    en: 'These are what its search returned, but none of them look like this game'
+  },
+  'drawer.guideFallback': { zh: '换个地方搜：', en: 'Search elsewhere:' },
+
+  /* ---- about, and the one update check ---- */
+  'settings.aboutSection': { zh: '关于与更新', en: 'About and updates' },
+  'settings.version': { zh: '版本', en: 'Version' },
+  'settings.repo': { zh: '项目仓库', en: 'Repository' },
+  'settings.issues': { zh: '反馈问题', en: 'Report an issue' },
+  'settings.updateChannel': { zh: '更新通道', en: 'Update channel' },
+  'settings.updateChannelStable': { zh: '稳定版', en: 'Stable' },
+  'settings.updateChannelBeta': { zh: '测试版', en: 'Beta' },
+  'pick.updateDir': { zh: '保存到哪个文件夹', en: 'Which folder to save it in' },
+  'settings.checkUpdate': { zh: '检查更新', en: 'Check for updates' },
+  'settings.checkUpdateHint': {
+    zh: '去 GitHub 的发布列表看一眼。**只在你按下时发生**，没有定时，也不会在启动、扫描、刷新或启动游戏时跑。\n发出去的只有一个带程序名和版本号的请求，不包含任何标识、库里的东西或机器信息。找到新版也只会帮你把文件下到你指定的文件夹，**从不自己安装、也从不覆盖自己**。',
+    en: 'Looks at the release list on GitHub. **It happens only when you press this**, on no timer, and never on startup, a scan, a refresh or a launch.\nWhat leaves the machine is one request naming the program and its version — no identifier, nothing about the library, nothing about the machine. Finding a new one only downloads the file into a folder you choose: **nothing is ever installed and nothing is overwritten**.'
+  },
+  'settings.checking': { zh: '检查中…', en: 'Checking…' },
+  'settings.updateAvailable': { zh: '有新版本 {version}', en: 'Version {version} is available' },
+  'settings.updateUpToDate': { zh: '已是最新', en: 'Up to date' },
+  'settings.updateAhead': {
+    zh: '这个构建比{channel}线上最新的 {version} 还新',
+    en: 'This build is newer than {version}, the newest on {channel}'
+  },
+  'settings.updateNone': { zh: '这条线上还没有发布过版本', en: 'Nothing has been released on this line yet' },
+  'settings.updateNotes': { zh: '更新说明', en: 'Release notes' },
+  'settings.updateNewerBeta': {
+    zh: '另有 {n} 个更新的测试版，切到测试版通道可以看到',
+    en: '{n} newer test builds exist — switch to the beta channel to see them'
+  },
+  'settings.updateUnread': {
+    zh: '有 {n} 个版本号读不懂，没有参与比较：{tags}',
+    en: '{n} tags could not be read and took no part in the comparison: {tags}'
+  },
+  'settings.updateRejected': {
+    zh: '这个版本里有 {n} 个文件被拒绝了：{names}',
+    en: '{n} files on this release were refused: {names}'
+  },
+  'settings.updateDownload': { zh: '下载 {kind}', en: 'Download {kind}' },
+  'settings.updateKindPortable': { zh: '免安装版', en: 'portable' },
+  'settings.updateKindSetup': { zh: '安装包', en: 'installer' },
+  'settings.updateNoAssets': {
+    zh: '这个版本没有可下载的文件，请到发布页面看看',
+    en: 'This release carries no file to download — the release page will say why'
+  },
+  'settings.updateDownloading': { zh: '下载中 {done} / {total}', en: 'Downloading {done} / {total}' },
+  'settings.updateSaved': { zh: '已保存，并打开了所在文件夹。安装由你自己来', en: 'Saved, and the folder is open. Installing it is yours to do' },
+  'settings.updateCancel': { zh: '取消', en: 'Cancel' },
+  'settings.updateFailOffline': { zh: '连不上 GitHub', en: 'Could not reach GitHub' },
+  'settings.updateFailRate': { zh: 'GitHub 暂时不再回答，稍后再试', en: 'GitHub is not answering for now — try again later' },
+  'settings.updateFailRefused': { zh: 'GitHub 拒绝了这次请求（{detail}）', en: 'GitHub refused the request ({detail})' },
+  'settings.updateFailServer': { zh: 'GitHub 那边出了问题（{detail}）', en: 'Something went wrong at GitHub ({detail})' },
+  'settings.updateFailBody': { zh: '连上了，但回来的不是发布列表', en: 'Something answered, but not with a release list' },
+  'settings.updateFailTags': { zh: '没有一个版本号读得懂（{detail}）', en: 'Not one tag could be read ({detail})' },
+  'settings.updateFailVersion': {
+    zh: '读不出这个构建自己的版本号（{detail}）—— 这是打包的问题，不是网络的',
+    en: 'This build cannot state its own version ({detail}) — a packaging fault, not a network one'
+  },
+  'settings.updateDlFailNetwork': { zh: '下载中断', en: 'The download broke off' },
+  'settings.updateDlFailTruncated': {
+    zh: '收到的大小不对，已经删掉（{detail}）',
+    en: 'What arrived was the wrong size and has been deleted ({detail})'
+  },
+  'settings.updateDlFailWrite': { zh: '写不进去（{detail}）', en: 'It could not be written ({detail})' },
+  'settings.updateChannelHint': {
+    zh: '决定下面那个按钮去看哪条线。测试版通道也能看到标为预发布的版本，同时仍然会收到比它更新的稳定版。\n**检查只在你按下按钮时发生** —— 扫描、刷新、启动都不会联网。',
+    en: 'Decides which line the button below looks at. The beta channel also sees releases marked as prereleases, and still offers a stable release that is newer than the newest beta.\n**The check happens only when you press the button** — scanning, refreshing and launching never go near the network.'
+  },
 
   /* ---- share dialog ---- */
   'share.step': { zh: '分享', en: 'Share' },
@@ -1776,8 +2120,8 @@ export const MESSAGES = {
   /* ---- the online switch ---- */
   'settings.onlineTags': { zh: '联网获取题材标签', en: 'Fetch genre tags online' },
   'settings.onlineTagsNote': {
-    zh: '关闭时一个字节也不出去。开启后，获取标签时会把文件夹名里的作品编号、或者游戏标题，发给 DLsite 和 VNDB —— 只有这两样。路径、体积、时长、评分、你的库有多大，一概不发。',
-    en: 'Off, nothing leaves the machine. On, fetching tags sends the work number from the folder name, or the game’s title, to DLsite and VNDB — those two things only. Never the path, the size, the playtime, the rating, or anything about the shape of your library.'
+    zh: '关闭时一个字节也不出去。开启后只发文件夹名里的作品编号、或者游戏标题，发给 DLsite 和 VNDB —— 路径、体积、时长、评分一概不发。',
+    en: 'Off, nothing leaves the machine. On, fetching tags sends the work number from the folder name, or the game’s title, to DLsite and VNDB — never the path, the size, the playtime or the rating.'
   },
   'settings.adultTags': { zh: '显示 R18 标签', en: 'Show adult tags' },
   'settings.adultTagsNote': {
@@ -1791,23 +2135,23 @@ export const MESSAGES = {
   },
   'settings.onlineCovers': { zh: '同时下载封面', en: 'Download cover art too' },
   'settings.onlineCoversNote': {
-    zh: '取标签的时候一并把封面取回来 —— 同一条作品记录，不多跑一趟。这会额外向图片主机（t.vndb.org、img.dlsite.jp）请求图片文件，比只发一个标题多一步，所以单独给个开关。即便开着也不会自动取：得右键点「联网获取资料」，或者用下面那个按钮。R18 封面照常存下来，跟着上面那个开关打码。',
-    en: 'Takes the cover along with the tags — one catalogue record, no second trip. That means asking an image host (t.vndb.org, img.dlsite.jp) for a file, which is a step beyond sending a title, so it gets its own switch. Even on, nothing is fetched by itself: it takes "Fetch from catalogue" on a tile, or the button below. Adult covers are stored either way and blurred under the switch above.'
+    zh: '取标签时一并把封面取回来，同一条作品记录，不多跑一趟。这会额外向图片主机（t.vndb.org、img.dlsite.jp）请求图片文件，所以单独给个开关。R18 封面照常存下来，跟着上面那个开关打码。',
+    en: 'Takes the cover along with the tags — one catalogue record, no second trip. It does mean asking an image host (t.vndb.org, img.dlsite.jp) for a file, which is a step beyond sending a title, so it gets its own switch. Adult covers are stored either way and blurred under the switch above.'
   },
   'settings.onlineSummary': { zh: '同时获取简介', en: 'Fetch the description too' },
   'settings.onlineSummaryNote': {
-    zh: '连简介也一起带回来，显示在游戏详情最下面 —— 还是同一条作品记录，不多跑一趟。没有单独的「获取简介」按钮，开不开就在这里决定。暂时只要中文：日文简介会被跳过，不会翻译；不少作品目录站根本没有中文简介，那就宁可空着。',
-    en: 'Brings the description back as well, shown at the bottom of the details panel — still the same record, still no extra trip. There is no separate "fetch description" button anywhere; this switch is the whole decision. Chinese only for now: a Japanese blurb is skipped rather than translated, and plenty of works have no Chinese one at all — those stay empty rather than being filled with something else.'
+    zh: '简介也一起带回来，显示在游戏详情最下面 —— 还是同一条记录。只要中文：日文简介交给下面那个开关。',
+    en: 'Brings the description back as well, shown at the bottom of the details panel — still the same record. Chinese only: a Japanese one is left to the switch below.'
   },
   'settings.translateSummary': { zh: '简介没有中文时翻译一份', en: 'Translate a description that is not Chinese' },
   'settings.translateSummaryNote': {
-    zh: '目录站上不少作品只有日文简介 —— 一概不要的话，大半个库都是空的。开着的话会把日文简介机翻成中文，并且**明确标出「机翻」**，免得你把机器写的句子当成人写的。这一步会把那段简介发给翻译服务（translate.googleapis.com，不通就退到 api.mymemory.translated.net）—— 比这个程序其余部分只发一个标题要多，所以单独给个开关。翻译失败就当没有，不会只翻一半。',
-    en: 'Plenty of catalogue entries only have a Japanese description — refusing those left most of a library blank. With this on, one is machine-translated into Chinese and **labelled as machine-translated**, so a sentence a machine wrote is never mistaken for one a person did. It sends that paragraph to a translation service (translate.googleapis.com, falling back to api.mymemory.translated.net), which is more than the title the rest of this sends — hence its own switch. A failed translation means no description rather than half of one.'
+    zh: '目录站上不少作品只有日文简介，一概不要的话大半个库都是空的。开启后会机翻成中文，并**明确标出「机翻」**。这一步会把那段简介发给翻译服务（translate.googleapis.com，不通则退到 api.mymemory.translated.net），比别处只发一个标题要多，所以单独给个开关。翻译失败就当没有，不会只翻一半。',
+    en: 'Plenty of catalogue entries only have a Japanese description, and refusing those left most of a library blank. With this on, one is machine-translated into Chinese and **labelled as machine-translated**. It sends that paragraph to a translation service (translate.googleapis.com, falling back to api.mymemory.translated.net), which is more than the title the rest of this sends — hence its own switch. A failed translation means no description rather than half of one.'
   },
   'settings.tagsSection': { zh: '题材标签', en: 'Genre tags' },
   'settings.tagsNote': {
-    zh: '题材（校园、催泪、NTR 这些）不在游戏文件里 —— 那是对故事的判断，只有目录站有。编号能精确对上的直接采用，靠标题搜到的会让你确认。整个过程不碰游戏文件夹，只读文件夹的名字。',
-    en: 'Genres — school life, tear-jerker, NTR — are not in the game files. They are judgements about a story, and only a catalogue has them. A work number is taken as given; a title search is put to you. Nothing in the game folder is touched: only its name is read.'
+    zh: '题材（校园、催泪、NTR 这些）不在游戏文件里 —— 那是对故事的判断，只有目录站有。编号能精确对上的直接采用，靠标题搜到的会让你确认。什么时候去取由你决定：右键「联网获取资料」，或者下面的按钮。',
+    en: 'Genres — school life, tear-jerker, NTR — are not in the game files. They are judgements about a story, and only a catalogue has them. A work number is taken as given; a title search is put to you. Nothing is ever fetched on its own: it takes “Fetch from catalogue” on a tile, or the button below.'
   },
 
   /* ---- settling an uncertain match ---- */

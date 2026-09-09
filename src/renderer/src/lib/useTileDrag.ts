@@ -53,6 +53,30 @@ function slotTarget(kind: DragKind, id: string, hint: 'before' | 'after'): DropT
 /** Movement before a press becomes a drag. Below it the press is still a click. */
 const DRAG_THRESHOLD_PX = 6
 
+/**
+ * How long a finger must rest on a tile to open its menu.
+ *
+ * Everything a game can be told to do lives in that menu and nowhere else — mark it
+ * played, rate it, rename it, fetch its cover, share it, uninstall it — so with a finger
+ * this is not a shortcut, it is the only door.
+ *
+ * It could not simply be left to the browser. Chromium raises `contextmenu` on a long
+ * press of its own accord, but only if nothing claims the gesture first, and the press
+ * handler below claims it after `DRAG_THRESHOLD_PX` of movement — six pixels, which is
+ * less than a finger holding still actually moves. The drag always won, and the menu
+ * never opened once.
+ */
+const HOLD_MS = 450
+
+/**
+ * How far a finger may wander during that hold and still be holding still.
+ *
+ * Deliberately far above `DRAG_THRESHOLD_PX`: a fingertip is a soft contact patch whose
+ * reported centre drifts several pixels while pressing, and judging that by the mouse's
+ * threshold is exactly the mistake that swallowed the menu.
+ */
+const HOLD_SLOP_PX = 12
+
 /** Distance from the scroller's edge at which dragging starts scrolling the page. */
 const EDGE_ZONE_PX = 90
 const EDGE_MAX_SPEED = 18
@@ -139,6 +163,19 @@ interface Options {
   canGroup: (sourceId: string, targetId: string) => boolean
   /** Commit the drop. Runs before the settle animation, so the layout is already final. */
   onDrop: (ids: string[], target: DropTarget | null) => void
+  /**
+   * A finger held still on a tile. Opens the context menu — see `HOLD_MS`.
+   *
+   * Never called for a mouse, which has a button for this.
+   */
+  onLongPress?: (id: string, kind: DragKind, x: number, y: number) => void
+  /**
+   * Whether the grid is in rearrange mode, where a finger drags instead of scrolling.
+   *
+   * Outside it, a touch press can only ever become a long press; dragging by finger is
+   * not offered at all, because the gesture it would need is the one that scrolls.
+   */
+  rearranging?: boolean
 }
 
 export interface TileDrag {
@@ -162,16 +199,24 @@ export interface TileDrag {
   /** Begin tracking a press. Call from a tile's `onPointerDown`. */
   start: (e: React.PointerEvent, id: string, kind?: DragKind) => void
   /**
-   * True for the click that a just-finished drag is about to produce.
+   * True for the click a just-finished gesture is about to produce.
    *
    * Releasing over the tile the drag started on still counts as a click as far as the
    * browser is concerned, and acting on it would open the detail panel every time a
-   * tile is nudged back to roughly where it began. Cleared on the next press.
+   * tile is nudged back to roughly where it began. A completed long press leaves the
+   * same false click behind, and sets this for the same reason. Cleared on the next press.
    */
   didDrag: () => boolean
 }
 
-export function useTileDrag({ scrollRef, selectedIds, canGroup, onDrop }: Options): TileDrag {
+export function useTileDrag({
+  scrollRef,
+  selectedIds,
+  canGroup,
+  onDrop,
+  onLongPress,
+  rearranging = false
+}: Options): TileDrag {
   const [dragIds, setDragIds] = useState<string[]>([])
   const [dragKind, setDragKind] = useState<DragKind>('game')
   const [target, setTarget] = useState<DropTarget | null>(null)
@@ -184,6 +229,12 @@ export function useTileDrag({ scrollRef, selectedIds, canGroup, onDrop }: Option
     startX: number
     startY: number
     grid: HTMLElement
+    /** 'mouse' | 'touch' | 'pen'. Decides whether this press may become a drag at all. */
+    pointerType: string
+    pointerId: number
+    node: HTMLElement
+    /** Running long-press timer, cleared by movement, release or the drag starting. */
+    hold: number | null
   } | null>(null)
   const drag = useRef<{
     ids: string[]
@@ -206,8 +257,8 @@ export function useTileDrag({ scrollRef, selectedIds, canGroup, onDrop }: Option
   const dragged = useRef(false)
 
   // Read through refs so the window listeners never need re-binding mid-gesture.
-  const latest = useRef({ canGroup, onDrop, selectedIds })
-  latest.current = { canGroup, onDrop, selectedIds }
+  const latest = useRef({ canGroup, onDrop, selectedIds, onLongPress, rearranging })
+  latest.current = { canGroup, onDrop, selectedIds, onLongPress, rearranging }
 
   const setTargetIfChanged = (next: DropTarget | null): void => {
     // The projected layout follows the last *insertion* rather than the live target, so
@@ -371,6 +422,9 @@ export function useTileDrag({ scrollRef, selectedIds, canGroup, onDrop }: Option
   }, [hitTest, scrollRef])
 
   const cleanup = useCallback((): void => {
+    if (press.current?.hold !== null && press.current !== null) {
+      window.clearTimeout(press.current.hold)
+    }
     press.current = null
     if (loop.current !== null) {
       cancelAnimationFrame(loop.current)
@@ -425,7 +479,20 @@ export function useTileDrag({ scrollRef, selectedIds, canGroup, onDrop }: Option
     (x: number, y: number): void => {
       const pending = press.current
       if (!pending) return
+      if (pending.hold !== null) window.clearTimeout(pending.hold)
       press.current = null
+
+      /*
+       * Hold the pointer to the tile for the rest of the gesture. The listeners are on
+       * `window` so the events would arrive regardless, but capture is what stops the
+       * browser retargeting mid-drag and, on touch, what keeps a contact that strays
+       * outside the grid from being handed to whatever it wandered over.
+       */
+      try {
+        pending.node.setPointerCapture(pending.pointerId)
+      } catch {
+        // Pointer already gone — the drag is about to end anyway.
+      }
 
       const grid = pending.grid
       const nodes = pending.ids
@@ -478,11 +545,42 @@ export function useTileDrag({ scrollRef, selectedIds, canGroup, onDrop }: Option
       if (!pending) return
       const dx = e.clientX - pending.startX
       const dy = e.clientY - pending.startY
-      if (Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX) begin(e.clientX, e.clientY)
+      const moved = Math.hypot(dx, dy)
+
+      /*
+       * A finger outside rearrange mode is never a drag.
+       *
+       * The gesture it would need — press and move — is the one that scrolls the shelf,
+       * and the two cannot be told apart at the moment they diverge: `touch-action` is
+       * read when the gesture *begins*, so it cannot be flipped once a hold has proved
+       * the intent. Letting the drag start anyway is what used to happen, and the browser
+       * won the race every time: it claimed the pan, sent `pointercancel`, and the press
+       * was discarded in silence. Now the press simply steps aside and lets the shelf
+       * scroll, which is what the finger was doing.
+       */
+      if (pending.pointerType !== 'mouse' && !latest.current.rearranging) {
+        if (moved >= HOLD_SLOP_PX) cleanup()
+        return
+      }
+
+      if (moved >= DRAG_THRESHOLD_PX) begin(e.clientX, e.clientY)
     }
 
     const onUp = (): void => {
       if (drag.current) void finishDrag(true)
+      else cleanup()
+    }
+
+    /*
+     * A cancelled pointer is not a completed one, and it used to be treated as both.
+     *
+     * `pointercancel` means the gesture was taken away — the system claimed it for a pan,
+     * a call arrived, the contact was lost. Committing a drop the user never released is
+     * the one outcome that is certainly wrong, and it was also the only thing a finger
+     * could do, since aborting was bound to Escape and there is no Escape on a tablet.
+     */
+    const onCancel = (): void => {
+      if (drag.current) void finishDrag(false)
       else cleanup()
     }
 
@@ -500,31 +598,57 @@ export function useTileDrag({ scrollRef, selectedIds, canGroup, onDrop }: Option
     window.addEventListener('pointerdown', onDown, { capture: true })
     window.addEventListener('pointermove', onMove, { passive: false })
     window.addEventListener('pointerup', onUp)
-    window.addEventListener('pointercancel', onUp)
+    window.addEventListener('pointercancel', onCancel)
     window.addEventListener('keydown', onKey)
     return () => {
       window.removeEventListener('pointerdown', onDown, { capture: true })
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
-      window.removeEventListener('pointercancel', onUp)
+      window.removeEventListener('pointercancel', onCancel)
       window.removeEventListener('keydown', onKey)
     }
   }, [begin, cleanup, finishDrag])
 
   const start = useCallback((e: React.PointerEvent, id: string, kind: DragKind = 'game'): void => {
+    // A touch contact's primary press reports button 0, the same as a left click, so this
+    // admits a finger and still turns away a right or middle button.
     if (e.button !== 0 || drag.current) return
-    const grid = (e.currentTarget as HTMLElement).closest<HTMLElement>('.grid')
+    const node = e.currentTarget as HTMLElement
+    const grid = node.closest<HTMLElement>('.grid')
     if (!grid) return
     // Grabbing a tile inside the selection takes the whole selection along. A folder
     // never does: the selection is made of games, and a folder that happened to share an
     // id with one would drag them off with it.
     const { selectedIds: ids } = latest.current
+    const startX = e.clientX
+    const startY = e.clientY
+
     press.current = {
       ids: kind === 'game' && ids.includes(id) && ids.length > 1 ? ids : [id],
       kind,
-      startX: e.clientX,
-      startY: e.clientY,
-      grid
+      startX,
+      startY,
+      grid,
+      pointerType: e.pointerType,
+      pointerId: e.pointerId,
+      node,
+      hold: null
+    }
+
+    // The menu is the only thing a finger can ask of a tile outside rearrange mode, so
+    // the hold is armed there and nowhere else — inside the mode the same press is a
+    // drag, and a menu opening under a tile being lifted would be in the way.
+    if (e.pointerType !== 'mouse' && !latest.current.rearranging) {
+      press.current.hold = window.setTimeout(() => {
+        const pending = press.current
+        if (!pending || drag.current) return
+        press.current = null
+        // The release still produces a click, and that click is not one the user made —
+        // it would toggle the selection back off, or swing a folder open behind the menu
+        // that just opened over it. Same flag a finished drag uses, for the same reason.
+        dragged.current = true
+        latest.current.onLongPress?.(id, kind, startX, startY)
+      }, HOLD_MS)
     }
   }, [])
 

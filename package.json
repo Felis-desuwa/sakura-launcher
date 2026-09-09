@@ -1,6 +1,6 @@
 {
   "name": "sakura-launcher",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "A local game library manager for offline single-player games",
   "main": "./out/main/index.js",
   "author": "",
@@ -26,11 +26,17 @@
     "magpie-test": "node scripts/magpie-test.mts",
     "lossless-test": "node scripts/lossless-test.mts",
     "display-test": "node scripts/display-test.mts",
+    "pointer-test": "node scripts/pointer-map-test.mts",
     "cover-test": "node scripts/cover-test.mts",
     "save-test": "node scripts/save-test.mts",
     "share-test": "node scripts/share-test.mts",
     "share-e2e": "node scripts/share-e2e.mts",
-    "translate-test": "node scripts/translate-test.mts"
+    "translate-test": "node scripts/translate-test.mts",
+    "update-test": "node scripts/update-test.mts",
+    "guide-test": "node scripts/guide-test.mts",
+    "binfix-test": "node scripts/binfix-test.mts",
+    "binfix-probe": "node scripts/binfix-probe.mts",
+    "repair-test": "node scripts/repair-test.mts"
   },
   "dependencies": {
     "resedit": "^3.0.2"

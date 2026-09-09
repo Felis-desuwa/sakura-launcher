@@ -10,6 +10,9 @@ import type {
   ExeChoices,
   Game,
   Group,
+  LaunchTrouble,
+  RepairId,
+  RepairRecord,
   SaveBackupJob,
   SavePlan,
   Settings,
@@ -35,9 +38,21 @@ import {
 } from './downloader'
 import { resolveArtwork } from './icon'
 import { diagnoseGame } from './diagnose'
+import { loadPacks, onFixRun } from './binfix'
+import { applyRepair, repairOffers, repairsMade, undoRepair } from './repair'
+import { readPe } from './pe-imports'
 import { setMainLang, t } from './i18n'
 import { cancelWatch, onLaunchTrouble } from './launch-watch'
 import { launchElevated, launchGame, revealInExplorer, spawnDetached } from './launcher'
+// `cancelDownload` is already taken here by the downloader, which cancels one job by id.
+import { guideQuery } from './guide-rules'
+import { searchGuides } from './guides'
+import {
+  cancelDownload as cancelUpdateDownload,
+  checkForUpdate,
+  downloadAsset,
+  offeredAsset
+} from './update'
 import {
   onUpscaleNotice,
   openUpscalerSettings,
@@ -56,6 +71,7 @@ import { onPlaytimeChange, playingIds, runningInDir, shutdownPlaytime } from './
 import {
   classifyExes,
   collectSubExes,
+  displayNameFor,
   exeKindLabel,
   isUnder,
   listDirShallow,
@@ -330,6 +346,27 @@ function registerIpc(): void {
   ipcMain.handle('win:close', () => mainWindow?.close())
   ipcMain.handle('win:isMaximized', () => mainWindow?.isMaximized() ?? false)
 
+  /*
+   * Dragging the window with a finger.
+   *
+   * The top bar *is* the title bar, and `-webkit-app-region: drag` is how it moves the
+   * window — but that is a mouse-only mechanism in Chromium. Under touch it does nothing
+   * at all, which leaves a frameless window that cannot be moved off the spot it opened
+   * on. So the renderer measures the gesture itself and asks for the position outright.
+   *
+   * `win:dragStart` hands back where the window is now, and the renderer adds the
+   * pointer's own displacement to it — deltas rather than absolute pointer coordinates,
+   * because the pointer is inside the window it is moving and using its screen position
+   * would snap the bar under the finger on the first event.
+   */
+  ipcMain.handle('win:dragStart', () => mainWindow?.getPosition() ?? [0, 0])
+  ipcMain.handle('win:dragMove', (_e, x: number, y: number) => {
+    // Never while maximised: a maximised window has no position to move, and Windows
+    // itself only offers this after a restore.
+    if (!mainWindow || mainWindow.isMaximized()) return
+    mainWindow.setPosition(Math.round(x), Math.round(y))
+  })
+
   ipcMain.handle('db:snapshot', () => ({
     games: db.getGames(),
     groups: db.getGroups(),
@@ -340,7 +377,8 @@ function registerIpc(): void {
     const settings = db.setSettings(patch)
     // Switching upscaling on is the moment to lay Magpie's copy down, rather than making
     // the first launch afterwards wait ten megabytes for it — and switching away from
-    // Lossless Scaling is the moment to take our profiles back out of its configuration.
+    // Lossless Scaling is the moment to take our profiles back out of its configuration,
+    // and to end a pointer mapper that is still rewriting somebody's clicks.
     upscaleSettingsChanged(patch)
     return settings
   })
@@ -408,6 +446,68 @@ function registerIpc(): void {
     const game = db.findGame(id)
     if (!game) return null
     return diagnoseGame(game, since)
+  })
+
+  /**
+   * What can be done about this game, with the evidence for each.
+   *
+   * The diagnosis is re-run here rather than accepted from the renderer. It costs a PE
+   * parse, and it is what keeps the renderer naming a repair by id and never handing over
+   * the facts a repair would be decided on — the same rule that keeps a cover candidate's
+   * path out of the renderer.
+   */
+  ipcMain.handle(
+    'repair:offers',
+    async (_e, id: string, since?: number, trouble?: LaunchTrouble) => {
+      const game = db.findGame(id)
+      if (!game) return []
+      // `trouble` is carried rather than inferred: the locale offer is only ever made about
+      // a game that actually failed, and nothing on this side can tell a silent exit from
+      // a dialog that was never opened by one.
+      return repairOffers(game, await diagnoseGame(game, since), trouble ?? null)
+    }
+  )
+
+  /** Repairs already made to this game that can still be put back. */
+  ipcMain.handle('repair:made', (_e, id: string) => repairsMade(id))
+
+  ipcMain.handle('repair:apply', async (_e, id: string, repair: RepairId) => {
+    const game = db.findGame(id)
+    if (!game) return { ok: false, message: t('err.gameNotFound') }
+    // The architecture decides which locale emulators are even usable, and it is only
+    // knowable from the executable itself.
+    const arch = game.exe ? (readPe(game.exe)?.arch ?? null) : null
+    return applyRepair(repair, game, arch)
+  })
+
+  ipcMain.handle('repair:undo', async (_e, record: RepairRecord) => undoRepair(record))
+
+  /**
+   * What is on the fix shelf, and what is on it that could not be read.
+   *
+   * The second list is the point. A pack is hand-written while somebody is working a fix
+   * out, and one with a typo in it that simply never appears is the worst feedback
+   * available: the fix silently does not run, the game silently does not work, and
+   * nothing connects the two.
+   */
+  ipcMain.handle('fix:packs', () => {
+    const shelf = loadPacks()
+    return {
+      packs: shelf.packs.map((p) => ({
+        name: p.pack.name,
+        note: p.pack.note,
+        exeSha256: p.pack.exeSha256,
+        patches: p.pack.patches.length,
+        file: p.file
+      })),
+      broken: shelf.broken
+    }
+  })
+
+  /** Open the folder packs are read from, which is the only way one gets added. */
+  ipcMain.handle('fix:folder', () => {
+    revealInExplorer(db.fixPackDir())
+    return true
   })
 
   /** The user dismissed the "it did not start" card — stop watching this launch. */
@@ -1173,6 +1273,79 @@ function registerIpc(): void {
     return res.canceled ? null : res.filePaths[0]
   })
 
+  // The version this build was packaged as. The splash already shows it; the top bar and
+  // the settings page need the same string, and there was no route to it from the renderer.
+  ipcMain.handle('app:version', () => app.getVersion())
+
+  /**
+   * Ask GitHub whether there is a newer release.
+   *
+   * **The only route to this in the whole program is the button in the settings page.**
+   * Nothing calls it on startup, on a scan, on a refresh or on a launch, which is what
+   * leaves the promise on the front page of both READMEs true. The channel is read from
+   * the settings here rather than taken from the renderer, the same way the catalogue
+   * switch is: a stale renderer must not be able to pick a line the settings did not.
+   */
+  ipcMain.handle('update:check', () => checkForUpdate(db.getSettings().updateChannel))
+
+  /**
+   * Fetch one file of the release the last check found.
+   *
+   * The renderer names a `kind` and never an address: the URL comes out of the verdict
+   * this process worked out itself, the same rule that keeps a cover candidate's path in
+   * the main process. The folder is chosen here too, so nothing is ever written to a path
+   * that arrived over IPC.
+   */
+  ipcMain.handle('update:download', async (e, kind: 'portable' | 'setup') => {
+    const asset = offeredAsset(kind)
+    if (!asset) return { ok: false, error: 'refused' as const, detail: 'no such asset' }
+    if (!mainWindow) return { ok: false, error: 'refused' as const }
+
+    const picked = await dialog.showOpenDialog(mainWindow, {
+      title: t('pick.updateDir'),
+      properties: ['openDirectory']
+    })
+    if (picked.canceled || !picked.filePaths[0]) {
+      // Closing the dialog is not a refusal to be reported — it is a decision not to.
+      return { ok: false, error: 'refused' as const, detail: 'cancelled' }
+    }
+    const dir = picked.filePaths[0]
+
+    const result = await downloadAsset(asset.url, asset.name, dir, asset.size, (received, total) => {
+      if (!e.sender.isDestroyed()) e.sender.send('update:progress', { received, total })
+    })
+    // Nothing is installed and nothing is replaced: the folder is opened and the rest is
+    // the user's to do.
+    if (result.ok) revealInExplorer(result.path)
+    return result
+  })
+
+  /**
+   * Look for a walkthrough for one game.
+   *
+   * **Reached only from the button in the drawer**, like the update check and for the
+   * same reason. The query is worked out here when the renderer does not supply one, so
+   * the Japanese original the catalogue recorded is preferred over the folder's name —
+   * a folder called `032601` has nothing either site can match.
+   */
+  ipcMain.handle('guide:search', async (_e, id: string, query?: string) => {
+    const game = db.findGame(id)
+    if (!game) return { query: query ?? '', results: [] }
+    const wanted = query?.trim() || guideQuery(game, displayNameFor(game.dir))
+    return searchGuides(wanted)
+  })
+
+  /** What the box starts with, so the renderer never has to guess the title itself. */
+  ipcMain.handle('guide:query', (_e, id: string) => {
+    const game = db.findGame(id)
+    return game ? guideQuery(game, displayNameFor(game.dir)) : ''
+  })
+
+  ipcMain.handle('update:cancelDownload', () => {
+    cancelUpdateDownload()
+    return true
+  })
+
   // The renderer has rendered the library. Nothing depends on the payload — the message
   // arriving is the whole signal, and it is what retires the splash.
   ipcMain.on('app:ready', markLibraryReady)
@@ -1209,6 +1382,10 @@ app.whenReady().then(() => {
   // gets the copying — or the backup of somebody else's settings file — out of the way
   // before the first launch needs it.
   warmUpscale()
+  // Every outcome except "this build has no pack" is pushed, including the dull ones. A
+  // launch that ran no fix and a launch whose fix matched nothing are indistinguishable
+  // from outside until the game misbehaves, and closing that gap is the whole point.
+  onFixRun((run) => mainWindow?.webContents.send('fix:run', run))
   // Only the fact that something went wrong is pushed. Running the diagnosis costs a PE
   // parse and a registry read, and it belongs behind the user deciding they want it.
   onLaunchTrouble(({ game, trouble, startedAt }) =>

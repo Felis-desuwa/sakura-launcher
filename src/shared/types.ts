@@ -443,6 +443,25 @@ export interface MachineFacts {
  */
 export type LosslessHdr = 'auto' | 'on' | 'off'
 
+/**
+ * Whether the interface is being driven by a finger.
+ *
+ * Three positions rather than a switch, and `auto` is not enough on its own — which is the
+ * whole reason this setting exists rather than a media query.
+ *
+ * `auto` asks `(pointer: coarse)`, which answers correctly for a touch screen attached to
+ * this machine and for a client that injects genuine `WM_POINTER` touch. It answers
+ * **wrongly, and confidently, for the case this was built for**: a remote-desktop client
+ * that injects ordinary *mouse* events. Windows then has a real cursor, Chromium reports
+ * `pointerType: 'mouse'`, `hover` works — and none of that is true of the hand at the far
+ * end, which is on a tablet and cannot hover, cannot hit a 13px target, and has no
+ * keyboard to press Escape with. No query can see through the injection, so the user says.
+ *
+ * `off` is the other direction and just as necessary: a machine with a touch screen it is
+ * never used by ends up with a coarse pointer reported and a mouse in somebody's hand.
+ */
+export type TouchMode = 'auto' | 'on' | 'off'
+
 /** What the settings page shows about the bundled copy. */
 export interface MagpieStatus {
   backend: 'magpie'
@@ -533,6 +552,22 @@ export interface LosslessStatus {
    * thing that will ever be said, because that path clones and overrides nothing.
    */
   hdrMismatch: boolean
+  /**
+   * What the pointer mapper is doing, when `Settings.losslessPointerMap` is on.
+   *
+   * Free to ask on the five-second poll: it is a value the main process already holds, not
+   * a query. `active` is the one the user needs — it says the hook can see both windows,
+   * which is the difference between "switched on" and "working", and those two look
+   * identical from the outside until a tap lands in the wrong place.
+   */
+  pointerMap: {
+    running: boolean
+    active: boolean
+    mapped: number
+    /** Presses the system refused to re-inject — destroyed, not misplaced. */
+    blocked: number
+    error?: string
+  }
 }
 
 /** Whichever backend is in force. Discriminated so the settings page can switch on it. */
@@ -1377,6 +1412,204 @@ export interface MultiArchiveNotice {
   sets: { name: string; volumes: number }[]
 }
 
+/**
+ * Which release line an update check looks at.
+ *
+ * `stable` is the published releases; `beta` also sees the ones GitHub marks as
+ * prereleases. The channel widens what counts rather than pinning a line: somebody on
+ * `beta` is still offered a stable release that is newer than the newest beta, or they
+ * would be stranded on a test build the moment testing stopped.
+ */
+export type UpdateChannel = 'stable' | 'beta'
+
+/**
+ * Where this program is published.
+ *
+ * Here rather than in `src/main` because the settings page links to both and the renderer
+ * cannot reach into the main process — the same reason `MAGPIE_MODES` lives in this file.
+ */
+export const GITHUB_OWNER = 'Felis-desuwa'
+export const GITHUB_REPO = 'sakura-launcher'
+export const GITHUB_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}`
+export const GITHUB_ISSUES_URL = `${GITHUB_URL}/issues`
+export const GITHUB_RELEASES_URL = `${GITHUB_URL}/releases`
+
+/** The two shapes this program is published in. Nothing else is ever offered. */
+export type UpdateAssetKind = 'portable' | 'setup'
+
+/**
+ * How a release asset is recognised.
+ *
+ * By suffix, and deliberately not by the name the build wrote: `electron-builder.yml`
+ * produces `Sakura Launcher-<version>-portable.exe` with a space, and GitHub stores it
+ * back with the space normalised to a dot. Anchoring on the product name matches nothing
+ * that is actually on a release, and does it silently. Lower case; the match is too.
+ */
+export const ASSET_SUFFIX: Record<UpdateAssetKind, string> = {
+  portable: '-portable.exe',
+  setup: '-setup.exe'
+}
+
+/** Both are always offered, always in this order, whatever order they were uploaded in. */
+export const ASSET_ORDER: readonly UpdateAssetKind[] = ['portable', 'setup']
+
+/** One downloadable file of a release. */
+export interface UpdateAsset {
+  kind: UpdateAssetKind
+  name: string
+  url: string
+  /** Bytes, as the release declared them. Zero when it declared nothing. */
+  size: number
+}
+
+/** A release, stripped to what the settings page shows. */
+export interface UpdateRelease {
+  tag: string
+  /** The tag with its leading `v` removed — what the user reads. */
+  version: string
+  prerelease: boolean
+  publishedAt: string | null
+  notesUrl: string
+  assets: UpdateAsset[]
+  /**
+   * Names this program refused.
+   *
+   * Shown, not swallowed: a release whose assets were all rejected would otherwise look
+   * exactly like one that published nothing, which is the shape an upstream naming change
+   * would take.
+   */
+  rejectedAssets: string[]
+}
+
+/** Why a check came back with nothing. Each one gets its own sentence on screen. */
+export type UpdateFailure =
+  | 'offline'
+  | 'rateLimited'
+  | 'refused'
+  | 'serverError'
+  | 'badResponse'
+  | 'unreadableReleases'
+  | 'unreadableVersion'
+
+/**
+ * What one press of the button found.
+ *
+ * A discriminated union rather than a message key, so the harness can assert a verdict
+ * without a dictionary and the settings page can style a rate limit differently from a
+ * 404. `newerPrerelease` counts what the channel filter dropped that is newer than this
+ * build — it is what stops a stable user being told they are current while a newer test
+ * build sits one dropdown away.
+ */
+export interface UpdateSeen {
+  channel: UpdateChannel
+  running: string
+  /** Releases the channel filter dropped that are newer than this build. */
+  newerPrerelease: number
+  /**
+   * Tags that could not be read.
+   *
+   * On every answered verdict, not only the one where nothing could be read. A list of
+   * two releases where the newer one is tagged `nightly-2026-09-03` and the older one
+   * matches this build otherwise produces a confident “up to date” — and the release that
+   * would have contradicted it is the one that was dropped. What cannot be read has to
+   * travel with the answer, or the answer is only true about the part we understood.
+   */
+  unreadableTags: string[]
+}
+
+export type UpdateVerdict =
+  | ({ kind: 'available'; release: UpdateRelease } & UpdateSeen)
+  | ({ kind: 'upToDate' } & UpdateSeen)
+  | ({ kind: 'ahead'; release: UpdateRelease } & UpdateSeen)
+  | ({ kind: 'noRelease' } & UpdateSeen)
+  | {
+      kind: 'failed'
+      channel: UpdateChannel
+      running: string
+      reason: UpdateFailure
+      detail?: string
+      /** Epoch ms when a rate limit lifts, when that is knowable. */
+      retryAt?: number
+    }
+
+/** The two walkthrough sites this program knows how to read. */
+export type GuideProvider = 'saiga' | '2dfan'
+
+/** One walkthrough, as offered to the user. */
+export interface GuideHit {
+  provider: GuideProvider
+  title: string
+  url: string
+  /** How alike the title is to the game, 0 to 1. Zero means it was not ranked at all. */
+  score: number
+}
+
+/**
+ * What one site had to say.
+ *
+ * `failed` is deliberately not folded into `none`. The two sites fail differently and one
+ * of them fails often: 誠也の部屋 is a static page kept on disk, so it answers even while
+ * the site is down, whereas 2DFan is asked live and hands back an HTML fragment that will
+ * change shape one day. Reporting that change as “no walkthrough found” would make a
+ * broken reader look like a fact about the game.
+ */
+export interface GuideProviderResult {
+  provider: GuideProvider
+  state: 'hits' | 'none' | 'failed'
+  hits: GuideHit[]
+  /**
+   * 2DFan only: their keyword search returned rows, but none of them look like this game.
+   * Shown as “what their search returned” rather than as an answer.
+   */
+  loose?: boolean
+  /** When the kept copy of a static index was fetched. 誠也の部屋 only. */
+  fetchedAt?: number
+}
+
+/** One press of the button. `query` is the title that was searched, and is editable. */
+export interface GuideSearch {
+  query: string
+  results: GuideProviderResult[]
+}
+
+/**
+ * Where to go when neither site had it.
+ *
+ * Always offered, so the feature is never a dead end — a folder called `032601` that has
+ * never been looked up has nothing either site can match, and the honest answer is a
+ * search box somewhere else rather than silence.
+ */
+export const GUIDE_FALLBACKS: readonly { key: string; url: (query: string) => string }[] = [
+  {
+    key: 'google',
+    url: (q) => `https://www.google.com/search?q=${encodeURIComponent(`${q} 攻略`)}`
+  },
+  {
+    key: 'bing',
+    url: (q) => `https://www.bing.com/search?q=${encodeURIComponent(`${q} 攻略`)}`
+  },
+  {
+    key: 'saiga',
+    url: () => 'https://seiya-saiga.com/game/kouryaku.html'
+  },
+  {
+    key: '2dfan',
+    url: (q) => `https://2dfan.com/subjects/search?keyword=${encodeURIComponent(q)}`
+  }
+]
+
+/** How a download ended. `path` is where it landed. */
+export type UpdateDownload =
+  | { ok: true; path: string }
+  | { ok: false; error: 'refused' | 'network' | 'truncated' | 'write'; detail?: string }
+
+/** Bytes so far, for the one download in flight. */
+export interface UpdateProgress {
+  received: number
+  /** Zero when the server declared no length. */
+  total: number
+}
+
 export interface Settings {
   /**
    * Interface language.
@@ -1392,6 +1625,19 @@ export interface Settings {
   sortKey: SortKey
   theme: ThemeKey
   tileSize: number
+  /**
+   * Make the controls big enough for a finger.
+   *
+   * Only the things that genuinely trade against mouse use live behind this — hit-target
+   * size and the spacing that comes with it. Everything a finger simply **could not
+   * reach** (a submenu that only opened on hover, a folder that only opened on a
+   * double-click, a window button whose glyph was invisible until hovered) is fixed for
+   * everyone, because none of those were better for a mouse either.
+   *
+   * `tileSize` is deliberately left alone by it. Tiles are already the one thing the user
+   * can resize, and a shelf is read at arm's length whatever is pointing at it.
+   */
+  touchMode: TouchMode
   petals: boolean
   geekPath: string | null
   /**
@@ -1487,6 +1733,43 @@ export interface Settings {
    */
   losslessHdr: LosslessHdr
   /**
+   * Put a streamed tap back where the enlarged picture says it should go.
+   *
+   * Off by default, and only worth switching on for one situation — but that situation is
+   * completely broken without it. An upscaler of this kind never makes the game's window
+   * bigger: it captures that window and draws the enlarged picture on a second window
+   * covering the screen, leaving the game where it was, a small rectangle in the middle.
+   * Input never passes through it.
+   *
+   * With a mouse in your hand nobody notices, because the capture includes the cursor
+   * (this is what `CaptureApi: WGC` buys — see `LOSSLESS_PRESETS`): the pointer on the
+   * enlarged picture *is* the real pointer, magnified, so it is over the button it looks
+   * like it is over. A streaming client that sends **absolute** coordinates has no such
+   * luck. Tapping the screen teleports the pointer to the screen coordinate under your
+   * finger, which is a point on the enlarged picture and almost never inside the game's
+   * small rectangle — so the tap lands on whatever else happens to be there.
+   *
+   * Switched on, a hook process started alongside the upscaler maps those coordinates back
+   * (`pointer-map.ts`). Three properties are what make it safe to offer at all:
+   *
+   *  - **It only ever touches injected events.** A mouse plugged into this machine does not
+   *    set `LLMHF_INJECTED` and is unaffected. **A streaming client's events all do** — every
+   *    move as much as every click — which is the point, and also means the pointer at the
+   *    far end goes through this entirely while scaling is active. It cannot tell that
+   *    client's injection from any other program's either, so a macro or accessibility tool
+   *    is mapped along with it. Closing the game or the launcher ends it within a second.
+   *  - **A point on the letterbox is clamped onto the picture, never dropped.** Dropping it
+   *    deadlocks the pointer there: the moves that would carry it off the letterbox are the
+   *    very events being dropped. That shipped once and stopped the mouse dead.
+   *  - **It is inert unless the upscaler is demonstrably scaling.** It has to be able to
+   *    see both a window covering a whole monitor and a game window to map onto.
+   *  - **It is not touch support.** Real touch input travels as `WM_POINTER`, which a mouse
+   *    hook cannot see and which needs `RegisterPointerInputTarget` and a UIAccess process
+   *    to redirect. Magpie ships one and this program does not, which is the honest reason
+   *    to reach for that backend instead when a client sends genuine touch.
+   */
+  losslessPointerMap: boolean
+  /**
    * Let Magpie run elevated for a game that was launched as administrator.
    *
    * Off by default, and the cost is why. Windows will not let an unelevated program touch
@@ -1578,6 +1861,26 @@ export interface Settings {
   downloaderArgs: string
   /** Send the archive to the recycle bin once it has been extracted. */
   trashArchiveAfterExtract: boolean
+
+  /**
+   * Which release line the update check looks at.
+   *
+   * It decides what the button in the settings page finds, not how often anything
+   * happens: the check runs when that button is pressed and at no other time.
+   */
+  updateChannel: UpdateChannel
+
+  /**
+   * Paths to locale emulators the user pinned by hand.
+   *
+   * A standing control rather than a fallback for when the automatic search fails, and
+   * the same reasoning as the Lossless Scaling pin: the search reads registry keys that
+   * an installer may never have written — a portable copy, an unpacked archive, an
+   * uninstall that left the key behind — and a path pinned once must not outlive the
+   * install it pointed at. A file that is not the tool it claims to be is refused rather
+   * than stored, because a bad pin outranks the search from then on.
+   */
+  localeTools?: Partial<Record<LocaleTool, string>>
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -1587,6 +1890,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sortKey: 'manual',
   theme: 'sakura',
   tileSize: 180,
+  touchMode: 'auto',
   petals: true,
   geekPath: null,
   ignoredDirs: [],
@@ -1600,6 +1904,7 @@ export const DEFAULT_SETTINGS: Settings = {
   losslessPath: null,
   losslessDelay: 2,
   losslessHdr: 'auto',
+  losslessPointerMap: false,
   magpieElevate: false,
   onlineTags: false,
   spoilerTags: false,
@@ -1612,7 +1917,8 @@ export const DEFAULT_SETTINGS: Settings = {
   downloader: 'idm',
   downloaderPath: null,
   downloaderArgs: '{url} -o {dir}',
-  trashArchiveAfterExtract: false
+  trashArchiveAfterExtract: false,
+  updateChannel: 'stable'
 }
 
 export const POLL_CHOICES = [15, 30, 60]
@@ -1635,6 +1941,17 @@ export interface Database {
    * than removing did.
    */
   removed: Game[]
+  /**
+   * Repairs made to the machine, and how to put each one back.
+   *
+   * Here rather than in the sidecar for the same reason group membership and tile order
+   * are: a compatibility shim and a file attribute describe *this* machine, not the game.
+   * A sidecar carrying them would travel to another computer and offer to undo something
+   * that was never done there.
+   *
+   * Optional so an older database opens without one.
+   */
+  repairs?: RepairRecord[]
 }
 
 /** How many removal records to keep. Past this the oldest fall off. */
@@ -1704,6 +2021,278 @@ export interface Diagnosis {
  * to anything counting processes.
  */
 export type LaunchTrouble = 'noshow' | 'earlyexit' | 'dialog'
+
+/* ---------- repairs the machine can make, as opposed to ones only bytes can ---------- */
+
+/**
+ * Something the launcher can do about a launch failure, rather than merely name.
+ *
+ * The diagnosis was deliberately read-only, and that stays true of the *diagnosis*. This
+ * is the layer above it: a small, closed set of actions, each one either reversible
+ * exactly or not offered as an action at all.
+ *
+ * **Nothing here ever runs on its own.** Every one is behind a button the user presses
+ * after reading what it will change, for the same reason the update check has no timer:
+ * a program that edits a machine's settings unasked has to be right every time, and this
+ * one is reasoning from evidence that is sometimes ambiguous.
+ */
+export type RepairId =
+  | 'unblock'
+  | 'clear-readonly'
+  | 'compat-layer'
+  | 'locale-chain'
+  | 'install-fonts'
+  | 'not-writable'
+
+/**
+ * Whether the program does it, or explains it.
+ *
+ * `guide` is not a lesser outcome and there are more of these than `act` on purpose. A
+ * repair that needs administrator rights, or that would move somebody's folder, or that
+ * this program has no business doing to a machine, is worth far more as an exact
+ * instruction than as a button that half works.
+ */
+export type RepairKind = 'act' | 'guide'
+
+export interface RepairOffer {
+  id: RepairId
+  kind: RepairKind
+  title: string
+  detail: string
+  /** Why this is being offered — the same voice as `DiagnosisCheck.reasons`. */
+  reasons: string[]
+  /**
+   * Exactly what it will change, listed before it is pressed.
+   *
+   * Not a summary. This is the thing that lets somebody decline, and a vague line here
+   * ("fixes compatibility") makes the decision impossible to take.
+   */
+  changes: string[]
+  /**
+   * Whether it can be put back precisely, which is not the same as "harmless".
+   *
+   * `unblock` is the honest awkward case: removing the mark that says a file came from
+   * the internet cannot be undone and does not need to be, and saying so is better than
+   * a reassuring word that is not true.
+   */
+  undoable: boolean
+  needsAdmin: boolean
+  /** For a `guide`: the exact command, to be read or copied — never run from here. */
+  command?: string
+}
+
+/** Which locale emulator, of the three that are actually in use. */
+export type LocaleTool = 'le' | 'lr' | 'ntleas'
+
+export interface LocaleToolFound {
+  tool: LocaleTool
+  /** The program that gets spawned: `LEProc.exe`, `LRProc.exe`, `ntleas.exe`. */
+  exe: string
+  /** What it can drive. Locale Emulator is 32-bit only, and offering it for a 64-bit game is a silent no-op. */
+  fits: ('x86' | 'x64')[]
+}
+
+/** Enough to put a repair back exactly, or `none` when there is nothing to put back. */
+export type RepairUndo =
+  | { kind: 'compat-layer'; exe: string; previous: string | null }
+  | { kind: 'readonly'; files: string[] }
+  | { kind: 'none' }
+
+export interface RepairRecord {
+  id: RepairId
+  gameId: string
+  at: number
+  /** What was done, in the user's language at the time. Kept for the list, not for the undo. */
+  summary: string
+  undo: RepairUndo
+}
+
+/** How many repairs to remember. Past this the oldest fall off. */
+export const MAX_REPAIRS = 200
+
+export interface RepairResult {
+  ok: boolean
+  /** What happened, ready to show. */
+  message: string
+  /** Present when the repair could be put back, so the dialog can offer it. */
+  record?: RepairRecord
+}
+
+/* ---------- patching a build that is broken in a way only its own bytes explain ---------- */
+
+/**
+ * A byte-level fix for one specific build of one specific game.
+ *
+ * This exists because the diagnosis has a floor it cannot get under. It can say a game
+ * exits without a word, and it can say the machine is not Japanese — but the reason those
+ * two facts are connected is a conditional jump inside somebody else's executable, and no
+ * amount of reasoning about redistributables reaches it. The engine that prompted this
+ * calls `GetSystemDefaultLangID`, compares against `LANG_JAPANESE`, and on anything else
+ * returns from `WinMain` with zero. No window, no message, no log, exit code 0.
+ *
+ * Four rules keep this from becoming a liability, and every one of them is load-bearing:
+ *
+ * 1. **Nothing on disk is ever written.** The patch is applied to the running process's
+ *    memory and to nothing else, which is what makes it perfectly reversible: launching
+ *    the game without the fix gets the original behaviour back, because the original
+ *    behaviour is all that was ever stored. It is also the only form that works at all
+ *    on the packed executables this is for — Themida and its relatives decrypt at
+ *    runtime, so on disk there is nothing to patch.
+ * 2. **Never an address, always a signature.** An offset that was right for one build
+ *    writes into the middle of an unrelated function on the next, and the failure mode is
+ *    a corrupted process rather than a message. `PATCH_SIG` carries wildcards for exactly
+ *    the bytes that move — relocated call targets, jump displacements.
+ * 3. **A patch may only overwrite bytes the signature itself matched.** `at + fix.length`
+ *    has to fit inside the signature, so there is no reachable way to write a byte that
+ *    was not verified first. `readFixPack` refuses a pack that breaks this.
+ * 4. **Not found means not applied, and it is said out loud.** A signature that misses is
+ *    a build this pack was not written for. The game still starts; what does not happen
+ *    is a silent write somewhere hopeful.
+ *
+ * Packs are read from `%APPDATA%\sakura-launcher\fixes\*.json` and are deliberately
+ * **not** part of this repository. Two reasons, and the second is the real one: a fix is
+ * a fact about one build of one commercial game, which is somebody's library and not this
+ * program's business to carry a list of — and a pack that lives in the data directory can
+ * be written, corrected and thrown away without a release.
+ */
+export const FIX_PACK_FORMAT = 1
+
+/** Where a pack's patches are hunted for. Defaults suit a 32-bit image with no ASLR. */
+export interface FixScanRange {
+  /** Inclusive start, as a hex string so a pack stays readable. */
+  from: string
+  /** Exclusive end. */
+  to: string
+  /**
+   * How long to keep sweeping before giving up.
+   *
+   * The point of a timeout rather than a single look: a packed executable decrypts a
+   * moment after it starts, so the bytes are simply not there yet at t=0. Measured on the
+   * build this was written against, the gate appears within one to three seconds.
+   */
+  timeoutMs: number
+}
+
+export const DEFAULT_FIX_SCAN: FixScanRange = {
+  from: '0x400000',
+  to: '0x1000000',
+  timeoutMs: 15_000
+}
+
+/** A condition that switches a patch off when it is already unnecessary. */
+export interface FixCondition {
+  /**
+   * Skip the patch when this file exists. Environment variables in `%NAME%` form are
+   * expanded.
+   *
+   * The case this was written for: an engine asks GDI for `ＭＳ 明朝`, which Windows 10
+   * and 11 do not ship — `msgothic.ttc` is there, `msmincho.ttc` is in an optional
+   * feature. Rewriting the font name works, and is the wrong thing to do to a machine
+   * that has since installed the font pack.
+   */
+  skipIfFileExists?: string
+}
+
+export interface FixPatch {
+  /** What it is for, in the pack author's words. Shown in the report verbatim. */
+  name: string
+  /**
+   * Bytes to find, as hex pairs separated by spaces, with `??` for a byte that may be
+   * anything: `6A 00 FF 15 ?? ?? ?? ?? 85 C0`.
+   */
+  sig: string
+  /** How far into the match the replacement starts. */
+  offset: number
+  /** Replacement bytes, same notation but with no wildcards. */
+  fix: string
+  /**
+   * Whether the pack has failed if this one is not found.
+   *
+   * A required patch that misses aborts the whole pack rather than applying the rest: a
+   * half-patched engine is a state nobody has tested, and the one thing worse than a game
+   * that will not start is a game that starts and then behaves in a way no report explains.
+   */
+  required?: boolean
+  /**
+   * Patch every occurrence rather than the first.
+   *
+   * Not a convenience. Compilers inline small helpers, so the same lead-byte test can sit
+   * in the image twice, and patching one of two copies is exactly the half-patched state
+   * above.
+   */
+  all?: boolean
+  /**
+   * How many matches this signature is expected to have. Nothing is written past it.
+   *
+   * This is where the safety actually lives, and it is worth being clear about why it is
+   * not the signature's length. A signature is a *hypothesis* about where something is;
+   * how many places it matches is a *measurement*, and comparing the two before writing
+   * anything is the only check available that is about this machine's copy of this build
+   * rather than about byte entropy in the abstract. A patch that names one site and finds
+   * nine has not found its site nine times — it has found something else.
+   *
+   * Defaults to one, or to `DEFAULT_ALL_HITS` when `all` is set.
+   */
+  maxHits?: number
+  unless?: FixCondition
+}
+
+export interface FixPack {
+  formatVersion: number
+  /** A name for the report. Never used for matching. */
+  name: string
+  /** Why this build needs patching, in prose. Shown to whoever runs it. */
+  note?: string
+  /** SHA-256 of the executable this pack was written against, lowercase hex. */
+  exeSha256: string
+  /** Its size in bytes — a free first filter, and a check on the hash being about this file. */
+  exeSize?: number
+  scan?: FixScanRange
+  patches: FixPatch[]
+}
+
+/** What became of one patch. */
+export interface FixPatchOutcome {
+  name: string
+  /** Addresses it was written to. Empty when it was not found or was skipped. */
+  at: string[]
+  /**
+   * `ambiguous` means the signature matched more places than the pack said it would, and
+   * **nothing was written**. It is deliberately not folded into `notFound`: one says the
+   * pattern is absent, the other says the pattern is not specific enough to act on, and
+   * the fix for them is not the same.
+   */
+  state: 'applied' | 'notFound' | 'ambiguous' | 'skipped' | 'writeFailed'
+  /** How many places matched, when that is the interesting part. */
+  hits?: number
+}
+
+/**
+ * What became of a whole pack.
+ *
+ * `noPack` and `mismatch` are separate from `failed` because they are not faults: the
+ * first means this game has no fix written for it, the second that the executable is not
+ * the build the fix was written against — a patch, an update, a different release. Both
+ * are ordinary and neither is worth an alarm.
+ */
+export type FixRunState =
+  | 'applied'
+  | 'partial'
+  | 'notFound'
+  | 'ambiguous'
+  | 'mismatch'
+  | 'noPack'
+  | 'failed'
+  | 'off'
+
+export interface FixRun {
+  gameId: string
+  state: FixRunState
+  packName?: string
+  patches: FixPatchOutcome[]
+  /** Present on `failed`, and always something a person can act on. */
+  error?: string
+}
 
 /* ---------- sharing a game ---------- */
 

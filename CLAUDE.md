@@ -53,6 +53,11 @@ npm run save-test        # locating saves: name matching, engine roots, the down
 npm run magpie-test      # upscaling: the three-state switch, config merges, mode indices by name
 npm run lossless-test    # the other upscaler: splicing profiles into somebody else's settings file
 npm run display-test     # the machine: which screen, whether HDR is on, what a scale factor lands on
+npm run pointer-test     # putting a streamed tap back on the game: where the picture lands
+npm run update-test      # the manual update check: version precedence, channels, which asset
+npm run guide-test       # walkthrough search: what normalises away, what counts as a match
+npm run binfix-test      # per-build byte fixes: what a fix pack may ask for, and what it may not
+npm run repair-test      # what may be offered as a repair, and — mostly — what may not
 npm run share-test       # share exclusion rules
 npm run share-e2e        # calls a real 7-Zip; asserts the source folder is unchanged afterwards
 ```
@@ -63,7 +68,16 @@ Three harnesses need a real folder passed in — **no path is ever hardcoded in 
 node scripts/scan-test.mts "<library folder>"       # what the scanner sees
 node scripts/icon-test.mts --scan "<library folder>" # icon sizes extracted per exe
 npm run diagnose-probe -- "<one game folder>"        # everything the diagnosis can see, read-only
+npm run binfix-probe -- "<pack.json>" ["<game.exe>"] # run a fix pack against a real game, once
 ```
+
+`binfix-probe` is the only harness here that **starts a game** — and it has to. `binfix-test`
+can prove the rules refuse a bad pack, but nothing offline can prove that a signature is
+anywhere in a real image, that a packed executable decrypts inside the timeout, or that
+`WriteProcessMemory` is allowed to land, and those three are what decide whether the feature
+works at all. It stops the game again afterwards. Given a pack and no executable it only
+reads the pack. It lifts the PowerShell out of `src/main/binfix.ts` rather than carrying a
+copy, because a copy would go on passing after the real one had rotted.
 
 `diagnose-test` deliberately validates the PE parser against real `C:\Windows\System32` binaries
 rather than a committed fixture. Never add binary samples to the repo.
@@ -97,8 +111,8 @@ Always pass `--user-data-dir`; without it this writes to the user's actual
 `scan-core.ts`, `share-rules.ts`, `save-rules.ts`, `download-core.ts`, `diagnose-rules.ts`,
 `pe-imports.ts`, `tag-rules.ts`, `tag-bangumi.ts`, `cover-rules.ts`, `translate-rules.ts`,
 `upscale-rules.ts`, `magpie-rules.ts`, `magpie-config.ts`, `lossless-rules.ts`,
-`lossless-config.ts`, `display-rules.ts`
-**must not import electron**. The `.mts` harnesses load them directly under node, which is what makes the
+`lossless-config.ts`, `pointer-map-rules.ts`, `display-rules.ts`, `update-rules.ts`,
+`guide-rules.ts`, `binfix-rules.ts`, `repair-rules.ts` **must not import electron**. The `.mts` harnesses load them directly under node, which is what makes the
 logic testable without a window. They also spell out `.ts` in their relative imports (`from
 './i18n.ts'`) because node has no bundler to fill the extension in — `allowImportingTsExtensions`
 is on in `tsconfig.node.json` for exactly this. If you add an import to one of these files, keep
@@ -225,7 +239,8 @@ Three things will break quietly if changed:
    `ScaleCursor` first made a pointer appear and then froze it, which is the same bug wearing
    a different face — do not re-add it. `ClipCursor` and `AdjustCursorSpeed` stay unset too:
    they change how the mouse *moves* rather than whether it can be seen, and trapping
-   somebody's cursor is not a default to hand out.
+   somebody's cursor is not a default to hand out. They are also the wrong answer to the
+   problem they look like they solve — see the pointer mapper below.
    **`GsyncSupport: false` and `QueueTarget: 0` are that same choice finishing itself**, and
    both would be wrong without it. Making the cursor visible is not the same as making it
    move: it came back stuttering and blinking, because two settings inherited from the
@@ -295,6 +310,185 @@ needs 2568×1448 to double and does not fit a 2560×1440 screen. `checkWholeMult
 `lossless.ts` samples that **once**, for that one preset, and stores nothing anywhere — it
 is not a third folder watcher and must not become one.
 
+### The pointer mapper
+
+`pointer-map.ts` starts one long-lived process alongside Lossless Scaling when
+`Settings.losslessPointerMap` is on; `pointer-map-rules.ts` holds the geometry and is the
+only part a harness can reach. It answers the one thing an overlay upscaler structurally
+cannot: it enlarges the picture and leaves the window where it was, so a streaming client
+sending **absolute** coordinates taps a point that is on the picture and not on the game.
+An ordinary mouse never notices, because the WGC capture carries the cursor — the pointer
+on the enlarged picture *is* the real one. This is why `ClipCursor` is not the fix it looks
+like: it stops the pointer leaving the window, which keeps a stray tap off other software
+and does nothing at all about the tap being in the wrong place.
+
+Thirteen things hold it up and each is load-bearing:
+
+1. **Only events flagged `LLMHF_INJECTED`, and never our own.** Our re-injected events
+   carry `SIG` in `dwExtraInfo`, without which every mapped event would be mapped again
+   forever. **Do not read the injected filter as the safety argument** — that mistake cost
+   the user the use of their mouse. A mouse plugged into this machine is unaffected, yes;
+   but a streaming client injects *everything*, moves included, so in the one situation
+   this feature exists for every event goes through the hook and whatever it decides is
+   what the pointer does. It cannot tell that client from a macro tool either.
+2. **Two outcomes, and the missing third is the lesson.** On the output window → clamp onto
+   the picture and map. On another monitor → pass, because that is somebody's actual
+   desktop. The first version had a third — **drop a point on the letterbox**, since there
+   is nothing there but black — and it **deadlocks**: the moves that would carry the pointer
+   off the letterbox are exactly the events being dropped, so the pointer can never leave
+   and the mouse stops dead. It shipped and was reported within minutes. Clamping is also
+   what `ClipCursor` was there to do, for free. Do not reintroduce a refusing branch for
+   anything inside the output window.
+3. **A tap and a drag are different inputs, and mapping is right for one and fatal for the
+   other.** A combined remote client sends both down one wire: a tap names a position
+   (absolute), a press-and-drag behaves like a trackpad (relative). Nothing in a mouse event
+   says which it was. **Mapping is a compression, and a compression has a fixed point** — run
+   relative motion through it and every step is compressed again, so the pointer converges
+   there and stops. This shipped: with a 1284×724 game on a 2560×1440 screen the fixed point
+   is (55, 105), and that is exactly where the user's pointer was found parked, three
+   failed attempts in. What separates them is that we know where we last placed the pointer:
+   a drag step is measured from there and lands near it, a tap names somewhere else. The two
+   populations do not overlap in practice — measured drags reached 96px, the smallest tap
+   jump was 129px, hence `TAP_DISTANCE = 110`. A drag then accumulates into a **virtual
+   pointer held in screen space** (`advanceVirtual`), never in game space: mapping divides
+   the step by the scale and the upscaler multiplies it back, so the pointer keeps up with
+   the finger. Accumulate in game space and every drag is halved.
+4. **There must always be a way out without a mouse.** Two exist and both are documented in
+   the settings page: closing the game (scaling stops, the output window goes, `_active`
+   goes false within 400 ms) and closing the launcher (the parent check fires within
+   700 ms). Anything that lengthens either is a regression.
+   **Neither is checked by the sweep, and that is why the promise can be kept.** `Refresh()`
+   is tens to hundreds of milliseconds and runs every ~600 ms; a version that waited for it
+   to notice took 600–900 ms to go inert while all four documents said half a second.
+   `StillScaling()` is two calls against the output window handle already in `Geom` —
+   microseconds — so it rides the 100 ms sleep between sweeps alongside `ParentAlive()`.
+   Do not answer a latency promise here by running the sweep faster: that is what froze
+   the pointer in the first place.
+   **The second one failed once, and the way it failed is the lesson.** The parent check
+   lived in the worker loop, which also wrote to stdout — unguarded. Kill the parent and the
+   pipe breaks, the write throws, that thread dies, and the check dies with it: a process
+   holding a system-wide mouse hook, with nothing left in it that would ever ask it to stop.
+   The launcher had been started elevated (the user's Lossless Scaling sets `StartAsAdmin`,
+   and the whole chain inherits it), so it could not be killed without a UAC prompt either.
+   Two rules came out of it: **every statement in the worker loop is inside a catch**, and
+   the check also runs on the **pump thread** via a thread timer, because that thread is by
+   construction not doing anything that could throw. Belt and braces here is not excessive —
+   the failure mode is a stranded global input hook.
+   **It failed a second time anyway, and that is why there is now a watchdog thread.** A
+   session outlived its launcher by half an hour: it wrote no state file, so the worker was
+   gone, and it did not answer the pump's timer either. It took a UAC prompt to end, because
+   the chain had inherited administrator from the user's own Lossless Scaling — and for that
+   whole half hour every mouse event on the machine paid `LowLevelHooksTimeout` to step over
+   a hook nobody was serving. Both existing checks were re-measured afterwards and both work
+   (a killed parent had the process gone in 243 ms); what they share is the assumption that
+   **some thread is still going round its loop**, and this is the one process that may not
+   make it. So the third path does not loop at all: it blocks in the kernel on the parent's
+   handle, is woken by the parent's death itself, and has no state that can wedge it. It ends
+   with **`TerminateProcess`, not `Environment.Exit`** — measured, 27–41 ms against 2.2
+   seconds, because Exit runs finalisers and the host's own shutdown. There is nothing here
+   worth closing tidily and everything worth ending at once. Do not "improve" this thread by
+   giving it anything else to do.
+5. **A move is applied with `SetCursorPos`; only buttons go through `SendInput`.** Calling
+   `SendInput` from inside the callback puts another event on a queue drained through that
+   same callback, so every move costs two passes and the backlog compounds — it was reported
+   as "the pointer lags by several seconds", and the pointer appearing to stop was the
+   backlog, not the arithmetic. `SetCursorPos` raises no low-level hook event at all
+   (verified: a probe parking the cursor with it saw nothing), so the high-frequency path
+   produces no new work. Buttons still need `SendInput` — a press has to be a real input
+   event and must carry the position — but they are two events per click, not two per
+   millimetre. `state.txt` reports `queue lag ms`, computed from `MSLLHOOKSTRUCT.time`,
+   which is the number that says whether the hook is keeping up. Related: the callback reads
+   its fields with `Marshal.ReadInt32` rather than `PtrToStructure`, which would box an
+   object for every mouse event on the machine.
+6. **The pump thread pumps and does nothing else.** A low-level hook is dispatched by the
+   system posting to the queue of the thread that installed it, so **the callback cannot run
+   while that thread is doing anything else** — and every mouse event on the machine waits
+   behind it, whether or not this feature would have touched that event. The first version
+   ran `Refresh()` inline on a `PeekMessage`/`Sleep(4)` loop; `Refresh()` walks every
+   top-level window and opens every owning process, so the pointer froze for tens to
+   hundreds of milliseconds every 400ms and the report was "the mouse cannot move". Now
+   measuring is a separate thread that publishes an immutable `Geom` through a volatile
+   reference (a reference assignment is atomic; a struct written in place is not, and the
+   callback would read half a rectangle), and the pump is a blocking `GetMessageW`. **Do not
+   put work back on the pump thread, and do not go back to polling** — even the `Sleep(4)`
+   was a 4ms floor under every mouse event on the machine.
+7. **It is PowerShell hosting a C# delegate, and must not become a native binary.** The hook
+   callback is JIT'd machine code compiled by `Add-Type`; PowerShell is only the host and
+   the message pump, so nothing interpreted runs inside the callback and there is no
+   timeout to be dropped for. Keeping it here is what keeps the "no native dependency" rule
+   intact, and keeps the process holding a system-wide mouse hook a Microsoft-signed one.
+   **No backticks anywhere inside the script**: it is a TypeScript template literal, and one
+   in a C# comment silently terminates it.
+8. **The script is a file, not `-EncodedCommand`.** Base64 UTF-16 is ~2.7× the source and
+   Windows refuses a command line past 32767 characters — the failure is a bare
+   `ENAMETOOLONG` from `spawn`. It is written UTF-8 **with a BOM** (PowerShell 5.1 reads a
+   BOM-less `.ps1` as ANSI) and carries no paths: the game folder and the upscaler's path
+   arrive through the environment. It also calls `SetProcessDpiAwarenessContext` before
+   reading any coordinate, or every mapping is out by the display's scale factor on exactly
+   the machines that scale their display.
+9. **It measures for itself, and the geometry is written twice.** Finding both windows
+   happens inside that same process on a timer, because doing it from here would mean
+   spawning a PowerShell on a poll several times a second. That is why the arithmetic exists
+   in both `pointer-map-rules.ts` and the C#: **the harness only guards the TypeScript, so
+   changing one means changing the other.** The output window is identified by its rectangle
+   being exactly a monitor's — not by class name, which is an implementation detail of
+   somebody else's program, and not by size, since the upscaler's own settings window
+   belongs to the same process.
+10. **It draws its own pointer, on a third thread, and that is not decoration.** The
+    cursor visible on the stream is the one WGC composited into the captured frame — a
+    photograph — and **WGC produces a frame when the source window changes**. A visual
+    novel is a still page, so the pointer sits where it was and moves only when a click
+    advances the text. Reported as *"during a drag I only see the pointer move at the
+    moment I let go"*, which is exactly that: the release redrew the game, the redraw
+    produced a frame, and the frame carried the pointer to where it had been all along.
+    The hook was not behind — the state file measured `queue lag ms` 0, worst 16 — and
+    chasing latency in the mapper would have found nothing, twice. The same fact explains
+    the two-second delay reported alongside it: a desktop that stops changing puts a
+    streaming client into a low idle frame rate it takes a moment to come out of, so the
+    lag is on the *reply*, not on the touch. A ring that keeps moving keeps the client
+    sending. Five constraints hold it up: it owns **its own thread**, because
+    `SetWindowPos` waits on the thread that owns the window and neither the pump (see
+    Geom) nor the worker (which blocks inside `Refresh()`) may be that thread; **nothing
+    is added to the callback**, which reads nothing and writes only `_markerOn`, so this
+    cannot bring the lag back; it **moves only when the position changed**, or a parked
+    ring would keep the whole desktop awake for nothing; it is **click-through and never
+    activated**, or it would eat the taps it exists to aim; and it is **not excluded from
+    capture** — the streaming client has to see it, and Lossless Scaling will not, because
+    it captures the game's window and this is a separate top-level one.
+11. **Where the picture lands is read from the file, never from what a preset says.**
+    `activeScalingFit` looks up *our* profile in `Settings.xml` for the same reason
+    `activeHdrSupport` does, and the preset's own fields are only the fallback for a
+    profile that is not in the file at all. Answering from the preset is the bug that
+    function was written to avoid, one door down: switch a game from `Sakura:Integer` to
+    `Sakura:Quality` while Lossless Scaling is open, the write is refused (`pendingWrite`),
+    the live profile is still whole-multiple — and the mapper is told the picture fills the
+    screen. It reads `ScalingMode` as well, because **`Custom` names its own multiple** in
+    `ScaleFactor` and owes the screen nothing: 2.1× of an 800×600 game is 1680×1260 at
+    (440,90) where the proportional fit would give 1920×1440 at (320,0). A mode naming one
+    of the user's own profiles is cloned verbatim, so a fixed factor is ordinary. A `fixed`
+    with no readable factor falls back to the proportional fit rather than inventing one.
+12. **A press `SendInput` refused is destroyed, not misplaced, and has to be said out loud.**
+    UIPI blocks it when the foreground window belongs to a higher-integrity process — a
+    game started as administrator from a launcher that was not — and by then the original
+    event has already been swallowed. The event is still not passed on, because an unmapped
+    click on whatever is under the finger is the harm this feature exists to prevent; it is
+    counted as `blocked` instead, reported on stdout, and shown in the settings page. The
+    version that ignored the return value had every counter saying "mapped" while every
+    click vanished.
+13. **`Round()` in the C# is `floor(v + 0.5)`, not `Math.Round`.** C# rounds a tie to the
+    even number and JavaScript rounds it up, so the two copies of the geometry disagree
+    whenever the remainder is odd — 1288×724 on 2560×1440 fits to 1439 high and the
+    picture lands a pixel apart. One pixel is harmless; two specifications that quietly
+    differ are not, because the harness only guards one of them.
+
+**It is not touch support and must not be described as one.** Genuine touch is `WM_POINTER`,
+invisible to a mouse hook; redirecting it needs `RegisterPointerInputTarget`, which requires
+UIAccess — a manifest flag, an Authenticode signature and a secure directory. Magpie solves
+this by shipping `TouchHelper.exe` (`uiAccess="true"`, signed `CN=Magpie` with an untrusted
+root) and installing its certificate as administrator. That is not a thing this program gets
+to do to somebody's certificate store, and it is already solved in the Magpie that ships
+here — a client sending real touch wants that backend, not a second implementation.
+
 **Nothing about the machine goes into the sidecar.** A monitor describes this desktop, not
 the game — the same reason group membership and tile order stay out.
 
@@ -319,6 +513,56 @@ including strings the main process produces (launch errors, diagnosis findings, 
 - The splash paints before the database is opened, so it uses `db.peekLanguage()`.
 - `App.tsx` keeps a `langRef` because a translator memoised on `settings.language` is stale for work
   kicked off in the same tick as `setSettings`.
+
+### Touch
+
+The interface is driven by a finger whenever the user connects from a tablet. Five things
+hold this up and each is load-bearing:
+
+1. **`(pointer: coarse)` is not enough, and `Settings.touchMode` exists because of it.**
+   The case this was built for is a remote-desktop client injecting **mouse** events:
+   Windows has a real cursor, Chromium reports `pointerType: 'mouse'`, `:hover` fires, and
+   every automatic check confidently says "mouse" while the hand at the far end is on a
+   tablet. `auto` consults the media query, `on`/`off` override it, and `App.tsx` publishes
+   the answer as `data-touch` on the root — the same mechanism themes use — plus a `touch`
+   prop for the handful of components that must *think* differently rather than merely
+   measure differently.
+2. **Unreachable is fixed for everyone; only size sits behind the mode.** A submenu that
+   opened on hover alone, a folder that opened on a double-click alone, a window button
+   whose glyph was invisible until hovered — none of those were better for a mouse, so
+   none of them are mode-gated. Hit-target size genuinely trades against shelf density, so
+   that is the one thing the mode governs.
+3. **A submenu row opens on click, not only on hover** (`ContextMenu.tsx`). Its `onClick`
+   used to `return` early when `hasSub`, which with no `mouseenter` left **star rating,
+   upscale mode and move-to-group with no route in the program at all** — rating has no
+   other control anywhere. It opens rather than toggles: a mouse has already opened it by
+   hovering to get there, and a toggle would close it under the click meant to commit.
+4. **Long-press belongs to the menu, and dragging needs a mode.** These compete for one
+   gesture and the menu is worth far more — it is the only way to extract, rate, rename,
+   tag, share, back up or uninstall. `HOLD_SLOP_PX` (12) is deliberately far above
+   `DRAG_THRESHOLD_PX` (6), because six pixels is less than a finger holding still actually
+   moves, and that is exactly why the drag used to win the race and the menu never opened.
+   Dragging then cannot also be a plain press-and-move: **`touch-action` is read when a
+   gesture begins and never again**, so no amount of holding can take the pan back once the
+   browser has claimed it, and setting `touch-action: none` on tiles permanently would make
+   a shelf of tiles unscrollable. Hence `.grid.rearranging`. Do not try to replace the mode
+   with a cleverer heuristic; the platform does not offer the hook it would need.
+   `TierPage` is the exception and shows the rule: its icons are 96px in rows with label,
+   background and margin left to scroll from, so `touch-action: none` is safe there and it
+   needs no mode.
+5. **`pointercancel` aborts, it does not commit.** It means the gesture was taken away, and
+   committing a drop nobody released is certainly wrong. It also used to be the only thing
+   a finger could do, since aborting was bound to Escape.
+
+`TierPage` was rewritten off HTML5 drag-and-drop for this — no engine fires it for touch,
+and its icons carry no click and no keyboard activation, so **ranking a game was reachable
+by mouse alone**. It now uses Pointer Events with the same `dragProxy` as the shelf, plus a
+tier menu on long-press, which is the route that works however the drag goes.
+
+Renderer behaviour has no harness. It is checked by driving synthetic `pointerType: 'touch'`
+events through `SAKURA_CAPTURE_SCRIPT` against a seeded `--user-data-dir` — see
+**Screenshotting the UI** above. Whatever is asserted there, assert the mouse path too: the
+whole design rests on it being untouched.
 
 ### Other pieces
 
@@ -457,6 +701,197 @@ These come from user decisions and are load-bearing. Violating one is a bug even
   stopped.** It raises itself to administrator from its own `<StartAsAdmin>` — which this
   program reads and never changes — and a copy that did so is out of reach for good. Anything
   else running is theirs.
+- **The update check runs from one button and from nowhere else.** It is the second thing
+  in this program that opens a socket, and unlike the catalogue it has no switch — because a
+  switch would imply there is something to switch *off*, and there is no timer, no startup
+  call and no background pass to disable. `update.ts` is reached from two IPC handlers and
+  from nothing else; keep it that way, or the line on the front page of both READMEs stops
+  being true. Three things hold the rest up:
+  - **A false "up to date" is the worst outcome available**, worse than an error and worse
+    than a false alarm: an error sends somebody to look and a false alarm costs a click, but
+    "you are current" ends the conversation. So the paths that could quietly answer "nothing
+    newer" are closed by construction rather than by care — `readReleases` has **no
+    `releases` field on its failure arm**, so `Array.isArray(x) ? x : []` cannot be written
+    by accident (GitHub answers a rate limit with `{"message": …}` and a captive portal with
+    HTML, and both would come back from that line as an empty list); `compareVersions`
+    answers **null, never 0**, when it cannot read a side; and `unreadableTags` rides on
+    **every** answered verdict rather than only on the one where nothing could be read,
+    because the release that would have contradicted "up to date" is exactly the one that
+    got dropped.
+  - **An asset is matched by suffix, never by the name the build wrote.**
+    `electron-builder.yml` produces `Sakura Launcher-<version>-portable.exe` with a space,
+    and GitHub stores it back as `Sakura.Launcher-…` — the uploader sends the raw name in a
+    query string and the space is normalised on the way in. Anchoring on the product name
+    matches nothing that is actually on a release, and fails silently: an update is reported
+    and no file is offered. Verified against the real v0.10.0 assets. The suffix is still
+    structural rather than a blacklist, so `.blockmap`, `latest.yml` and every future sidecar
+    file fail it for free.
+  - **The renderer names a `kind`, never an address.** The URL comes out of the verdict the
+    main process worked out itself, and the destination folder is chosen there too — the same
+    rule that keeps a cover candidate's path out of the renderer. The file is written to
+    `<name>.part` and renamed only once the whole thing has arrived at the declared size:
+    a truncated installer left under its real name is a program somebody would double-click.
+- **A walkthrough is searched for from one button, and the two providers are not alike.**
+  `guides.ts` is reached from one IPC handler and nothing else, the same shape as the
+  update check. What differs is the two sites, and the difference is the design:
+  - **誠也の部屋 publishes one static index**, four thousand entries on a single page, so it
+    is fetched whole, cached under `cache/guides/`, and searched **locally**. That is what
+    keeps it from learning which game was opened, keeps answers coming while the site is
+    down, and makes searching often free. The page is **cp932**, not UTF-8 — decoded as
+    UTF-8 every title is mojibake and every search quietly finds nothing. A failed fetch
+    **keeps the copy on disk**, the same policy `display-info.ts` holds for a failed
+    display query.
+  - **2DFan answers a query**, so the title leaves the machine, and what comes back is an
+    HTML fragment inside a JSON envelope — somebody else's markup, which will change. So
+    `read2dfan` reports a shape it cannot read as a **failure, never an empty list**: the
+    fragile provider going quiet must not look like a fact about the game. Same rule as
+    `readReleases` in `update-rules.ts`, and for the same reason.
+  - **Matching is containment, and a short query must be a prefix.** Not coverage — that
+    was tried, measured well against full titles, and was wrong the first time a real
+    search ran: a four-character series name found nothing on the site that indexes it.
+    Position separates the two cases that proportion cannot, because a series name begins
+    the title it belongs to (`ネコぱら` in `ネコぱらAfter…`) and a fragment lands in the middle
+    (`air` in `pairing`). The floor lives inside `guideScore` rather than in one caller,
+    because 2DFan's ranking runs through the same scorer and would otherwise have no floor
+    at all.
+  - **`guideKey` is deliberately not `titleKey`.** `tag-rules.ts` decides which catalogue
+    row *is* this game, so widening it changes what gets tagged in every library; this one
+    only decides which walkthrough to offer. The folds it adds were measured as flat-zero
+    gaps against this corpus: fullwidth digits, fullwidth latin, halfwidth katakana, and
+    unbracketed Japanese edition words.
+- **A missing DLL is not missing until WinSxS has been looked in.** The VC80 and VC90 C
+  runtimes are Fusion assemblies: bound through the executable's `RT_MANIFEST`, resolved by
+  the activation context, and **absent from `System32` and `SysWOW64`**. Measured on a stock
+  Windows 11, `msvcr80.dll`, `msvcp80.dll`, `msvcr90.dll` and `msvcp90.dll` are in neither,
+  while `WinSxS\x86_microsoft.vc80.crt_1fc8b3b9a1e18e3b_...` holds all of them. A search that
+  walks the loader's *directory* order therefore reported every Visual Studio 2005 or 2008
+  build as missing its runtime — as a `blocker`, sorted to the top, one right-click away on
+  any tile — which is most of a library of 2005-2012 Japanese visual novels, every one of
+  them starting perfectly. `dllAvailable` in `diagnose.ts` consults the store and the
+  app-local `Microsoft.VC90.CRT` folder before anything is called missing. Keep it narrow:
+  the MFC and ATL rows exist so a machine that carries those assemblies is read correctly,
+  and on one that does not the finding is right, because then the redistributable really is
+  what is missing. **The architecture is not decoration** — an x86 game is not satisfied by
+  the `amd64_` assembly, and widening the match trades a false positive for a false
+  negative, which is the worse of the two because it is the one that stays quiet.
+- **A repair is offered, never taken.** `repair-rules.ts` decides what may be done about a
+  diagnosis and `repair.ts` does it. There is no timer, no startup pass and no "while we
+  are here": every one happens because somebody read what it would change and pressed a
+  button, which is the only footing this program has for editing a machine it does not own.
+  Four rules:
+  - **Every action records its undo before it acts, not after.** The previous registry
+    value has to be read before it is overwritten and the file list built while the
+    attribute is still set. A journal written afterwards records intent, and the difference
+    shows up exactly when the undo is needed. The journal lives in `db.json` and **not in
+    the sidecar** — a shim and a file attribute describe this machine, the same reason
+    group membership and tile order stay out.
+  - **A `guide` is not a lesser outcome, and there are more of them than actions on
+    purpose.** Anything needing elevation, or that would move somebody's folder, or that
+    belongs to another program, is worth more as an exact command than as a button that
+    half works. `install-fonts` carries `Language.Fonts.Jpan~~~und-JPAN~0.0.1.0` — `Jpan`
+    with a script code, not `Ja-JP`; the wrong one fails with a message about an unknown
+    capability, which reads as a broken machine rather than a typo.
+  - **The locale offer needs an observed silent failure, not just a finding.**
+    `needs-locale` is two signals out of three, and the two that carry it — a JP-era engine,
+    kana in the folder name — are both true of a Chinese fan translation that works
+    perfectly, which is a large part of this library. 诊断 sits on every tile's context menu
+    with no failure required, so gating on the finding alone put the offer under working
+    games and recommended the one change that breaks them. `RepairFacts.trouble` is carried
+    from the launch watcher through `repairOffers`, and only `earlyexit` and `noshow` unlock
+    it: `dialog` means the game started and is saying something, which is worth more than
+    any inference here, and a locale gate leaves no box at all.
+  - **The locale offer is a guide, and nothing in this layer may rewrite `game.exe`.** It
+    was a button first, rewriting `game.exe` to the emulator with the game as an argument,
+    and that is one change with four consequences — because `game.exe` is not "what gets
+    spawned", it is the identity everything else hangs on. `sidecar-sync.ts:111` writes it
+    into the travelling `sakura-launcher.md` as a path relative to the game folder **with
+    no `isUnder` guard** (the cover lines beside it have one), so an emulator outside that
+    folder put `..\..\Program Files\…` — or a bare absolute path from another drive — into
+    a file whose whole point is surviving a move to another machine. Where `exePinned` is
+    not set, which is the common case, the next rescan reverts it silently while the
+    journal still lists the repair and the dialog still offers to undo it. `repairFacts`
+    keys the compatibility layer on `game.exe`, so a `RUNASADMIN` pressed afterwards lands
+    on `LEProc.exe` and every program launched through Locale Emulator starts demanding
+    UAC. And it is not idempotent: twice, and the emulator is aimed at itself. Doing this
+    properly needs a launch chain the launcher honours without touching `game.exe` —
+    scanner, sidecar and fix-pack hashing all move — so until then the offer hands over the
+    exact command and says why it is not pressing it for you.
+    **Both command lines were also wrong, and each is now pinned to upstream source rather
+    than to the switch that reads like what we want.** `LEProc.exe -run <path>` is
+    `RunWithIndependentProfile`: finding no `<path>.le.config` it **launches LEGUI.exe** to
+    have one authored, so the button opened a settings window. The bare path is
+    `RunWithDefaultProfile` — app profile, else first global, else a built-in ja-JP default
+    — which is what is wanted and writes nothing. `LRProc.cpp` opens with
+    `if (__argc < 3)` and a usage box: the form is `LRProc.exe GUID Path Args`, the GUID is
+    positional and first, and there is no default to invent, so `localeCommand` returns
+    **null** for it rather than sending a path alone. `LOCALE_TOOL_ORDER` puts `lr` first,
+    so that was the branch most machines took.
+    The other two rules still hold. A folder of Japanese names on a Chinese machine may
+    want an emulator *or* may be a Chinese fan translation that a Japanese codepage would
+    actively break — the patch wants the machine's own 936 — so the warning is in the
+    offer's own text, not a footnote. And **Locale Emulator is 32-bit only**: pointing it
+    at a 64-bit game is a silent no-op, so `localeToolFits` filters on the architecture the
+    PE already gave us and an unknown architecture fits nothing.
+  - **A populated VirtualStore silences every writability offer, and this one nearly
+    shipped wrong.** A 32-bit game under `Program Files` whose manifest predates Vista gets
+    UAC **file virtualisation**: Windows redirects its writes to
+    `%LOCALAPPDATA%\VirtualStore\Program Files\…` and the game reads them straight back, so
+    it has been saving happily for years. This program is Vista-aware, so virtualisation is
+    *off for us*, the write probe fails, and every conclusion from there is wrong in the
+    same direction. `RUNASADMIN` is the worst of them: **an elevated process is not
+    virtualised either**, so the game would start writing the real `Program Files` path —
+    which an administrator can write — and its entire save history would disappear from the
+    load screen at once, immediately after the user pressed a button labelled "repair".
+    A VirtualStore tree **with files in it** is therefore proof that writing works, and it
+    replaces the offer with a note saying where the saves actually are. Emptiness is the
+    whole question: the directory can exist from one failed write years ago and mean nothing.
+  - **Only `RUNASADMIN` is ever written**, and only against a finding this program can
+    actually establish. Every other layer token is a matter of taste, and a launcher
+    applying `WIN7RTM` on a hunch is making a decision it cannot support. Note the two
+    formatting traps, both of which fail silently: the value begins `~` **and a space**,
+    and tokens are **space-separated** — run two together and the whole value does nothing.
+    Real values in the wild are sometimes written without the leading `~`, so `layerTokens`
+    reads both.
+- **A per-build byte fix writes to memory and never to disk.** `binfix-rules.ts` decides
+  whether a pack may run and `binfix.ts` runs it, through PowerShell hosting a C# stub —
+  same reason as `pointer-map.ts`: no native dependency, and the process doing the writing
+  stays a Microsoft-signed one. It exists because the diagnosis has a floor it cannot reach
+  under: an engine that gates `WinMain` on `PRIMARYLANGID(GetSystemDefaultLangID()) == 0x11`
+  and returns zero otherwise gives no window, no message, no log and exit code 0, and no
+  amount of reasoning about redistributables gets there. Six things hold it up:
+  - **Nothing on disk is written**, which is what makes undo mean "launch it again without
+    this". It is also the only form that works on the packed executables this is for —
+    Themida and its relatives decrypt at runtime, so on disk there is nothing to patch.
+  - **Never an address, always a signature**, and a patch may only overwrite bytes the
+    signature itself matched (`offset + fix.length <= sig.length`, refused at read time).
+    There is no reachable way to write a byte that was not verified first.
+  - **How many places matched is the safety check, not how long the signature is.** A floor
+    of sixteen bytes was tried first and refused the real patches — `3D 40 EF 00 00 73` is
+    six bytes and is an entire fix — which bought no safety and cost the feature. A pack
+    declares `maxHits`; more matches than that and **nothing is written**, reported as
+    `ambiguous` rather than folded into `notFound`, because "the pattern is absent" and
+    "the pattern is not specific enough" call for different repairs.
+  - **The patcher starts the game; it is never handed a running one.** This is the whole
+    ordering and it was arrived at the hard way. Attaching by pid was written first and lost
+    the race every single time: a gate decided inside `WinMain` is over in under a second,
+    and a cold PowerShell that must compile an interop stub takes several, so the honest
+    report was `exited` — true, useless, and exactly the failure being fixed. Compile first,
+    start second. Related, and also measured: the game is started with
+    **`UseShellExecute = $true`**, because with it false the game inherits the script's
+    stdout handle and the launcher's pipe stays open for as long as the *game* runs — the
+    patch lands, the report never arrives, and a run whose seven patches all applied in
+    under three seconds was reported as a ninety-second timeout. For the same reason the
+    launcher listens for `exit`, not `close`.
+  - **A required patch that misses aborts the whole pack.** A half-patched engine is a state
+    nobody has tested, and the only thing worse than a game that will not start is one that
+    starts and then behaves in a way no report explains.
+  - **No debugger, ever.** These executables are packed and the packers answer a debugger by
+    breaking in ways that look like an unrelated crash. Suspend, read, write, resume is the
+    entire repertoire.
+  Packs live in `%APPDATA%\sakura-launcher\fixes\*.json` and are deliberately **not** in this
+  repository: a fix is a fact about one build of one commercial game, which is somebody's
+  library rather than this program's business to carry a list of, and a pack in the data
+  directory can be written, corrected and thrown away without a release.
 - **Diagnosis is read-only** and does not go over the network. It names the missing runtime; it does
   not fetch it.
 - **No hardcoded personal paths anywhere.** Scan roots start empty (`DEFAULT_SETTINGS.roots: []`),

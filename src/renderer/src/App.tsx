@@ -5,6 +5,7 @@ import type {
   CoverChoice,
   DiskInfo,
   ExeChoices,
+  GuideSearch,
   Game,
   Group,
   LaunchTrouble,
@@ -66,6 +67,15 @@ export default function App(): React.JSX.Element {
   const [groups, setGroups] = useState<Group[]>([])
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [loaded, setLoaded] = useState(false)
+  /**
+   * `settings.touchMode` resolved to a yes or no, for the parts of the interface that have
+   * to *think* differently rather than just measure differently.
+   *
+   * CSS reads the same answer off `data-touch` on the root. This exists because a handful
+   * of decisions are not stylistic — whether to offer rearrange mode at all, whether to
+   * show a way out of it — and those live in components, not in a stylesheet.
+   */
+  const [touch, setTouch] = useState(false)
 
   const [page, setPage] = useState<PageKey>('desktop')
   const [tab, setTab] = useState<TabKey>('all')
@@ -192,6 +202,51 @@ export default function App(): React.JSX.Element {
     document.documentElement.dataset.theme = settings.theme
   }, [settings.theme])
 
+  /*
+   * Touch mode rides the same root attribute, so the CSS reads it the way it reads themes.
+   *
+   * `auto` is re-evaluated on the media query's own change event rather than read once:
+   * a coarse pointer can arrive mid-session — a tablet plugged in, a remote client that
+   * switches to injecting real touch — and a value sampled at mount would sit there stale
+   * with every target still 13px wide.
+   */
+  useEffect(() => {
+    const set = (on: boolean): void => {
+      document.documentElement.dataset.touch = on ? 'on' : 'off'
+      setTouch(on)
+    }
+    if (settings.touchMode !== 'auto') {
+      set(settings.touchMode === 'on')
+      return
+    }
+    const query = window.matchMedia('(pointer: coarse)')
+    const apply = (): void => set(query.matches)
+    apply()
+    query.addEventListener('change', apply)
+    return () => query.removeEventListener('change', apply)
+  }, [settings.touchMode])
+
+  /**
+   * What this build was packaged as, for the top bar and the settings page.
+   *
+   * Empty until it arrives, and the places that show it render nothing while it is — a
+   * version that flickers in as a blank chip is worse than one that appears a frame late.
+   */
+  /**
+   * The last walkthrough search, and the game it was made for.
+   *
+   * Keyed by game id rather than cleared on selection, because the request outlives the
+   * click: switching game while one is in flight would otherwise land somebody else's
+   * results under this game's name.
+   */
+  const [guide, setGuide] = useState<{ gameId: string; search: GuideSearch } | null>(null)
+  const [guideBusy, setGuideBusy] = useState(false)
+
+  const [version, setVersion] = useState('')
+  useEffect(() => {
+    void window.sakura.appVersion().then(setVersion)
+  }, [])
+
   const refresh = useCallback(async (): Promise<void> => {
     const snap = await window.sakura.snapshot()
     langRef.current = snap.settings.language
@@ -255,6 +310,17 @@ export default function App(): React.JSX.Element {
     // language change is already in the new one — the same reason `tr` exists at all.
     // None of these are failures of the launch: the game is running regardless.
     const offUpscale = window.sakura.onUpscaleNotice(({ key, vars }) => toast(tr(key, vars), true))
+    // A byte-level fix reports whatever it did, and "it found nothing" is reported as
+    // loudly as "it worked": an unpatched launch and a patched one look the same from
+    // here right up until the game misbehaves, which is exactly too late to learn it.
+    const offFix = window.sakura.onFixRun((run) => {
+      const pack = run.packName ?? ''
+      if (run.state === 'applied') return toast(tr('fix.applied', { pack }))
+      if (run.state === 'partial') return toast(tr('fix.partial', { pack }), true)
+      if (run.state === 'notFound') return toast(tr('fix.notFound', { pack }), true)
+      if (run.state === 'ambiguous') return toast(tr('fix.ambiguous', { pack }), true)
+      if (run.state === 'failed') return toast(run.error ?? tr('fix.err.noAnswer'), true)
+    })
     const offDb = window.sakura.onDbChanged(() => void refresh())
     const offPlaytime = window.sakura.onPlaytime(({ id, playtimeMs, playing: running }) => {
       setGames((cur) => cur.map((g) => (g.id === id ? { ...g, playtimeMs } : g)))
@@ -271,6 +337,7 @@ export default function App(): React.JSX.Element {
       offTrouble()
       offMultiArchive()
       offUpscale()
+      offFix()
     }
   }, [refresh, toast, tr])
 
@@ -658,6 +725,7 @@ export default function App(): React.JSX.Element {
 
       <TopBar
         page={page}
+        version={version}
         tab={tab}
         counts={counts}
         search={search}
@@ -709,6 +777,7 @@ export default function App(): React.JSX.Element {
             tab={tab}
             sortKey={settings.sortKey}
             tileSize={settings.tileSize}
+            touch={touch}
             search={search}
             activeTags={activeTags}
             showSpoilers={settings.spoilerTags}
@@ -803,6 +872,7 @@ export default function App(): React.JSX.Element {
         ) : (
           <SettingsPage
             settings={settings}
+            version={version}
             onChange={updateSettings}
             onRescanFolder={(folder) => void previewInto(folder)}
             onRemoveRoot={(folder) => setRemovingRoot(folder)}
@@ -839,6 +909,18 @@ export default function App(): React.JSX.Element {
             playing={playing.includes(selected.id)}
             showSpoilers={settings.spoilerTags}
             showAdult={settings.adultTags}
+            guide={guide && guide.gameId === selected.id ? guide.search : null}
+            guideBusy={guideBusy}
+            onSearchGuide={async (query) => {
+              const gameId = selected.id
+              setGuideBusy(true)
+              try {
+                const search = await window.sakura.searchGuides(gameId, query)
+                setGuide({ gameId, search })
+              } finally {
+                setGuideBusy(false)
+              }
+            }}
             onTagHidden={async (gameId, tagId, hidden) => {
               const updated = await window.sakura.setTagHidden(gameId, tagId, hidden)
               if (updated) setGames((cur) => cur.map((g) => (g.id === gameId ? updated : g)))

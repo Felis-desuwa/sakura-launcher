@@ -9,6 +9,7 @@ import { cachedDisplays, ensureDisplays } from './display-info'
 import { hdrActive, mainGpu, primaryDisplay, wholeMultiple } from './display-rules'
 import {
   activeHdrSupport,
+  activeScalingFit,
   buildSettingsXml,
   countOurProfiles,
   listProfiles,
@@ -17,6 +18,8 @@ import {
 } from './lossless-config'
 import { LS_APP_ID, LS_EXE, installDirOf, looksLikeLossless, steamLibraries } from './lossless-rules'
 import { playingIds } from './playtime'
+import { pointerMapAimedAt, pointerMapState, startPointerMap, stopPointerMap } from './pointer-map'
+import { fitModeOf } from './pointer-map-rules'
 import { readWindowsIn } from './window-text'
 import { effectiveUpscale, upscaleTargets } from './upscale-rules'
 
@@ -516,10 +519,26 @@ export function losslessBeforeLaunch(game: Game, opts: { elevated: boolean }): P
 
     if (!(await isRunning())) start(found.path, elevated)
 
+    const mode = effectiveUpscale(settings, game).mode
+    // Started after the upscaler and before the window exists — it measures for itself on
+    // a timer and stays inert until there is something to measure. The fit mode comes from
+    // whichever profile is actually driving this game, because where the picture lands
+    // inside the screen is the whole of the arithmetic.
+    if (settings.losslessPointerMap) {
+      const seen = activeScalingFit(readText(settingsPath()) ?? '', mode)
+      startPointerMap({
+        gameId: game.id,
+        gameDir: game.dir,
+        upscalerExe: found.path,
+        fit: fitModeOf(seen.type, seen.fit, seen.mode),
+        factor: seen.factor ?? 0
+      })
+    }
+
     // Scheduled here rather than awaited: the game is already running and this looks at a
     // window that does not exist yet. It answers for exactly one preset and stays silent
     // for every other, so nothing normal pays for it.
-    checkWholeMultipleFit(game, effectiveUpscale(settings, game).mode, settings.losslessDelay)
+    checkWholeMultipleFit(game, mode, settings.losslessDelay)
   })
 }
 
@@ -533,7 +552,19 @@ export function losslessBeforeLaunch(game: Game, opts: { elevated: boolean }): P
  * itself out of reach. Anything else is the user's, running for the user's reasons.
  */
 export function losslessSessionsChanged(playing: string[]): void {
+  /*
+   * Asked before the early return, because the mapper is aimed at **one** game and the
+   * upscaler is not. Two scaled games at once: launching the second re-points the hook at
+   * it, and closing the second used to leave the hook aimed at a folder with no windows —
+   * for the rest of the session, while the settings page went on saying the feature was
+   * on. A mapper whose game has gone has nothing left to map.
+   */
+  if (!pointerMapAimedAt(playing)) stopPointerMap()
   if (anyScaledPlaying(playing)) return
+  // Stopped even when the upscaler is not ours to stop. It maps input, so it has no
+  // business outliving the session that wanted it mapped — and unlike Lossless Scaling it
+  // is always ours: we spawned it and we hold the handle.
+  stopPointerMap()
   const proc = child
   if (!proc || startedElevated) return
   void serial(async () => {
@@ -568,6 +599,7 @@ export function losslessSessionsChanged(playing: string[]): void {
  * changed rather than at exit, so there is nothing here to lose.
  */
 export function shutdownLossless(): void {
+  stopPointerMap()
   const proc = child
   child = null
   if (proc && !startedElevated) proc.kill()
@@ -640,7 +672,8 @@ export async function losslessStatus(): Promise<LosslessStatus> {
     pendingWrite: pending,
     // Both sides have to be known. An unmeasured screen disagrees with nothing, and a mode
     // with no profile of ours yet has nothing to disagree with.
-    hdrMismatch: active !== null && want !== null && active !== want
+    hdrMismatch: active !== null && want !== null && active !== want,
+    pointerMap: pointerMapState()
   }
 }
 

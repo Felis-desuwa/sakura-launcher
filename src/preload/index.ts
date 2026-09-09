@@ -6,10 +6,15 @@ import type {
   DiskInfo,
   DownloaderKey,
   ExeChoices,
+  FixRun,
   Game,
   Group,
   LaunchTrouble,
   MultiArchiveNotice,
+  RepairId,
+  RepairOffer,
+  RepairRecord,
+  RepairResult,
   UpscaleNotice,
   UpscaleStatus,
   PendingDownload,
@@ -23,6 +28,11 @@ import type {
   SharePlan,
   ShareResult,
   PendingMatch,
+  GuideSearch,
+  UpdateAssetKind,
+  UpdateDownload,
+  UpdateProgress,
+  UpdateVerdict,
   WorkMatch
 } from '../shared/types'
 
@@ -139,6 +149,10 @@ const api = {
   toggleMaximizeWindow: (): Promise<void> => ipcRenderer.invoke('win:toggleMaximize'),
   closeWindow: (): Promise<void> => ipcRenderer.invoke('win:close'),
   isWindowMaximized: (): Promise<boolean> => ipcRenderer.invoke('win:isMaximized'),
+  /** Where the window is now, so a touch drag can measure from it. See `win:dragMove`. */
+  startWindowDrag: (): Promise<[number, number]> => ipcRenderer.invoke('win:dragStart'),
+  moveWindow: (x: number, y: number): Promise<void> =>
+    ipcRenderer.invoke('win:dragMove', x, y),
   /** Fires for every route to maximised, including Win+↑ and a double-click on the bar. */
   onMaximizeChange: (cb: (maximized: boolean) => void): (() => void) => {
     const handler = (_e: unknown, maximized: boolean): void => cb(maximized)
@@ -273,6 +287,47 @@ const api = {
    * only be another way to keep the window hidden.
    */
   ready: (): void => ipcRenderer.send('app:ready'),
+
+  /** What this build was packaged as — `app.getVersion()`, i.e. package.json's version. */
+  appVersion: (): Promise<string> => ipcRenderer.invoke('app:version'),
+
+  /**
+   * Ask GitHub whether there is a newer release. **Only ever from the settings button.**
+   *
+   * The channel comes from the settings, read in the main process. Nothing here runs on
+   * its own — there is no subscription, no timer and no startup call, which is the whole
+   * shape of the promise.
+   */
+  checkUpdate: (): Promise<UpdateVerdict> => ipcRenderer.invoke('update:check'),
+
+  /**
+   * Fetch one file of the release the last check found, into a folder chosen there.
+   *
+   * A `kind`, never an address: the URL is resolved in the main process against the
+   * verdict it worked out itself.
+   */
+  downloadUpdate: (kind: UpdateAssetKind): Promise<UpdateDownload> =>
+    ipcRenderer.invoke('update:download', kind),
+
+  cancelUpdateDownload: (): Promise<boolean> => ipcRenderer.invoke('update:cancelDownload'),
+
+  /**
+   * Look for a walkthrough. **Only ever from the button in the drawer.**
+   *
+   * With no `query` the main process works one out, preferring the Japanese original the
+   * catalogue recorded over the folder's own name.
+   */
+  searchGuides: (id: string, query?: string): Promise<GuideSearch> =>
+    ipcRenderer.invoke('guide:search', id, query),
+
+  /** The title the search would start from, for seeding the box. */
+  guideQuery: (id: string): Promise<string> => ipcRenderer.invoke('guide:query', id),
+
+  onUpdateProgress: (fn: (progress: UpdateProgress) => void): (() => void) => {
+    const handler = (_e: unknown, progress: UpdateProgress): void => fn(progress)
+    ipcRenderer.on('update:progress', handler)
+    return () => ipcRenderer.off('update:progress', handler)
+  },
 
   reveal: (id: string): Promise<boolean> => ipcRenderer.invoke('game:reveal', id),
   breakdown: (dir: string): Promise<Breakdown | null> => ipcRenderer.invoke('game:breakdown', dir),
@@ -511,7 +566,49 @@ const api = {
     const handler = (_e: unknown, notice: UpscaleNotice): void => cb(notice)
     ipcRenderer.on('upscale:notice', handler)
     return () => ipcRenderer.off('upscale:notice', handler)
-  }
+  },
+
+  /* ---- repairs ---- */
+
+  /**
+   * What can be done about a game that did not start.
+   *
+   * The main process re-runs the diagnosis to answer this. Nothing here hands it the
+   * facts a repair would be decided on — the renderer names a repair by id and no more,
+   * the same rule that keeps a cover candidate's path out of this file.
+   */
+  repairOffers: (
+    id: string,
+    since?: number,
+    trouble?: LaunchTrouble
+  ): Promise<RepairOffer[]> => ipcRenderer.invoke('repair:offers', id, since, trouble),
+  applyRepair: (id: string, repair: RepairId): Promise<RepairResult> =>
+    ipcRenderer.invoke('repair:apply', id, repair),
+  /** Repairs already made to this game that can still be put back. */
+  repairsMade: (id: string): Promise<RepairRecord[]> => ipcRenderer.invoke('repair:made', id),
+  undoRepair: (record: RepairRecord): Promise<RepairResult> =>
+    ipcRenderer.invoke('repair:undo', record),
+
+  /* ---- the byte-level fix, for a build that has one written for it ---- */
+
+  /**
+   * What a launch's fix pack did, pushed after the fact.
+   *
+   * After, because the sweep waits for a packed image to decrypt and the launch is
+   * deliberately not held up for it. Everything but "no pack for this build" arrives here.
+   */
+  onFixRun: (cb: (run: FixRun) => void): (() => void) => {
+    const handler = (_e: unknown, run: FixRun): void => cb(run)
+    ipcRenderer.on('fix:run', handler)
+    return () => ipcRenderer.off('fix:run', handler)
+  },
+  /** Every pack on the shelf, and every file there that is not one. */
+  fixPacks: (): Promise<{
+    packs: { name: string; note?: string; exeSha256: string; patches: number; file: string }[]
+    broken: { file: string; problems: string[] }[]
+  }> => ipcRenderer.invoke('fix:packs'),
+  /** Open the folder packs are read from, which is the only way one gets added. */
+  openFixFolder: (): Promise<boolean> => ipcRenderer.invoke('fix:folder')
 }
 
 export type SakuraApi = typeof api

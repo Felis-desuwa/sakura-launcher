@@ -5,7 +5,7 @@
 # 🌸 Sakura Launcher
 
 **A launcher for game libraries that have no metadata to scrape**<br>
-Every judgement read off the files · never goes online at runtime · Windows
+Every judgement read off the files · online only when you press a button · Windows
 
 [![Latest release](https://img.shields.io/github/v/release/Felis-desuwa/sakura-launcher?style=flat-square&labelColor=2b1a20&color=e8709b)](https://github.com/Felis-desuwa/sakura-launcher/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Felis-desuwa/sakura-launcher/total?style=flat-square&labelColor=2b1a20&color=e8709b)](https://github.com/Felis-desuwa/sakura-launcher/releases)
@@ -31,8 +31,8 @@ nearly every judgement here comes from the files themselves: which exe is the ga
 engine it runs on, why it will not start, whether it needs a locale emulator. All of that is
 read, not looked up.
 
-There is exactly one thing that cannot be read off the disk — what the game is *about*. That
-has to come from a catalogue, and that step is off by default.
+There is exactly one thing about a game that cannot be read off the disk — what it is
+*about*. That has to come from a catalogue, and that step is off by default.
 
 ## Before you download
 
@@ -64,6 +64,11 @@ Windows 10 / 11:
 
 There is no code-signing certificate, so Windows SmartScreen will stop you once: *More info →
 Run anyway*.
+
+Releases come in two lines: **stable** is an ordinary release, and **beta** is one marked as a
+prerelease on GitHub (tagged like `v0.12.0-beta.1`). Which line the program looks at is a
+setting — see *About and updates* below. Choosing beta does not pin you to it: a stable release
+newer than the newest beta is still offered.
 
 ## At a glance
 
@@ -239,6 +244,51 @@ generation, capture method and GPU selection all follow what you set in its own 
 program does not understand a single one of those fields, and so cannot decide any of them on
 your behalf.
 
+**When streamed taps land in the wrong place, the coordinates can be mapped back.** An
+upscaler of this kind only enlarges the picture: the game's window stays where it was, a small
+rectangle in the middle of the screen, and input never passes through the upscaler at all. With
+a mouse you would never notice, because the capture includes the cursor — the pointer on the
+enlarged picture *is* the real pointer, magnified, so it is over the button it looks like it is
+over. A streaming client sends **absolute** coordinates instead: tapping the screen teleports the
+host's pointer to that screen point, which is almost never inside the game's rectangle, so the
+tap lands on whatever else is there. Switch on *Map streamed tap coordinates* in Settings and
+those coordinates are translated back onto the game while scaling is active — a tap on the
+letterbox is clamped onto the picture, and a tap on another monitor is left alone.
+
+**A small white ring follows your finger on the picture**, and it is not decoration. The
+pointer the stream shows you is **a photograph taken by the upscaler**, and it only takes one
+when the game redraws — a visual novel is a still page, so that pointer sits where it was until
+a click advances the text and it jumps. Reported from a sofa as *"during a drag I only see the
+pointer move at the moment I let go"*, which is exactly that: the release redrew the game, the
+redraw produced a frame, and the frame carried the pointer to where it had been all along. The
+ring is drawn by this program and moves with your finger as it happens. It also settles the
+other half of that report — a screen that keeps changing is one the streaming client keeps
+sending, instead of dropping into the idle frame rate a still picture puts it in and taking a
+second or two to come back out. What felt like a slow touch was a slow *reply*.
+
+It is off by default, and its limits are printed under the switch rather than behind it. It
+**only touches mouse events the system marks as injected**: a mouse plugged into this machine
+does not carry that mark and is unaffected, but **every event a streaming client sends does**,
+including every move — which is the point, and which also means the mouse at the far end of the
+stream goes through it entirely while scaling is active. It equally cannot tell that client from
+any other source, so a macro or accessibility tool injecting mouse input is mapped along with it.
+**If the game runs as administrator and this program does not**, the system refuses to let it
+re-inject the press: those clicks do not land in the wrong place, they do not land at all, and
+the settings page reports the count on its own line in a warning colour. Matching the two —
+both elevated, or neither — is the fix.
+There are two ways out if it misbehaves: close the game (mapping goes inert within half a second
+of scaling stopping) or close this program (the mapping process exits within a second). It stays
+inert until scaling is genuinely running and the game has a window. And **it is not touch
+support**: genuine touch travels as WM_POINTER, which a mouse hook cannot see and which needs a
+UIAccess process to redirect. Magpie ships one and this program does not, so a client sending
+real touch wants that backend instead.
+
+A coordinate on the letterbox is **clamped onto the picture and mapped**, not dropped. That one
+was learned the hard way: the first version dropped it, on the reasoning that there is nothing
+there but black and dropping it could not cause a wrong click — but a streaming client's *moves*
+are injected too, so a pointer that landed on the letterbox could never leave it, because the
+moves that would carry it off were the events being dropped. The mouse stopped dead.
+
 Three rules govern what gets written into its settings file. Only profiles named with a
 `Sakura · ` prefix are ever added or removed, and **none of your own profiles are touched**;
 the original file is backed up into `%APPDATA%\sakura-launcher\lossless\` before the first
@@ -258,7 +308,7 @@ hands off to a different executable once it starts, matching by path finds nothi
 *Change main program…* at the right one, which fixes the playtime tracking at the same time.
 Scaling failing never stops the game itself from running.
 
-### Genre tags (the only online feature, off by default)
+### Genre tags (online, off by default)
 
 Tags like school life, tear-jerker and NTR **are not in the game files** — they are judgements
 about a story, and only a catalogue has them.
@@ -368,6 +418,104 @@ about a story, and only a catalogue has them.
   work
 - Only games that have never been looked up are queried, and none are asked about twice. You
   can stop at any point, or re-query the whole library
+
+### What can be done about a failed launch (all of it behind a button)
+
+The diagnosis says what is wrong. This is the layer above it: **a button for what can be
+done, and an exact command for what cannot.**
+
+- **Nothing runs on its own.** No timer, no startup pass, no "while we are here". Each one
+  happens because you read what it would change and pressed it — the only footing a program
+  has for editing a machine it does not own
+- **Each action records its undo before it acts, not after.** The previous registry value is
+  read *before* it is overwritten; the list of files is built while the attribute is still
+  on them. A journal written afterwards records what was intended, and the difference shows
+  up exactly when the undo is needed
+- **Clear the "came from the internet" mark** — executables extracted from a downloaded
+  archive carry a stream recording where they came from, and SmartScreen and some engines
+  refuse them for it. This is what "Unblock" in the file's properties does. This one **says
+  that it cannot be put back exactly**, because restoring a provenance mark would be
+  inventing one
+- **Clear the read-only attribute** — a folder copied whole off a disc has it on nearly
+  everything, and an engine that cannot write its config gives up. Only the attribute
+  changes, never the content, and which files changed is recorded. A handful of read-only
+  files is ordinary and raises nothing
+- **A folder that cannot be written** — a "run as administrator" flag can be set for the
+  program, in the current user's own settings, needing no elevation to set. If that is
+  already set and it still cannot be written, the only clean answer is to move the game off
+  Program Files — and this program **will not move a game folder**, so it says so instead
+- **Start through a locale emulator** (offered only after a game has actually failed to
+  appear, silently) — looks for your own Locale Emulator, Locale Remulator
+  or ntleas, says plainly when there is none, and downloads nothing. **This one hands over
+  the command rather than doing it**: the main program is also how this program knows which
+  game a tile is, so changing it reaches the travelling `sakura-launcher.md`, what a rescan
+  puts back, and which executable a compatibility setting lands on. The command follows each
+  tool's own source rather than the switch that reads most like what we want — Locale
+  Emulator takes a **bare path** (`-run` opens its config window when no profile file
+  exists), and Locale Remulator's first argument must be a profile GUID, which cannot be
+  invented, so it says to author one in its own window instead.
+  **Do not use it on a game with a Chinese fan translation**: that patch wants the machine's
+  own codepage. And Locale Emulator drives 32-bit processes only — pointing it at a 64-bit
+  game is a silent no-op, so a 64-bit game is never offered it
+- **Compatibility options somebody else set** — Windows' Program Compatibility Assistant
+  applies shims by itself after a program has crashed once and does not mention it. Those
+  can be the reason it will not start now; they can be cleared, and put back exactly
+
+### Per-build launch fixes (offline, and nothing on disk is touched)
+
+Some games fail for a reason that is neither a missing runtime nor a permission, but is
+**inside their own executable**. The clearest case: an engine calls `GetSystemDefaultLangID`,
+insists the system language is Japanese, and returns zero from `WinMain` when it is not. The
+double-click then produces **no window, no error box, no log, and exit code 0** — the entire
+body of evidence is that nothing happened. No runtime and no setting reaches that. Only bytes do.
+
+- **The patch is written to the running process's memory, and to nothing on disk.** So undo
+  means launching without it: the original behaviour is still there because it is all that was
+  ever stored. It is also the only form that works, since executables like these ship packed
+  and the code on disk is encrypted — there is nothing there to change
+- **Found by signature, never written by address.** An address is an artefact of one
+  compilation and points into the middle of an unrelated function on the next. On top of that,
+  **a patch may only overwrite bytes its own signature matched** — a pack asking for anything
+  else is refused when it is read, so no path exists that writes an unverified byte
+- **What makes it safe is how many places matched, not how long the signature is.** A pack
+  says how many matches it expects; more than that and **not one byte is written**, reported
+  as "matched too many places" rather than "not found" — "this build has no such code" and
+  "this signature is not specific enough" are different problems with different fixes
+- **No match means nothing happens, and it is said out loud.** A different version, an applied
+  patch, another release — any of them can make a signature miss. The game still starts,
+  unpatched, and you are told so, rather than finding out half an hour later
+- Packs live in `%APPDATA%\sakura-launcher\fixes\`, one JSON each. **None ship with this
+  program**: a fix is a fact about one build of one game, which is your library and not this
+  program's business to keep a list of. The settings page shows which are installed, and which
+  files there could not be read
+
+### Walkthrough search (online, manual only)
+
+Left-click a tile and the drawer has a *Search for a walkthrough* button at the bottom.
+
+- **Only when you press it.** Scanning, refreshing and launching never ask. It searches
+  with the **Japanese original the catalogue recorded**, because that is what both sites
+  index by and a folder called `032601` means nothing to either. The name it used is left
+  in the box, so it can be corrected and searched again
+- **誠也の部屋** publishes its four thousand walkthroughs on a single page, so that page is
+  **fetched whole and kept**, and searching happens here. The cost is a megabyte; what it
+  buys is that the site never learns which game was opened, answers are still found while
+  it is down, and searching often cannot get anyone rate-limited. The copy lasts a week,
+  and **a failed fetch keeps the old one** rather than blanking it — a feature that says
+  "no walkthrough" because a site was briefly unreachable is worse than one answering
+  from last week
+- **2DFan** has the Chinese walkthroughs, but it answers a query, so the name does leave
+  the machine. What comes back is an HTML fragment that will change shape one day, and
+  **when it does the answer says so** instead of reporting nothing found: a reader that
+  broke is not a fact about the game
+- **Matching is containment, and a short name has to start the title.** `ネコぱら` begins
+  `ネコぱらAfter…` and counts; `air` sits in the middle of `pairing` and does not. That rule
+  was measured rather than guessed — against the real four thousand entries, full titles
+  put the right walkthrough in the top five 200 times out of 200, all eight sampled series
+  prefixes found their own series, and fragments like `恋`, `学園` and `game` returned
+  nothing at all
+- **Neither site having it is not a dead end** — a row of *search elsewhere* links sits
+  underneath: Google, Bing and each site's own search, carrying the same name
 
 ### Keeping track
 
@@ -519,6 +667,49 @@ about a story, and only a catalogue has them.
 - **Splash window** — Electron takes a second or two to get from double-click to a drawn
   shelf, and Windows shows nothing at all during that time, so people click again. Now a small
   cherry-blossom window appears immediately and hands over once the shelf is really ready
+- **It can be driven by a finger** — connect from a tablet over remote desktop and the
+  interface is being tapped. A few things a finger simply **could not reach** are fixed for
+  everyone, mode or no mode, because none of them were better for a mouse either: the
+  submenus in the right-click menu (rating, upscale mode, move to group) only ever opened on
+  hover, and now open on a tap too — before this, **setting a star rating had no other route
+  anywhere in the program**; a long press on a tile is the right button, and that menu is the
+  only way to extract, rate, rename, edit tags, share, back up saves or uninstall; one tap
+  opens a folder, where it used to take a double-click; and the three dots at the end of the
+  top bar draw their glyphs at rest instead of only on hover, so a finger is not left facing
+  three identical dots one of which is close
+- **Rearrange mode (touch only)** — dragging a tile with a finger and scrolling the shelf with
+  one are the same movement, and the browser has to decide which at the moment the gesture
+  *begins*; no amount of holding afterwards can take that back. So reordering by finger asks
+  first: long-press the background → Rearrange tiles. The shelf stops scrolling, tiles can be
+  dragged freely, and a bar at the bottom says how to stop. A mouse is untouched and still
+  drags whenever it likes
+- **Touch mode** — it governs one thing: making buttons, switches and the little × on a tag
+  big enough for a fingertip. The default is Automatic, but **automatic can only detect a real
+  touch screen** — over remote desktop the client injects mouse events, so there is a genuine
+  cursor and every automatic check reports a mouse. Choose On by hand in that case
+
+### About and updates
+
+- **The version is in the top bar**, and on the splash screen too. Which build this exe is
+  should not need a trip to the file properties dialog
+- **The update check happens only when you press the button** — no timer, no switch to
+  remember to turn off, and nothing on startup, on a scan, on a refresh or on a launch goes
+  near the network. What leaves is a GET carrying the program's name and version, and **no
+  identifier, nothing about the library, nothing about the machine**. It is also the one
+  thing this program asks about of its own accord, having forced Magpie's own update check
+  off — which is why you have to be the one to ask
+- **Two lines to follow** — stable sees released versions, beta sees the prereleases as
+  well. **A tag that cannot be read is said out loud** rather than swallowed as "nothing
+  newer": a release tagged `nightly-2026-09-03` sitting at the top of the list, with the one
+  below it exactly matching what you are running, produces a confident "up to date" if it is
+  dropped in silence — and the release that would have contradicted that is precisely the one
+  that got dropped
+- **Finding one only downloads it** — into a folder you pick, which is then opened. **Nothing
+  is ever installed and nothing overwrites itself.** If the transfer breaks off, or what
+  arrives is the wrong size, the half-file is deleted rather than left for you to
+  double-click: a hundred megabytes that stopped at sixty is not a smaller installer, it is a
+  program that will fail halfway through
+- **Links to the repository and to issues are in the settings**, so they need no searching for
 
 ## Where your data lives
 
@@ -596,8 +787,8 @@ npm run dist:portable      # portable only
 All three `dist:*` scripts run `npm run magpie:fetch` first: it **downloads the Magpie
 release from GitHub once and verifies its SHA-256**, unpacking it into `resources/magpie/`
 (not tracked in git). This is the only build step in the project that uses the network, and
-it is a separate matter from the program not using it at runtime — once installed, Magpie's
-own update check is forced off. `npm run dev` works without ever running it; upscaling
+it is a separate matter from the program never going online on its own — once installed,
+Magpie's own update check is forced off. `npm run dev` works without ever running it; upscaling
 simply reports "not set up yet".
 
 ## Development
@@ -622,6 +813,7 @@ npm run tag-test                                  # genre tags: which titles cou
 npm run magpie-test                               # upscaling: the three-state switch (off wholesale means off),
                                                   # config merges staying idempotent, and scaling modes looked
                                                   # up by name rather than by a remembered index
+npm run pointer-test                              # streamed tap coordinates: where the picture lands, what the letterbox does
 npm run lossless-test                             # Lossless Scaling: editing somebody else's config file —
                                                   # every byte outside the profile list unchanged, the same
                                                   # library producing the same file, and only our own removed

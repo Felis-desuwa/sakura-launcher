@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { MessageKey } from '../../../shared/i18n'
 import type { SortKey, TabKey } from '../../../shared/types'
 import { SORT_KEYS, TAB_KEYS } from '../../../shared/types'
@@ -15,6 +16,8 @@ const PAGES: [PageKey, MessageKey][] = [
 
 interface Props {
   page: PageKey
+  /** What this build was packaged as. Empty until the main process has answered. */
+  version: string
   tab: TabKey
   counts: Record<TabKey, number>
   search: string
@@ -30,6 +33,7 @@ interface Props {
 
 export default function TopBar({
   page,
+  version,
   tab,
   counts,
   search,
@@ -44,8 +48,63 @@ export default function TopBar({
 }: Props): React.JSX.Element {
   const t = useT()
 
+  /*
+   * Moving the window with a finger, because the bar's `-webkit-app-region: drag` only
+   * answers to a mouse — under touch a frameless window is otherwise stuck where it
+   * opened.
+   *
+   * Only non-mouse pointers take this path, so nothing about the mouse behaviour changes,
+   * and only presses on the bar itself: `e.target !== e.currentTarget` leaves every
+   * control on it alone, exactly as the `no-drag` opt-outs do for the mouse.
+   */
+  const drag = useRef<{ x: number; y: number; winX: number; winY: number } | null>(null)
+  const frame = useRef<number | null>(null)
+
+  useEffect(() => {
+    const onMove = (e: PointerEvent): void => {
+      const from = drag.current
+      if (!from) return
+      e.preventDefault()
+      // Coalesced to one move per frame: setPosition crosses to the main process, and a
+      // finger produces far more events than the window needs to keep up with.
+      if (frame.current !== null) return
+      frame.current = requestAnimationFrame(() => {
+        frame.current = null
+        const now = drag.current
+        if (!now) return
+        void window.sakura.moveWindow(now.winX + (e.clientX - now.x), now.winY + (e.clientY - now.y))
+      })
+    }
+    const stop = (): void => {
+      drag.current = null
+      if (frame.current !== null) {
+        cancelAnimationFrame(frame.current)
+        frame.current = null
+      }
+    }
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerup', stop)
+    window.addEventListener('pointercancel', stop)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', stop)
+      window.removeEventListener('pointercancel', stop)
+      if (frame.current !== null) cancelAnimationFrame(frame.current)
+    }
+  }, [])
+
+  const startDrag = (e: React.PointerEvent): void => {
+    if (e.pointerType === 'mouse' || e.button !== 0) return
+    if (e.target !== e.currentTarget) return
+    const x = e.clientX
+    const y = e.clientY
+    void window.sakura.startWindowDrag().then(([winX, winY]) => {
+      drag.current = { x, y, winX, winY }
+    })
+  }
+
   return (
-    <header className="topbar">
+    <header className="topbar" onPointerDown={startDrag}>
       {page === 'desktop' ? (
         <span className="brand">❀ Sakura</span>
       ) : (
@@ -54,6 +113,11 @@ export default function TopBar({
           {t('top.back')}
         </button>
       )}
+
+      {/* The build's own version. Deliberately a label and not a control: a `span` in the
+          top bar stays inside `-webkit-app-region: drag`, so this is one more place the
+          window can be picked up rather than one more thing to miss when aiming for it. */}
+      {version && <span className="version-chip">{version}</span>}
 
       {page === 'desktop' && (
         <nav className="tabs">
