@@ -5,12 +5,21 @@ import path from 'node:path'
 import * as db from './db'
 import { t } from './i18n'
 import { watchLaunch } from './launch-watch'
+import { fixPackFor, launchWithFix } from './binfix'
 import { upscaleBeforeLaunch } from './upscale'
 import { beginSession } from './playtime'
 
 export interface LaunchResult {
   ok: boolean
   error?: string
+  /**
+   * The process id, when one was made.
+   *
+   * Only the byte-level fix reads it, and only for as long as the sweep takes. It is not
+   * kept anywhere: a pid is reused by Windows within minutes, so a stored one is a
+   * reference to whatever came next.
+   */
+  pid?: number
 }
 
 /**
@@ -63,7 +72,7 @@ export function spawnDetached(exe: string, args: string[], cwd: string): Promise
       // Only now: until the grace period is up this process object is what carries the
       // failure, and a detached child that started fine outlives us either way.
       child.unref()
-      finish({ ok: true })
+      finish({ ok: true, pid: child.pid })
     }, SPAWN_GRACE_MS)
   })
 }
@@ -87,7 +96,21 @@ export async function launchGame(id: string): Promise<LaunchResult> {
   const cwd =
     game.launchCwd && fs.existsSync(game.launchCwd) ? game.launchCwd : path.dirname(game.exe)
 
-  const result = await spawnDetached(game.exe, game.launchArgs ?? [], cwd)
+  /*
+   * A build with a byte-level fix written for it is started *through* the patcher, and
+   * that is not an optimisation — it is the only ordering that works. The fault this
+   * exists for is decided inside `WinMain`, so the process is gone within a second, while
+   * a cold PowerShell that has to compile an interop stub takes several. Spawning here
+   * and attaching by pid was tried and lost the race every time.
+   *
+   * Only when there are no launch arguments. A recorded argument means this entry is a
+   * chain — a locale emulator, a patch loader — and then `game.exe` is not the binary the
+   * pack was hashed against anyway, so there is nothing to match and nothing to lose.
+   */
+  const pack = (game.launchArgs?.length ?? 0) === 0 ? fixPackFor(game.exe) : null
+  const result = pack
+    ? await launchWithFix(game.id, game.exe, cwd, pack)
+    : await spawnDetached(game.exe, game.launchArgs ?? [], cwd)
   if (!result.ok) return result
 
   // Deliberately not awaited. Both upscalers act on a window rather than on this moment —

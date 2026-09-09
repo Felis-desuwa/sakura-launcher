@@ -10,6 +10,9 @@ import type {
   ExeChoices,
   Game,
   Group,
+  LaunchTrouble,
+  RepairId,
+  RepairRecord,
   SaveBackupJob,
   SavePlan,
   Settings,
@@ -35,6 +38,9 @@ import {
 } from './downloader'
 import { resolveArtwork } from './icon'
 import { diagnoseGame } from './diagnose'
+import { loadPacks, onFixRun } from './binfix'
+import { applyRepair, repairOffers, repairsMade, undoRepair } from './repair'
+import { readPe } from './pe-imports'
 import { setMainLang, t } from './i18n'
 import { cancelWatch, onLaunchTrouble } from './launch-watch'
 import { launchElevated, launchGame, revealInExplorer, spawnDetached } from './launcher'
@@ -440,6 +446,68 @@ function registerIpc(): void {
     const game = db.findGame(id)
     if (!game) return null
     return diagnoseGame(game, since)
+  })
+
+  /**
+   * What can be done about this game, with the evidence for each.
+   *
+   * The diagnosis is re-run here rather than accepted from the renderer. It costs a PE
+   * parse, and it is what keeps the renderer naming a repair by id and never handing over
+   * the facts a repair would be decided on — the same rule that keeps a cover candidate's
+   * path out of the renderer.
+   */
+  ipcMain.handle(
+    'repair:offers',
+    async (_e, id: string, since?: number, trouble?: LaunchTrouble) => {
+      const game = db.findGame(id)
+      if (!game) return []
+      // `trouble` is carried rather than inferred: the locale offer is only ever made about
+      // a game that actually failed, and nothing on this side can tell a silent exit from
+      // a dialog that was never opened by one.
+      return repairOffers(game, await diagnoseGame(game, since), trouble ?? null)
+    }
+  )
+
+  /** Repairs already made to this game that can still be put back. */
+  ipcMain.handle('repair:made', (_e, id: string) => repairsMade(id))
+
+  ipcMain.handle('repair:apply', async (_e, id: string, repair: RepairId) => {
+    const game = db.findGame(id)
+    if (!game) return { ok: false, message: t('err.gameNotFound') }
+    // The architecture decides which locale emulators are even usable, and it is only
+    // knowable from the executable itself.
+    const arch = game.exe ? (readPe(game.exe)?.arch ?? null) : null
+    return applyRepair(repair, game, arch)
+  })
+
+  ipcMain.handle('repair:undo', async (_e, record: RepairRecord) => undoRepair(record))
+
+  /**
+   * What is on the fix shelf, and what is on it that could not be read.
+   *
+   * The second list is the point. A pack is hand-written while somebody is working a fix
+   * out, and one with a typo in it that simply never appears is the worst feedback
+   * available: the fix silently does not run, the game silently does not work, and
+   * nothing connects the two.
+   */
+  ipcMain.handle('fix:packs', () => {
+    const shelf = loadPacks()
+    return {
+      packs: shelf.packs.map((p) => ({
+        name: p.pack.name,
+        note: p.pack.note,
+        exeSha256: p.pack.exeSha256,
+        patches: p.pack.patches.length,
+        file: p.file
+      })),
+      broken: shelf.broken
+    }
+  })
+
+  /** Open the folder packs are read from, which is the only way one gets added. */
+  ipcMain.handle('fix:folder', () => {
+    revealInExplorer(db.fixPackDir())
+    return true
   })
 
   /** The user dismissed the "it did not start" card — stop watching this launch. */
@@ -1314,6 +1382,10 @@ app.whenReady().then(() => {
   // gets the copying — or the backup of somebody else's settings file — out of the way
   // before the first launch needs it.
   warmUpscale()
+  // Every outcome except "this build has no pack" is pushed, including the dull ones. A
+  // launch that ran no fix and a launch whose fix matched nothing are indistinguishable
+  // from outside until the game misbehaves, and closing that gap is the whole point.
+  onFixRun((run) => mainWindow?.webContents.send('fix:run', run))
   // Only the fact that something went wrong is pushed. Running the diagnosis costs a PE
   // parse and a registry read, and it belongs behind the user deciding they want it.
   onLaunchTrouble(({ game, trouble, startedAt }) =>

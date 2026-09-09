@@ -33,7 +33,10 @@
     "share-e2e": "node scripts/share-e2e.mts",
     "translate-test": "node scripts/translate-test.mts",
     "update-test": "node scripts/update-test.mts",
-    "guide-test": "node scripts/guide-test.mts"
+    "guide-test": "node scripts/guide-test.mts",
+    "binfix-test": "node scripts/binfix-test.mts",
+    "binfix-probe": "node scripts/binfix-probe.mts",
+    "repair-test": "node scripts/repair-test.mts"
   },
   "dependencies": {
     "resedit": "^3.0.2"

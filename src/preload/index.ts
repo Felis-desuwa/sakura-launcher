@@ -6,10 +6,15 @@ import type {
   DiskInfo,
   DownloaderKey,
   ExeChoices,
+  FixRun,
   Game,
   Group,
   LaunchTrouble,
   MultiArchiveNotice,
+  RepairId,
+  RepairOffer,
+  RepairRecord,
+  RepairResult,
   UpscaleNotice,
   UpscaleStatus,
   PendingDownload,
@@ -561,7 +566,49 @@ const api = {
     const handler = (_e: unknown, notice: UpscaleNotice): void => cb(notice)
     ipcRenderer.on('upscale:notice', handler)
     return () => ipcRenderer.off('upscale:notice', handler)
-  }
+  },
+
+  /* ---- repairs ---- */
+
+  /**
+   * What can be done about a game that did not start.
+   *
+   * The main process re-runs the diagnosis to answer this. Nothing here hands it the
+   * facts a repair would be decided on — the renderer names a repair by id and no more,
+   * the same rule that keeps a cover candidate's path out of this file.
+   */
+  repairOffers: (
+    id: string,
+    since?: number,
+    trouble?: LaunchTrouble
+  ): Promise<RepairOffer[]> => ipcRenderer.invoke('repair:offers', id, since, trouble),
+  applyRepair: (id: string, repair: RepairId): Promise<RepairResult> =>
+    ipcRenderer.invoke('repair:apply', id, repair),
+  /** Repairs already made to this game that can still be put back. */
+  repairsMade: (id: string): Promise<RepairRecord[]> => ipcRenderer.invoke('repair:made', id),
+  undoRepair: (record: RepairRecord): Promise<RepairResult> =>
+    ipcRenderer.invoke('repair:undo', record),
+
+  /* ---- the byte-level fix, for a build that has one written for it ---- */
+
+  /**
+   * What a launch's fix pack did, pushed after the fact.
+   *
+   * After, because the sweep waits for a packed image to decrypt and the launch is
+   * deliberately not held up for it. Everything but "no pack for this build" arrives here.
+   */
+  onFixRun: (cb: (run: FixRun) => void): (() => void) => {
+    const handler = (_e: unknown, run: FixRun): void => cb(run)
+    ipcRenderer.on('fix:run', handler)
+    return () => ipcRenderer.off('fix:run', handler)
+  },
+  /** Every pack on the shelf, and every file there that is not one. */
+  fixPacks: (): Promise<{
+    packs: { name: string; note?: string; exeSha256: string; patches: number; file: string }[]
+    broken: { file: string; problems: string[] }[]
+  }> => ipcRenderer.invoke('fix:packs'),
+  /** Open the folder packs are read from, which is the only way one gets added. */
+  openFixFolder: (): Promise<boolean> => ipcRenderer.invoke('fix:folder')
 }
 
 export type SakuraApi = typeof api

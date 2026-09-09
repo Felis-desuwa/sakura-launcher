@@ -310,6 +310,17 @@ export default function App(): React.JSX.Element {
     // language change is already in the new one — the same reason `tr` exists at all.
     // None of these are failures of the launch: the game is running regardless.
     const offUpscale = window.sakura.onUpscaleNotice(({ key, vars }) => toast(tr(key, vars), true))
+    // A byte-level fix reports whatever it did, and "it found nothing" is reported as
+    // loudly as "it worked": an unpatched launch and a patched one look the same from
+    // here right up until the game misbehaves, which is exactly too late to learn it.
+    const offFix = window.sakura.onFixRun((run) => {
+      const pack = run.packName ?? ''
+      if (run.state === 'applied') return toast(tr('fix.applied', { pack }))
+      if (run.state === 'partial') return toast(tr('fix.partial', { pack }), true)
+      if (run.state === 'notFound') return toast(tr('fix.notFound', { pack }), true)
+      if (run.state === 'ambiguous') return toast(tr('fix.ambiguous', { pack }), true)
+      if (run.state === 'failed') return toast(run.error ?? tr('fix.err.noAnswer'), true)
+    })
     const offDb = window.sakura.onDbChanged(() => void refresh())
     const offPlaytime = window.sakura.onPlaytime(({ id, playtimeMs, playing: running }) => {
       setGames((cur) => cur.map((g) => (g.id === id ? { ...g, playtimeMs } : g)))
@@ -326,6 +337,7 @@ export default function App(): React.JSX.Element {
       offTrouble()
       offMultiArchive()
       offUpscale()
+      offFix()
     }
   }, [refresh, toast, tr])
 

@@ -1869,6 +1869,18 @@ export interface Settings {
    * happens: the check runs when that button is pressed and at no other time.
    */
   updateChannel: UpdateChannel
+
+  /**
+   * Paths to locale emulators the user pinned by hand.
+   *
+   * A standing control rather than a fallback for when the automatic search fails, and
+   * the same reasoning as the Lossless Scaling pin: the search reads registry keys that
+   * an installer may never have written — a portable copy, an unpacked archive, an
+   * uninstall that left the key behind — and a path pinned once must not outlive the
+   * install it pointed at. A file that is not the tool it claims to be is refused rather
+   * than stored, because a bad pin outranks the search from then on.
+   */
+  localeTools?: Partial<Record<LocaleTool, string>>
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -1929,6 +1941,17 @@ export interface Database {
    * than removing did.
    */
   removed: Game[]
+  /**
+   * Repairs made to the machine, and how to put each one back.
+   *
+   * Here rather than in the sidecar for the same reason group membership and tile order
+   * are: a compatibility shim and a file attribute describe *this* machine, not the game.
+   * A sidecar carrying them would travel to another computer and offer to undo something
+   * that was never done there.
+   *
+   * Optional so an older database opens without one.
+   */
+  repairs?: RepairRecord[]
 }
 
 /** How many removal records to keep. Past this the oldest fall off. */
@@ -1998,6 +2021,278 @@ export interface Diagnosis {
  * to anything counting processes.
  */
 export type LaunchTrouble = 'noshow' | 'earlyexit' | 'dialog'
+
+/* ---------- repairs the machine can make, as opposed to ones only bytes can ---------- */
+
+/**
+ * Something the launcher can do about a launch failure, rather than merely name.
+ *
+ * The diagnosis was deliberately read-only, and that stays true of the *diagnosis*. This
+ * is the layer above it: a small, closed set of actions, each one either reversible
+ * exactly or not offered as an action at all.
+ *
+ * **Nothing here ever runs on its own.** Every one is behind a button the user presses
+ * after reading what it will change, for the same reason the update check has no timer:
+ * a program that edits a machine's settings unasked has to be right every time, and this
+ * one is reasoning from evidence that is sometimes ambiguous.
+ */
+export type RepairId =
+  | 'unblock'
+  | 'clear-readonly'
+  | 'compat-layer'
+  | 'locale-chain'
+  | 'install-fonts'
+  | 'not-writable'
+
+/**
+ * Whether the program does it, or explains it.
+ *
+ * `guide` is not a lesser outcome and there are more of these than `act` on purpose. A
+ * repair that needs administrator rights, or that would move somebody's folder, or that
+ * this program has no business doing to a machine, is worth far more as an exact
+ * instruction than as a button that half works.
+ */
+export type RepairKind = 'act' | 'guide'
+
+export interface RepairOffer {
+  id: RepairId
+  kind: RepairKind
+  title: string
+  detail: string
+  /** Why this is being offered — the same voice as `DiagnosisCheck.reasons`. */
+  reasons: string[]
+  /**
+   * Exactly what it will change, listed before it is pressed.
+   *
+   * Not a summary. This is the thing that lets somebody decline, and a vague line here
+   * ("fixes compatibility") makes the decision impossible to take.
+   */
+  changes: string[]
+  /**
+   * Whether it can be put back precisely, which is not the same as "harmless".
+   *
+   * `unblock` is the honest awkward case: removing the mark that says a file came from
+   * the internet cannot be undone and does not need to be, and saying so is better than
+   * a reassuring word that is not true.
+   */
+  undoable: boolean
+  needsAdmin: boolean
+  /** For a `guide`: the exact command, to be read or copied — never run from here. */
+  command?: string
+}
+
+/** Which locale emulator, of the three that are actually in use. */
+export type LocaleTool = 'le' | 'lr' | 'ntleas'
+
+export interface LocaleToolFound {
+  tool: LocaleTool
+  /** The program that gets spawned: `LEProc.exe`, `LRProc.exe`, `ntleas.exe`. */
+  exe: string
+  /** What it can drive. Locale Emulator is 32-bit only, and offering it for a 64-bit game is a silent no-op. */
+  fits: ('x86' | 'x64')[]
+}
+
+/** Enough to put a repair back exactly, or `none` when there is nothing to put back. */
+export type RepairUndo =
+  | { kind: 'compat-layer'; exe: string; previous: string | null }
+  | { kind: 'readonly'; files: string[] }
+  | { kind: 'none' }
+
+export interface RepairRecord {
+  id: RepairId
+  gameId: string
+  at: number
+  /** What was done, in the user's language at the time. Kept for the list, not for the undo. */
+  summary: string
+  undo: RepairUndo
+}
+
+/** How many repairs to remember. Past this the oldest fall off. */
+export const MAX_REPAIRS = 200
+
+export interface RepairResult {
+  ok: boolean
+  /** What happened, ready to show. */
+  message: string
+  /** Present when the repair could be put back, so the dialog can offer it. */
+  record?: RepairRecord
+}
+
+/* ---------- patching a build that is broken in a way only its own bytes explain ---------- */
+
+/**
+ * A byte-level fix for one specific build of one specific game.
+ *
+ * This exists because the diagnosis has a floor it cannot get under. It can say a game
+ * exits without a word, and it can say the machine is not Japanese — but the reason those
+ * two facts are connected is a conditional jump inside somebody else's executable, and no
+ * amount of reasoning about redistributables reaches it. The engine that prompted this
+ * calls `GetSystemDefaultLangID`, compares against `LANG_JAPANESE`, and on anything else
+ * returns from `WinMain` with zero. No window, no message, no log, exit code 0.
+ *
+ * Four rules keep this from becoming a liability, and every one of them is load-bearing:
+ *
+ * 1. **Nothing on disk is ever written.** The patch is applied to the running process's
+ *    memory and to nothing else, which is what makes it perfectly reversible: launching
+ *    the game without the fix gets the original behaviour back, because the original
+ *    behaviour is all that was ever stored. It is also the only form that works at all
+ *    on the packed executables this is for — Themida and its relatives decrypt at
+ *    runtime, so on disk there is nothing to patch.
+ * 2. **Never an address, always a signature.** An offset that was right for one build
+ *    writes into the middle of an unrelated function on the next, and the failure mode is
+ *    a corrupted process rather than a message. `PATCH_SIG` carries wildcards for exactly
+ *    the bytes that move — relocated call targets, jump displacements.
+ * 3. **A patch may only overwrite bytes the signature itself matched.** `at + fix.length`
+ *    has to fit inside the signature, so there is no reachable way to write a byte that
+ *    was not verified first. `readFixPack` refuses a pack that breaks this.
+ * 4. **Not found means not applied, and it is said out loud.** A signature that misses is
+ *    a build this pack was not written for. The game still starts; what does not happen
+ *    is a silent write somewhere hopeful.
+ *
+ * Packs are read from `%APPDATA%\sakura-launcher\fixes\*.json` and are deliberately
+ * **not** part of this repository. Two reasons, and the second is the real one: a fix is
+ * a fact about one build of one commercial game, which is somebody's library and not this
+ * program's business to carry a list of — and a pack that lives in the data directory can
+ * be written, corrected and thrown away without a release.
+ */
+export const FIX_PACK_FORMAT = 1
+
+/** Where a pack's patches are hunted for. Defaults suit a 32-bit image with no ASLR. */
+export interface FixScanRange {
+  /** Inclusive start, as a hex string so a pack stays readable. */
+  from: string
+  /** Exclusive end. */
+  to: string
+  /**
+   * How long to keep sweeping before giving up.
+   *
+   * The point of a timeout rather than a single look: a packed executable decrypts a
+   * moment after it starts, so the bytes are simply not there yet at t=0. Measured on the
+   * build this was written against, the gate appears within one to three seconds.
+   */
+  timeoutMs: number
+}
+
+export const DEFAULT_FIX_SCAN: FixScanRange = {
+  from: '0x400000',
+  to: '0x1000000',
+  timeoutMs: 15_000
+}
+
+/** A condition that switches a patch off when it is already unnecessary. */
+export interface FixCondition {
+  /**
+   * Skip the patch when this file exists. Environment variables in `%NAME%` form are
+   * expanded.
+   *
+   * The case this was written for: an engine asks GDI for `ＭＳ 明朝`, which Windows 10
+   * and 11 do not ship — `msgothic.ttc` is there, `msmincho.ttc` is in an optional
+   * feature. Rewriting the font name works, and is the wrong thing to do to a machine
+   * that has since installed the font pack.
+   */
+  skipIfFileExists?: string
+}
+
+export interface FixPatch {
+  /** What it is for, in the pack author's words. Shown in the report verbatim. */
+  name: string
+  /**
+   * Bytes to find, as hex pairs separated by spaces, with `??` for a byte that may be
+   * anything: `6A 00 FF 15 ?? ?? ?? ?? 85 C0`.
+   */
+  sig: string
+  /** How far into the match the replacement starts. */
+  offset: number
+  /** Replacement bytes, same notation but with no wildcards. */
+  fix: string
+  /**
+   * Whether the pack has failed if this one is not found.
+   *
+   * A required patch that misses aborts the whole pack rather than applying the rest: a
+   * half-patched engine is a state nobody has tested, and the one thing worse than a game
+   * that will not start is a game that starts and then behaves in a way no report explains.
+   */
+  required?: boolean
+  /**
+   * Patch every occurrence rather than the first.
+   *
+   * Not a convenience. Compilers inline small helpers, so the same lead-byte test can sit
+   * in the image twice, and patching one of two copies is exactly the half-patched state
+   * above.
+   */
+  all?: boolean
+  /**
+   * How many matches this signature is expected to have. Nothing is written past it.
+   *
+   * This is where the safety actually lives, and it is worth being clear about why it is
+   * not the signature's length. A signature is a *hypothesis* about where something is;
+   * how many places it matches is a *measurement*, and comparing the two before writing
+   * anything is the only check available that is about this machine's copy of this build
+   * rather than about byte entropy in the abstract. A patch that names one site and finds
+   * nine has not found its site nine times — it has found something else.
+   *
+   * Defaults to one, or to `DEFAULT_ALL_HITS` when `all` is set.
+   */
+  maxHits?: number
+  unless?: FixCondition
+}
+
+export interface FixPack {
+  formatVersion: number
+  /** A name for the report. Never used for matching. */
+  name: string
+  /** Why this build needs patching, in prose. Shown to whoever runs it. */
+  note?: string
+  /** SHA-256 of the executable this pack was written against, lowercase hex. */
+  exeSha256: string
+  /** Its size in bytes — a free first filter, and a check on the hash being about this file. */
+  exeSize?: number
+  scan?: FixScanRange
+  patches: FixPatch[]
+}
+
+/** What became of one patch. */
+export interface FixPatchOutcome {
+  name: string
+  /** Addresses it was written to. Empty when it was not found or was skipped. */
+  at: string[]
+  /**
+   * `ambiguous` means the signature matched more places than the pack said it would, and
+   * **nothing was written**. It is deliberately not folded into `notFound`: one says the
+   * pattern is absent, the other says the pattern is not specific enough to act on, and
+   * the fix for them is not the same.
+   */
+  state: 'applied' | 'notFound' | 'ambiguous' | 'skipped' | 'writeFailed'
+  /** How many places matched, when that is the interesting part. */
+  hits?: number
+}
+
+/**
+ * What became of a whole pack.
+ *
+ * `noPack` and `mismatch` are separate from `failed` because they are not faults: the
+ * first means this game has no fix written for it, the second that the executable is not
+ * the build the fix was written against — a patch, an update, a different release. Both
+ * are ordinary and neither is worth an alarm.
+ */
+export type FixRunState =
+  | 'applied'
+  | 'partial'
+  | 'notFound'
+  | 'ambiguous'
+  | 'mismatch'
+  | 'noPack'
+  | 'failed'
+  | 'off'
+
+export interface FixRun {
+  gameId: string
+  state: FixRunState
+  packName?: string
+  patches: FixPatchOutcome[]
+  /** Present on `failed`, and always something a person can act on. */
+  error?: string
+}
 
 /* ---------- sharing a game ---------- */
 

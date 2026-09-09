@@ -1236,6 +1236,190 @@ export const MESSAGES = {
   'settings.7zFound': { zh: '已检测到，可解压压缩包条目', en: 'Found — archive entries can be extracted' },
   'settings.7zMissing': { zh: '未检测到，无法解压', en: 'Not found — extraction is unavailable' },
 
+  /* ---- repairs the machine can make ---- */
+  'repair.section': { zh: '可以试的修复', en: 'What can be done about it' },
+  'repair.none': {
+    zh: '没有能自动做的修复。上面的判断该怎么处理，得你来定。',
+    en: 'There is nothing here that can be done automatically. What to do about the findings above is yours to decide.'
+  },
+  'repair.changes': { zh: '它会改动：', en: 'It will change:' },
+  'repair.apply': { zh: '执行', en: 'Do it' },
+  'repair.applying': { zh: '正在执行…', en: 'Working…' },
+  'repair.undo': { zh: '撤销', en: 'Undo' },
+  'repair.undone': { zh: '已撤销', en: 'Put back' },
+  'repair.notUndoable': {
+    zh: '这一项做完之后无法精确还原',
+    en: 'This one cannot be put back exactly'
+  },
+  'repair.needsAdmin': { zh: '需要管理员权限', en: 'Needs administrator rights' },
+  'repair.copyCommand': { zh: '复制命令', en: 'Copy the command' },
+  'repair.copied': { zh: '已复制', en: 'Copied' },
+  'repair.failed': { zh: '没做成：{why}', en: 'It did not work: {why}' },
+
+  'repair.unblock.title': { zh: '清掉「来自网络」的标记', en: 'Clear the “came from the internet” mark' },
+  'repair.unblock.detail': {
+    zh: '从压缩包解出来的文件会带一个记录来源的附加数据流，SmartScreen 和一部分引擎会因此拒绝加载。清掉它等同于文件属性里的「解除锁定」，不会削弱 SmartScreen 本身，也不动文件内容。',
+    en: 'Files extracted from a downloaded archive carry a small stream recording where they came from, and SmartScreen — and some engines loading their own DLLs — refuse them because of it. Clearing it is what “Unblock” in the file’s properties does: it weakens no policy and touches no content.'
+  },
+  'repair.unblock.reason': { zh: '{n} 个可执行文件带着这个标记，例如 {names}', en: '{n} executables carry the mark, among them {names}' },
+  'repair.unblock.change': { zh: '{n} 个文件的 Zone.Identifier 数据流会被删除', en: 'The Zone.Identifier stream on {n} files is deleted' },
+
+  'repair.readonly.title': { zh: '去掉只读属性', en: 'Clear the read-only attribute' },
+  'repair.readonly.detail': {
+    zh: '整个文件夹几乎每个文件都是只读的 —— 这是从光盘或只读介质整份拷出来的样子。引擎写不了自己的配置和存档就会当场退出。只改属性，不动内容，而且记下改了哪些，随时能原样放回去。',
+    en: 'Nearly every file in the folder is read-only, which is the shape a folder has after being copied whole off a disc or other read-only media. An engine that cannot write its own config or save gives up on the spot. Only the attribute changes, never the content, and which files were changed is recorded so they can be put back exactly.'
+  },
+  'repair.readonly.reason': { zh: '{total} 个文件里有 {n} 个是只读的', en: '{n} of {total} files are read-only' },
+  'repair.readonly.change': { zh: '{n} 个文件的只读属性会被清除', en: 'The read-only attribute is cleared on {n} files' },
+
+  'repair.notWritable.title': { zh: '这个文件夹写不进去', en: 'This folder cannot be written to' },
+  'repair.notWritable.detail': {
+    zh: '在这个文件夹里连一个临时文件都建不出来。老引擎把配置和存档就写在自己旁边，写不了通常就是一声不响地退出。可以给这个程序加一条「以管理员身份运行」——写在当前用户的兼容性设置里，不需要管理员权限就能加，也随时能撤销。',
+    en: 'Not even a throwaway file can be created here. Older engines write their config and saves next to themselves, and one that cannot usually exits without a word. A “run as administrator” flag can be set for this program — written to the current user’s compatibility settings, which needs no elevation to set and can be undone at any time.'
+  },
+  'repair.notWritable.already': {
+    zh: '已经设了「以管理员身份运行」，但文件夹还是写不进去。多半是它在 Program Files 下面，或者在只读的盘上 —— 这种情况唯一干净的办法是把游戏挪到别处，而这个程序不会替你搬动游戏文件夹。',
+    en: 'A “run as administrator” flag is already set and the folder still cannot be written to. It is most likely under Program Files, or on a read-only volume — and the only clean answer there is to move the game somewhere else, which this program will not do to a game folder on its own.'
+  },
+  'repair.notWritable.reason': { zh: '在游戏文件夹里建临时文件失败了', en: 'Creating a throwaway file in the game folder failed' },
+
+  'repair.virtualStore.title': {
+    zh: '这个游戏一直在正常存档，只是不存在你以为的地方',
+    en: 'This game has been saving fine — just not where you would think'
+  },
+  'repair.virtualStore.detail': {
+    zh: '游戏文件夹确实写不进去，但 Windows 一直在替它改道：老程序写受保护目录时会被悄悄重定向到 VirtualStore，游戏自己读得到，所以一直是好的。\n\n**所以这里什么都不做，尤其不会加「以管理员身份运行」** —— 提权的进程不走这套重定向，游戏会改去写真实路径，于是那边攒下的存档会一次性从读取画面上消失。要备份存档的话，去下面这个目录取。',
+    en: 'The game folder really is unwritable, but Windows has been redirecting around it all along: an older program writing to a protected location is silently sent to the VirtualStore instead, and the game reads it back, so nothing has ever been wrong.\n\n**So nothing is offered here, least of all “run as administrator”** — an elevated process is not redirected, the game would start writing to the real path, and every save built up over there would vanish from its load screen at once. To back the saves up, take them from the folder below.'
+  },
+  'repair.virtualStore.reason': { zh: '存档实际在：{path}', en: 'The saves are actually in: {path}' },
+  'repair.notWritable.change': { zh: '在 {key} 下为这个程序加一条 RUNASADMIN', en: 'A RUNASADMIN entry for this program is added under {key}' },
+
+  'repair.locale.title': { zh: '用 {tool} 启动', en: 'Start it through {tool}' },
+  'repair.locale.detail': {
+    zh: '下面这条命令会经由区域模拟器启动这个游戏。**如果这个游戏打了中文补丁，别用** —— 中文补丁要的正是系统当前的中文代码页，强行套成日文反而会让文字出问题。\n\n觉得可行的话，在「更换主程序…」里把模拟器设成主程序、把这条命令后面的部分设成启动参数，双击磁贴就是完整的这一串。这里不替你改，因为主程序同时也是这个程序记录游戏身份的地方 —— 换掉它会波及随文件夹走的 `sakura-launcher.md`、重新扫描时的还原，以及兼容性选项写在谁头上。',
+    en: 'The command below starts this game through a locale emulator. **Do not use it on a game with a Chinese fan translation** — that patch wants the machine’s own Chinese codepage, and forcing Japanese on it breaks the text rather than fixing it.\n\nIf it looks right, set the emulator as the main program under “Change main program…” and the rest of the line as its arguments; double-clicking the tile then runs the whole chain. It is not done for you here because the main program is also how this program knows which game this is — changing it reaches the travelling `sakura-launcher.md`, what a rescan puts back, and which executable a compatibility setting lands on.'
+  },
+  'repair.locale.needsProfile': {
+    zh: 'Locale Remulator 必须先在它自己的界面里建一个配置，启动命令的第一个参数是那个配置的 GUID，这里没法替你编出来。打开它建好配置之后，用它自己的右键菜单启动游戏。',
+    en: 'Locale Remulator needs a profile authored in its own window first: the launch command takes that profile’s GUID as its first argument, and there is no way to invent one here. Create one there, then start the game from its own context menu.'
+  },
+  'repair.locale.reason': { zh: '这台机器上找到了 {path}', en: 'Found on this machine: {path}' },
+  'repair.locale.change': { zh: '这条磁贴的主程序改成 {tool}，游戏本体作为参数', en: 'This tile’s main program becomes {tool}, with the game itself as its argument' },
+  'repair.locale.name.le': { zh: 'Locale Emulator', en: 'Locale Emulator' },
+  'repair.locale.name.lr': { zh: 'Locale Remulator', en: 'Locale Remulator' },
+  'repair.locale.name.ntleas': { zh: 'ntleas', en: 'ntleas' },
+  'repair.locale.noneTitle': { zh: '这台机器上没有区域模拟器', en: 'No locale emulator on this machine' },
+  'repair.locale.noneDetail': {
+    zh: '这类工具是你自己装的东西，这个程序不带、也不会去下载。装好之后再回来看这里，它会被自动认出来。',
+    en: 'These are your own tools; this program ships none and downloads none. Install one and come back — it will be recognised automatically.'
+  },
+  'repair.locale.wrongArch': {
+    zh: '找到的模拟器带不动 {arch} 的程序。Locale Emulator 只能驱动 32 位进程，对 64 位游戏是彻底的空操作 —— 不报错，也不生效。64 位要用 Locale Remulator 或 ntleas 的 x64 版。',
+    en: 'The emulator found here cannot drive a {arch} program. Locale Emulator handles 32-bit processes only, and pointing it at a 64-bit game is a complete no-op — no error, no locale. For 64-bit use Locale Remulator or the x64 build of ntleas.'
+  },
+
+  'repair.fonts.title': { zh: '缺日文字体', en: 'The Japanese fonts are missing' },
+  'repair.fonts.detail': {
+    zh: 'Windows 10/11 只带 MS Gothic，**不带 MS Mincho** —— 它在可选功能「日语补充字体」里。引擎向 GDI 要一个不存在的字体，有的会画不出字，有的会直接抛异常。装它需要管理员权限，所以这里只给出命令；也可以在「设置 → 系统 → 可选功能」里点着装。',
+    en: 'Windows 10 and 11 ship MS Gothic but **not MS Mincho** — it lives in the “Japanese Supplemental Fonts” optional feature. An engine asking GDI for a font that is not there either draws nothing or throws. Installing it needs administrator rights, so what is offered here is the command; Settings → System → Optional features does the same thing by hand.'
+  },
+  'repair.fonts.reason': { zh: '找不到：{names}', en: 'Not present: {names}' },
+
+  'repair.layers.title': { zh: '有别人设过的兼容性选项', en: 'Somebody has set compatibility options here' },
+  'repair.layers.detail': {
+    zh: 'Windows 的程序兼容性助手会在游戏崩过一次之后自己加上兼容性选项，而且不会告诉你。这些选项本身可能就是现在起不来的原因。清掉之后如果更糟，可以原样放回去。',
+    en: 'Windows’ Program Compatibility Assistant applies compatibility shims by itself after a program has crashed once, and does not mention it. Those shims can be the reason it will not start now. If clearing them makes things worse, they can be put back exactly.'
+  },
+  'repair.layers.reason': { zh: '当前设着：{tokens}', en: 'Currently set: {tokens}' },
+  'repair.layers.change': { zh: '{key} 下这个程序的那一条会被删除', en: 'This program’s entry under {key} is removed' },
+
+  'repair.done.unblock': { zh: '清掉了 {n} 个文件的来源标记', en: 'Cleared the mark on {n} files' },
+  'repair.left.unblock': {
+    zh: '还有 {n} 个没清掉 —— 多半是被别的进程占着，关掉游戏再试一次',
+    en: '{n} could not be cleared — most likely another process has them open. Close the game and try again'
+  },
+  'repair.done.readonly': { zh: '去掉了 {n} 个文件的只读属性', en: 'Cleared the read-only attribute on {n} files' },
+  'repair.undone.readonly': { zh: '{n} 个文件的只读属性已放回去', en: 'The read-only attribute is back on {n} files' },
+  'repair.done.runAsAdmin': {
+    zh: '已设成以管理员身份运行。下次启动会弹 UAC。',
+    en: 'Set to run as administrator. The next launch will raise a UAC prompt.'
+  },
+  'repair.done.layersCleared': { zh: '已清掉：{tokens}', en: 'Cleared: {tokens}' },
+  'repair.done.locale': {
+    zh: '这条磁贴改成经由 {tool} 启动了',
+    en: 'This tile now starts through {tool}'
+  },
+  'repair.already.layer': { zh: '已经设过了，没有可改的', en: 'It is already set; there was nothing to change' },
+  'repair.already.noLayer': { zh: '现在并没有设任何兼容性选项', en: 'No compatibility options are set right now' },
+  'repair.regFailed': { zh: '注册表写不进去', en: 'the registry write was refused' },
+  'repair.guideOnly': { zh: '这一条只能你自己做', en: 'This one is yours to do' },
+  'repair.doneSection': { zh: '已经做过的', en: 'Already done' },
+
+  /* ---- the byte-level fix, when a build has one written for it ---- */
+  'settings.fixSection': { zh: '逐版本启动修复', en: 'Per-build launch fixes' },
+  'settings.fixHint': {
+    zh: '有些游戏起不来，原因在它自己的可执行文件里 —— 比如引擎硬性要求系统语言是日文，否则一声不吭地退出。这类问题装什么运行库都没用，只能改字节。修复只写进**运行中进程的内存**，不动磁盘上的任何文件：不想要了，下次直接启动就是原样。特征码对不上就什么都不做，并且会说出来。',
+    en: 'Some games fail for a reason that is inside their own executable — an engine that demands a Japanese system language and exits without a word on anything else, say. No runtime install touches that; only bytes do. A fix is written to the **running process’s memory** and to nothing on disk, so undoing it means launching without it. A signature that does not match does nothing at all, and says so.'
+  },
+  'settings.fixShelf': { zh: '已装的修复包', en: 'Packs installed' },
+  'settings.fixChecking': { zh: '正在读…', en: 'Reading…' },
+  'settings.fixEmpty': { zh: '一个都没有', en: 'None' },
+  'settings.fixCount': { zh: '{n} 个', en: '{n}' },
+  'settings.fixOpenFolder': { zh: '打开目录', en: 'Open the folder' },
+  'settings.fixPackLine': {
+    zh: '{n} 处补丁，对应 exe 的 SHA-256 以 {sha} 开头',
+    en: '{n} patches, for the executable whose SHA-256 starts {sha}'
+  },
+  'fix.section': { zh: '启动修复', en: 'Launch fix' },
+  'fix.applied': {
+    zh: '已按「{pack}」修补了这次启动',
+    en: 'This launch was patched from “{pack}”'
+  },
+  'fix.partial': {
+    zh: '「{pack}」只有一部分对得上这个版本，已修补的那些生效了',
+    en: 'Only part of “{pack}” matched this build; what did match was applied'
+  },
+  'fix.notFound': {
+    zh: '「{pack}」里的特征在这次启动的内存里没找到 —— 多半不是它写的那个版本，游戏照常运行，只是没打补丁',
+    en: 'Nothing in “{pack}” matched what was in memory — most likely a different build. The game ran as usual, unpatched'
+  },
+  'fix.ambiguous': {
+    zh: '「{pack}」里的特征在内存里对上了太多处，无法确定该改哪个，**一个字节都没有写**',
+    en: 'Signatures in “{pack}” matched more places than the pack expects, so which one to write to is not decided — **nothing was written**'
+  },
+  'fix.patchApplied': { zh: '{name} —— 已写入 {at}', en: '{name} — written at {at}' },
+  'fix.patchAmbiguous': {
+    zh: '{name} —— 对上了 {hits} 处，超出预期，没有写入',
+    en: '{name} — matched {hits} places, more than expected, so nothing was written'
+  },
+  'fix.patchNotFound': { zh: '{name} —— 没找到', en: '{name} — not found' },
+  'fix.patchSkipped': { zh: '{name} —— 已不需要，跳过', en: '{name} — no longer needed, skipped' },
+  'fix.patchWriteFailed': { zh: '{name} —— 找到了但写不进去', en: '{name} — found, but could not be written' },
+  'fix.broken': {
+    zh: '{file} 不是一份能用的修复包：{problems}',
+    en: '{file} is not a usable fix pack: {problems}'
+  },
+  'fix.err.plan': {
+    zh: '这份修复包读进来了却拼不出补丁计划 —— 这是程序自己的问题，请报告',
+    en: 'The pack parsed but no patch plan could be built from it — that is a fault here, please report it'
+  },
+  'fix.err.timeout': {
+    zh: '修补程序超时了，游戏没有被改动',
+    en: 'The patcher timed out. Nothing was written to the game'
+  },
+  'fix.err.noAnswer': {
+    zh: '修补程序没有给出结果 —— 可能被安全软件拦下了',
+    en: 'The patcher returned no answer — a security product may have stopped it'
+  },
+  'fix.err.openProcess': {
+    zh: '打不开游戏进程。游戏若以管理员身份运行，启动器也要以管理员身份运行才行',
+    en: 'Could not open the game process. A game running as administrator needs the launcher to be running as administrator too'
+  },
+  'fix.err.exited': {
+    zh: '还没来得及修补，游戏就已经退出了',
+    en: 'The game exited before it could be patched'
+  },
+
   /* ---- walkthroughs ---- */
   'drawer.guides': { zh: '攻略', en: 'Walkthroughs' },
   'drawer.guideSearch': { zh: '搜索攻略', en: 'Search for a walkthrough' },

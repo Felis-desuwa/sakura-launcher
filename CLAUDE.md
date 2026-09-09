@@ -56,6 +56,8 @@ npm run display-test     # the machine: which screen, whether HDR is on, what a 
 npm run pointer-test     # putting a streamed tap back on the game: where the picture lands
 npm run update-test      # the manual update check: version precedence, channels, which asset
 npm run guide-test       # walkthrough search: what normalises away, what counts as a match
+npm run binfix-test      # per-build byte fixes: what a fix pack may ask for, and what it may not
+npm run repair-test      # what may be offered as a repair, and — mostly — what may not
 npm run share-test       # share exclusion rules
 npm run share-e2e        # calls a real 7-Zip; asserts the source folder is unchanged afterwards
 ```
@@ -66,7 +68,16 @@ Three harnesses need a real folder passed in — **no path is ever hardcoded in 
 node scripts/scan-test.mts "<library folder>"       # what the scanner sees
 node scripts/icon-test.mts --scan "<library folder>" # icon sizes extracted per exe
 npm run diagnose-probe -- "<one game folder>"        # everything the diagnosis can see, read-only
+npm run binfix-probe -- "<pack.json>" ["<game.exe>"] # run a fix pack against a real game, once
 ```
+
+`binfix-probe` is the only harness here that **starts a game** — and it has to. `binfix-test`
+can prove the rules refuse a bad pack, but nothing offline can prove that a signature is
+anywhere in a real image, that a packed executable decrypts inside the timeout, or that
+`WriteProcessMemory` is allowed to land, and those three are what decide whether the feature
+works at all. It stops the game again afterwards. Given a pack and no executable it only
+reads the pack. It lifts the PowerShell out of `src/main/binfix.ts` rather than carrying a
+copy, because a copy would go on passing after the real one had rotted.
 
 `diagnose-test` deliberately validates the PE parser against real `C:\Windows\System32` binaries
 rather than a committed fixture. Never add binary samples to the repo.
@@ -101,7 +112,7 @@ Always pass `--user-data-dir`; without it this writes to the user's actual
 `pe-imports.ts`, `tag-rules.ts`, `tag-bangumi.ts`, `cover-rules.ts`, `translate-rules.ts`,
 `upscale-rules.ts`, `magpie-rules.ts`, `magpie-config.ts`, `lossless-rules.ts`,
 `lossless-config.ts`, `pointer-map-rules.ts`, `display-rules.ts`, `update-rules.ts`,
-`guide-rules.ts` **must not import electron**. The `.mts` harnesses load them directly under node, which is what makes the
+`guide-rules.ts`, `binfix-rules.ts`, `repair-rules.ts` **must not import electron**. The `.mts` harnesses load them directly under node, which is what makes the
 logic testable without a window. They also spell out `.ts` in their relative imports (`from
 './i18n.ts'`) because node has no bundler to fill the extension in — `allowImportingTsExtensions`
 is on in `tsconfig.node.json` for exactly this. If you add an import to one of these files, keep
@@ -748,6 +759,139 @@ These come from user decisions and are load-bearing. Violating one is a bug even
     only decides which walkthrough to offer. The folds it adds were measured as flat-zero
     gaps against this corpus: fullwidth digits, fullwidth latin, halfwidth katakana, and
     unbracketed Japanese edition words.
+- **A missing DLL is not missing until WinSxS has been looked in.** The VC80 and VC90 C
+  runtimes are Fusion assemblies: bound through the executable's `RT_MANIFEST`, resolved by
+  the activation context, and **absent from `System32` and `SysWOW64`**. Measured on a stock
+  Windows 11, `msvcr80.dll`, `msvcp80.dll`, `msvcr90.dll` and `msvcp90.dll` are in neither,
+  while `WinSxS\x86_microsoft.vc80.crt_1fc8b3b9a1e18e3b_...` holds all of them. A search that
+  walks the loader's *directory* order therefore reported every Visual Studio 2005 or 2008
+  build as missing its runtime — as a `blocker`, sorted to the top, one right-click away on
+  any tile — which is most of a library of 2005-2012 Japanese visual novels, every one of
+  them starting perfectly. `dllAvailable` in `diagnose.ts` consults the store and the
+  app-local `Microsoft.VC90.CRT` folder before anything is called missing. Keep it narrow:
+  the MFC and ATL rows exist so a machine that carries those assemblies is read correctly,
+  and on one that does not the finding is right, because then the redistributable really is
+  what is missing. **The architecture is not decoration** — an x86 game is not satisfied by
+  the `amd64_` assembly, and widening the match trades a false positive for a false
+  negative, which is the worse of the two because it is the one that stays quiet.
+- **A repair is offered, never taken.** `repair-rules.ts` decides what may be done about a
+  diagnosis and `repair.ts` does it. There is no timer, no startup pass and no "while we
+  are here": every one happens because somebody read what it would change and pressed a
+  button, which is the only footing this program has for editing a machine it does not own.
+  Four rules:
+  - **Every action records its undo before it acts, not after.** The previous registry
+    value has to be read before it is overwritten and the file list built while the
+    attribute is still set. A journal written afterwards records intent, and the difference
+    shows up exactly when the undo is needed. The journal lives in `db.json` and **not in
+    the sidecar** — a shim and a file attribute describe this machine, the same reason
+    group membership and tile order stay out.
+  - **A `guide` is not a lesser outcome, and there are more of them than actions on
+    purpose.** Anything needing elevation, or that would move somebody's folder, or that
+    belongs to another program, is worth more as an exact command than as a button that
+    half works. `install-fonts` carries `Language.Fonts.Jpan~~~und-JPAN~0.0.1.0` — `Jpan`
+    with a script code, not `Ja-JP`; the wrong one fails with a message about an unknown
+    capability, which reads as a broken machine rather than a typo.
+  - **The locale offer needs an observed silent failure, not just a finding.**
+    `needs-locale` is two signals out of three, and the two that carry it — a JP-era engine,
+    kana in the folder name — are both true of a Chinese fan translation that works
+    perfectly, which is a large part of this library. 诊断 sits on every tile's context menu
+    with no failure required, so gating on the finding alone put the offer under working
+    games and recommended the one change that breaks them. `RepairFacts.trouble` is carried
+    from the launch watcher through `repairOffers`, and only `earlyexit` and `noshow` unlock
+    it: `dialog` means the game started and is saying something, which is worth more than
+    any inference here, and a locale gate leaves no box at all.
+  - **The locale offer is a guide, and nothing in this layer may rewrite `game.exe`.** It
+    was a button first, rewriting `game.exe` to the emulator with the game as an argument,
+    and that is one change with four consequences — because `game.exe` is not "what gets
+    spawned", it is the identity everything else hangs on. `sidecar-sync.ts:111` writes it
+    into the travelling `sakura-launcher.md` as a path relative to the game folder **with
+    no `isUnder` guard** (the cover lines beside it have one), so an emulator outside that
+    folder put `..\..\Program Files\…` — or a bare absolute path from another drive — into
+    a file whose whole point is surviving a move to another machine. Where `exePinned` is
+    not set, which is the common case, the next rescan reverts it silently while the
+    journal still lists the repair and the dialog still offers to undo it. `repairFacts`
+    keys the compatibility layer on `game.exe`, so a `RUNASADMIN` pressed afterwards lands
+    on `LEProc.exe` and every program launched through Locale Emulator starts demanding
+    UAC. And it is not idempotent: twice, and the emulator is aimed at itself. Doing this
+    properly needs a launch chain the launcher honours without touching `game.exe` —
+    scanner, sidecar and fix-pack hashing all move — so until then the offer hands over the
+    exact command and says why it is not pressing it for you.
+    **Both command lines were also wrong, and each is now pinned to upstream source rather
+    than to the switch that reads like what we want.** `LEProc.exe -run <path>` is
+    `RunWithIndependentProfile`: finding no `<path>.le.config` it **launches LEGUI.exe** to
+    have one authored, so the button opened a settings window. The bare path is
+    `RunWithDefaultProfile` — app profile, else first global, else a built-in ja-JP default
+    — which is what is wanted and writes nothing. `LRProc.cpp` opens with
+    `if (__argc < 3)` and a usage box: the form is `LRProc.exe GUID Path Args`, the GUID is
+    positional and first, and there is no default to invent, so `localeCommand` returns
+    **null** for it rather than sending a path alone. `LOCALE_TOOL_ORDER` puts `lr` first,
+    so that was the branch most machines took.
+    The other two rules still hold. A folder of Japanese names on a Chinese machine may
+    want an emulator *or* may be a Chinese fan translation that a Japanese codepage would
+    actively break — the patch wants the machine's own 936 — so the warning is in the
+    offer's own text, not a footnote. And **Locale Emulator is 32-bit only**: pointing it
+    at a 64-bit game is a silent no-op, so `localeToolFits` filters on the architecture the
+    PE already gave us and an unknown architecture fits nothing.
+  - **A populated VirtualStore silences every writability offer, and this one nearly
+    shipped wrong.** A 32-bit game under `Program Files` whose manifest predates Vista gets
+    UAC **file virtualisation**: Windows redirects its writes to
+    `%LOCALAPPDATA%\VirtualStore\Program Files\…` and the game reads them straight back, so
+    it has been saving happily for years. This program is Vista-aware, so virtualisation is
+    *off for us*, the write probe fails, and every conclusion from there is wrong in the
+    same direction. `RUNASADMIN` is the worst of them: **an elevated process is not
+    virtualised either**, so the game would start writing the real `Program Files` path —
+    which an administrator can write — and its entire save history would disappear from the
+    load screen at once, immediately after the user pressed a button labelled "repair".
+    A VirtualStore tree **with files in it** is therefore proof that writing works, and it
+    replaces the offer with a note saying where the saves actually are. Emptiness is the
+    whole question: the directory can exist from one failed write years ago and mean nothing.
+  - **Only `RUNASADMIN` is ever written**, and only against a finding this program can
+    actually establish. Every other layer token is a matter of taste, and a launcher
+    applying `WIN7RTM` on a hunch is making a decision it cannot support. Note the two
+    formatting traps, both of which fail silently: the value begins `~` **and a space**,
+    and tokens are **space-separated** — run two together and the whole value does nothing.
+    Real values in the wild are sometimes written without the leading `~`, so `layerTokens`
+    reads both.
+- **A per-build byte fix writes to memory and never to disk.** `binfix-rules.ts` decides
+  whether a pack may run and `binfix.ts` runs it, through PowerShell hosting a C# stub —
+  same reason as `pointer-map.ts`: no native dependency, and the process doing the writing
+  stays a Microsoft-signed one. It exists because the diagnosis has a floor it cannot reach
+  under: an engine that gates `WinMain` on `PRIMARYLANGID(GetSystemDefaultLangID()) == 0x11`
+  and returns zero otherwise gives no window, no message, no log and exit code 0, and no
+  amount of reasoning about redistributables gets there. Six things hold it up:
+  - **Nothing on disk is written**, which is what makes undo mean "launch it again without
+    this". It is also the only form that works on the packed executables this is for —
+    Themida and its relatives decrypt at runtime, so on disk there is nothing to patch.
+  - **Never an address, always a signature**, and a patch may only overwrite bytes the
+    signature itself matched (`offset + fix.length <= sig.length`, refused at read time).
+    There is no reachable way to write a byte that was not verified first.
+  - **How many places matched is the safety check, not how long the signature is.** A floor
+    of sixteen bytes was tried first and refused the real patches — `3D 40 EF 00 00 73` is
+    six bytes and is an entire fix — which bought no safety and cost the feature. A pack
+    declares `maxHits`; more matches than that and **nothing is written**, reported as
+    `ambiguous` rather than folded into `notFound`, because "the pattern is absent" and
+    "the pattern is not specific enough" call for different repairs.
+  - **The patcher starts the game; it is never handed a running one.** This is the whole
+    ordering and it was arrived at the hard way. Attaching by pid was written first and lost
+    the race every single time: a gate decided inside `WinMain` is over in under a second,
+    and a cold PowerShell that must compile an interop stub takes several, so the honest
+    report was `exited` — true, useless, and exactly the failure being fixed. Compile first,
+    start second. Related, and also measured: the game is started with
+    **`UseShellExecute = $true`**, because with it false the game inherits the script's
+    stdout handle and the launcher's pipe stays open for as long as the *game* runs — the
+    patch lands, the report never arrives, and a run whose seven patches all applied in
+    under three seconds was reported as a ninety-second timeout. For the same reason the
+    launcher listens for `exit`, not `close`.
+  - **A required patch that misses aborts the whole pack.** A half-patched engine is a state
+    nobody has tested, and the only thing worse than a game that will not start is one that
+    starts and then behaves in a way no report explains.
+  - **No debugger, ever.** These executables are packed and the packers answer a debugger by
+    breaking in ways that look like an unrelated crash. Suspend, read, write, resume is the
+    entire repertoire.
+  Packs live in `%APPDATA%\sakura-launcher\fixes\*.json` and are deliberately **not** in this
+  repository: a fix is a fact about one build of one commercial game, which is somebody's
+  library rather than this program's business to carry a list of, and a pack in the data
+  directory can be written, corrected and thrown away without a release.
 - **Diagnosis is read-only** and does not go over the network. It names the missing runtime; it does
   not fetch it.
 - **No hardcoded personal paths anywhere.** Scan roots start empty (`DEFAULT_SETTINGS.roots: []`),

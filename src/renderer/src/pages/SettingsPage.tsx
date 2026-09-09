@@ -85,6 +85,16 @@ export default function SettingsPage({
   const t = useT()
   const [has7z, setHas7z] = useState<boolean | null>(null)
   /**
+   * The fix packs on the shelf, and the files there that are not packs.
+   *
+   * Read once when the page opens. Packs are hand-written and rarely change, and a poll
+   * would be re-reading a directory nobody touched to answer a question nobody asked.
+   */
+  const [fixShelf, setFixShelf] = useState<{
+    packs: { name: string; note?: string; exeSha256: string; patches: number; file: string }[]
+    broken: { file: string; problems: string[] }[]
+  } | null>(null)
+  /**
    * What the last press of the check button found.
    *
    * `null` until it has been pressed, and it renders as nothing rather than as “up to
@@ -116,6 +126,7 @@ export default function SettingsPage({
 
   useEffect(() => {
     window.sakura.has7z().then(setHas7z)
+    void window.sakura.fixPacks().then(setFixShelf)
   }, [])
 
   // Polled, not asked once. Switching the feature on lays a copy down or goes looking for
@@ -1405,6 +1416,55 @@ export default function SettingsPage({
                 : t('settings.7zMissing')}
           </span>
         </div>
+      </div>
+
+      {/* Its own card rather than a row under Launch, because it needs the paragraph: a
+          byte-level patch is the one thing here that reaches inside somebody else's
+          running program, and a user who cannot find out what it does — and that it
+          writes nothing to disk — has been given a reason to distrust the whole thing. */}
+      <div className="card" style={{ maxWidth: 760 }}>
+        <div className="section-title" style={{ marginTop: 0 }}>
+          {t('settings.fixSection')}
+        </div>
+        <p className="settings-hint" style={{ marginTop: 0 }}>
+          {t('settings.fixHint')}
+        </p>
+
+        <div className="settings-row">
+          <label>{t('settings.fixShelf')}</label>
+          <span className="settings-hint" style={{ margin: 0 }}>
+            {fixShelf === null
+              ? t('settings.fixChecking')
+              : fixShelf.packs.length === 0
+                ? t('settings.fixEmpty')
+                : t('settings.fixCount', { n: String(fixShelf.packs.length) })}
+            <button
+              type="button"
+              className="btn ghost small"
+              style={{ marginLeft: 8 }}
+              onClick={() => void window.sakura.openFixFolder()}
+            >
+              {t('settings.fixOpenFolder')}
+            </button>
+          </span>
+        </div>
+
+        {fixShelf?.packs.map((p) => (
+          <div key={p.file} className="settings-hint" style={{ marginTop: 6 }}>
+            <b>{p.name}</b>
+            {' — '}
+            {t('settings.fixPackLine', { n: String(p.patches), sha: p.exeSha256.slice(0, 12) })}
+          </div>
+        ))}
+
+        {/* A pack that cannot be read must say so here. One with a typo in it that simply
+            never appears is the worst feedback available: the fix silently does not run,
+            the game silently does not work, and nothing connects the two. */}
+        {fixShelf?.broken.map((b) => (
+          <div key={b.file} className="settings-hint" style={{ marginTop: 6, color: 'var(--bad)' }}>
+            {t('fix.broken', { file: b.file, problems: b.problems.join('；') })}
+          </div>
+        ))}
       </div>
 
       <div className="card" style={{ maxWidth: 760 }}>

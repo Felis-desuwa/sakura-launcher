@@ -1,8 +1,15 @@
 import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { Database, Game, Group, PendingDownload, Settings } from '../shared/types'
-import { DEFAULT_SETTINGS, GAME_DEFAULTS, MAX_REMOVED } from '../shared/types'
+import type {
+  Database,
+  Game,
+  Group,
+  PendingDownload,
+  RepairRecord,
+  Settings
+} from '../shared/types'
+import { DEFAULT_SETTINGS, GAME_DEFAULTS, MAX_REMOVED, MAX_REPAIRS } from '../shared/types'
 import type { Lang } from '../shared/i18n'
 import { setMainLang } from './i18n'
 
@@ -19,6 +26,7 @@ export function initPaths(): void {
   fs.mkdirSync(iconCacheDir(), { recursive: true })
   fs.mkdirSync(breakdownCacheDir(), { recursive: true })
   fs.mkdirSync(guideCacheDir(), { recursive: true })
+  fs.mkdirSync(fixPackDir(), { recursive: true })
   fs.mkdirSync(coverDir(), { recursive: true })
 }
 
@@ -58,6 +66,19 @@ export function breakdownCacheDir(): string {
  */
 export function guideCacheDir(): string {
   return path.join(dataDir, 'cache', 'guides')
+}
+
+/**
+ * Byte-level fix packs, one JSON file each.
+ *
+ * Deliberately a data directory rather than anything in the program. A pack is a fact
+ * about one build of one game — somebody's own library, not this program's business to
+ * carry a list of — and one that lives here can be written, corrected and thrown away
+ * without a release. Nothing is shipped into it and nothing is fetched into it; the
+ * directory exists so that a file put there is found.
+ */
+export function fixPackDir(): string {
+  return path.join(dataDir, 'fixes')
 }
 
 /** User-supplied cover images are copied here so the library keeps working if the source moves. */
@@ -273,6 +294,35 @@ export function getRemoved(): Game[] {
 export function setRemoved(list: Game[]): void {
   load().removed = list
   save()
+}
+
+/* ---------- repairs, and how to put them back ---------- */
+
+export function getRepairs(): RepairRecord[] {
+  return load().repairs ?? []
+}
+
+/**
+ * Record a repair.
+ *
+ * Written through `saveNow`: this is the only record of what was changed on the machine,
+ * and losing it to a debounce that never fired would leave a shim in the registry with
+ * nothing to say it was ours.
+ */
+export function pushRepair(record: RepairRecord): void {
+  const store = load()
+  const list = store.repairs ?? []
+  list.unshift(record)
+  store.repairs = list.slice(0, MAX_REPAIRS)
+  saveNow()
+}
+
+/** Forget one, after it has been put back. Matched on the moment it was made. */
+export function dropRepair(record: RepairRecord): void {
+  const store = load()
+  const list = store.repairs ?? []
+  store.repairs = list.filter((r) => !(r.at === record.at && r.gameId === record.gameId && r.id === record.id))
+  saveNow()
 }
 
 export function getDownloads(): PendingDownload[] {

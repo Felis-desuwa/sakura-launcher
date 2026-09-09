@@ -419,6 +419,76 @@ about a story, and only a catalogue has them.
 - Only games that have never been looked up are queried, and none are asked about twice. You
   can stop at any point, or re-query the whole library
 
+### What can be done about a failed launch (all of it behind a button)
+
+The diagnosis says what is wrong. This is the layer above it: **a button for what can be
+done, and an exact command for what cannot.**
+
+- **Nothing runs on its own.** No timer, no startup pass, no "while we are here". Each one
+  happens because you read what it would change and pressed it — the only footing a program
+  has for editing a machine it does not own
+- **Each action records its undo before it acts, not after.** The previous registry value is
+  read *before* it is overwritten; the list of files is built while the attribute is still
+  on them. A journal written afterwards records what was intended, and the difference shows
+  up exactly when the undo is needed
+- **Clear the "came from the internet" mark** — executables extracted from a downloaded
+  archive carry a stream recording where they came from, and SmartScreen and some engines
+  refuse them for it. This is what "Unblock" in the file's properties does. This one **says
+  that it cannot be put back exactly**, because restoring a provenance mark would be
+  inventing one
+- **Clear the read-only attribute** — a folder copied whole off a disc has it on nearly
+  everything, and an engine that cannot write its config gives up. Only the attribute
+  changes, never the content, and which files changed is recorded. A handful of read-only
+  files is ordinary and raises nothing
+- **A folder that cannot be written** — a "run as administrator" flag can be set for the
+  program, in the current user's own settings, needing no elevation to set. If that is
+  already set and it still cannot be written, the only clean answer is to move the game off
+  Program Files — and this program **will not move a game folder**, so it says so instead
+- **Start through a locale emulator** (offered only after a game has actually failed to
+  appear, silently) — looks for your own Locale Emulator, Locale Remulator
+  or ntleas, says plainly when there is none, and downloads nothing. **This one hands over
+  the command rather than doing it**: the main program is also how this program knows which
+  game a tile is, so changing it reaches the travelling `sakura-launcher.md`, what a rescan
+  puts back, and which executable a compatibility setting lands on. The command follows each
+  tool's own source rather than the switch that reads most like what we want — Locale
+  Emulator takes a **bare path** (`-run` opens its config window when no profile file
+  exists), and Locale Remulator's first argument must be a profile GUID, which cannot be
+  invented, so it says to author one in its own window instead.
+  **Do not use it on a game with a Chinese fan translation**: that patch wants the machine's
+  own codepage. And Locale Emulator drives 32-bit processes only — pointing it at a 64-bit
+  game is a silent no-op, so a 64-bit game is never offered it
+- **Compatibility options somebody else set** — Windows' Program Compatibility Assistant
+  applies shims by itself after a program has crashed once and does not mention it. Those
+  can be the reason it will not start now; they can be cleared, and put back exactly
+
+### Per-build launch fixes (offline, and nothing on disk is touched)
+
+Some games fail for a reason that is neither a missing runtime nor a permission, but is
+**inside their own executable**. The clearest case: an engine calls `GetSystemDefaultLangID`,
+insists the system language is Japanese, and returns zero from `WinMain` when it is not. The
+double-click then produces **no window, no error box, no log, and exit code 0** — the entire
+body of evidence is that nothing happened. No runtime and no setting reaches that. Only bytes do.
+
+- **The patch is written to the running process's memory, and to nothing on disk.** So undo
+  means launching without it: the original behaviour is still there because it is all that was
+  ever stored. It is also the only form that works, since executables like these ship packed
+  and the code on disk is encrypted — there is nothing there to change
+- **Found by signature, never written by address.** An address is an artefact of one
+  compilation and points into the middle of an unrelated function on the next. On top of that,
+  **a patch may only overwrite bytes its own signature matched** — a pack asking for anything
+  else is refused when it is read, so no path exists that writes an unverified byte
+- **What makes it safe is how many places matched, not how long the signature is.** A pack
+  says how many matches it expects; more than that and **not one byte is written**, reported
+  as "matched too many places" rather than "not found" — "this build has no such code" and
+  "this signature is not specific enough" are different problems with different fixes
+- **No match means nothing happens, and it is said out loud.** A different version, an applied
+  patch, another release — any of them can make a signature miss. The game still starts,
+  unpatched, and you are told so, rather than finding out half an hour later
+- Packs live in `%APPDATA%\sakura-launcher\fixes\`, one JSON each. **None ship with this
+  program**: a fix is a fact about one build of one game, which is your library and not this
+  program's business to keep a list of. The settings page shows which are installed, and which
+  files there could not be read
+
 ### Walkthrough search (online, manual only)
 
 Left-click a tile and the drawer has a *Search for a walkthrough* button at the bottom.
