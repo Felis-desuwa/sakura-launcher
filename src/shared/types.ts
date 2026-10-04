@@ -1440,10 +1440,12 @@ export type UpdateAssetKind = 'portable' | 'setup'
 /**
  * How a release asset is recognised.
  *
- * By suffix, and deliberately not by the name the build wrote: `electron-builder.yml`
- * produces `Sakura Launcher-<version>-portable.exe` with a space, and GitHub stores it
- * back with the space normalised to a dot. Anchoring on the product name matches nothing
- * that is actually on a release, and does it silently. Lower case; the match is too.
+ * By suffix, and deliberately not by the name the build wrote. Releases up to 0.11 were
+ * built as `Sakura Launcher-<version>-portable.exe`, which GitHub stores with the space
+ * normalised to a dot, and later ones as `Sakuramori-<version>-…` after the rename. Copies
+ * already installed have to recognise both, and only a suffix can. Anchoring on the
+ * product name matches nothing that is actually on a release, and does it silently.
+ * Lower case; the match is too.
  */
 export const ASSET_SUFFIX: Record<UpdateAssetKind, string> = {
   portable: '-portable.exe',
@@ -1949,9 +1951,12 @@ export interface Database {
    * A sidecar carrying them would travel to another computer and offer to undo something
    * that was never done there.
    *
-   * Optional so an older database opens without one.
+   * **Required, and that is the fix for a bug.** It was optional at first, so `db.load()`
+   * could rebuild the database without it and the compiler had nothing to say: the journal
+   * survived only until the program closed, and the next save erased it from disk. A file
+   * written before this field existed simply has none, which `load()` reads as empty.
    */
-  repairs?: RepairRecord[]
+  repairs: RepairRecord[]
 }
 
 /** How many removal records to keep. Past this the oldest fall off. */

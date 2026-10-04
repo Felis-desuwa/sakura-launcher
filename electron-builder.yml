@@ -1,5 +1,8 @@
 appId: com.sakura.launcher
-productName: Sakura Launcher
+# The display name only. appId above stays as it was: electron-builder derives the
+# install GUID from it, and that GUID is how a new installer finds the old install,
+# removes it with /KEEP_APP_DATA and renames its shortcuts. See CLAUDE.md.
+productName: Sakuramori
 directories:
   buildResources: build
   output: release
@@ -37,7 +40,8 @@ nsis:
   perMachine: false
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: Sakura Launcher
+  # Both scripts, so the Start menu finds it whichever one somebody types.
+  shortcutName: 樱守 Sakuramori
   # The library lives in %APPDATA%\sakura-launcher — ratings, playtime, tile order, the
   # record of every game that was ever removed. Uninstalling the program must not take
   # that with it: the whole application is built on not deleting things the user did not

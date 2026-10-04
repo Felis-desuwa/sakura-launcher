@@ -4,10 +4,46 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Sakura Launcher — an Electron + React + TypeScript library manager for **offline single-player
+樱守 · Sakuramori (formerly Sakura Launcher) — an Electron + React + TypeScript library
+manager for **offline single-player
 games on Windows**, built for libraries with no scrapeable metadata (folder names unrelated to
 executable names, a dozen exes in one folder, no store IDs). Every judgement it makes is derived
 from the files themselves. Nothing goes over the network.
+
+**The name changed and the identifiers did not, on purpose.** The product is 樱守 ·
+Sakuramori. **Inside the program it is always the romaji, Sakuramori, in both languages** —
+`app.title`, the window and splash titles, the top bar, the onboarding text, the sidecar
+header — at the user's request. The Chinese name lives outside it: both READMEs and the
+Start-menu shortcut, which is `樱守 Sakuramori` so it can be found by typing either. Everything already written somewhere outside this repository keeps the old
+spelling, because each one is a key that something else is holding. Do not "finish the
+rename" on any of these:
+
+- **`package.json` `name` (`sakura-launcher`) is the data directory.** Measured:
+  `%APPDATA%\sakura-launcher\` exists and `%APPDATA%\Sakura Launcher\` does not, so
+  `productName` does not move it and `name` does. Renaming it starts every upgraded copy on
+  an empty library.
+- **`appId` (`com.sakura.launcher`) is the installer's identity.** electron-builder derives
+  the install GUID from it (`UUID.v5(appId, …)` in `NsisTarget.js`), and that GUID is how a
+  new installer finds the old install, removes it with `/KEEP_APP_DATA`, reuses its
+  directory and renames its shortcuts. A new `appId` installs a second copy beside the first.
+- **`sakura-launcher.md`, `sakura-cover.*`, `sakura-backup.md` are in every game folder** of
+  every library. A new name means a scan stops recognising them — titles, tags, covers and
+  playtime all gone at once.
+- **`SAKURA_PREFIX` (`Sakura · `) and the `Sakura:` preset ids** live in the user's Lossless
+  Scaling settings and travel in sidecars; see the invariants below for why each is fixed.
+- **The GitHub repository stays `sakura-launcher`.** `assetUrlOk` in every shipped copy
+  requires `/Felis-desuwa/sakura-launcher/releases/download/`. GitHub redirects a renamed
+  repository's API, but the download URLs it hands back carry the new name, so every copy
+  already installed would refuse every file of every later release — and the fix could only
+  reach them through the update they could no longer take.
+- **The backup folder default prefers an existing `Documents\Sakura Launcher Saves`** over
+  the new `Sakuramori Saves`. That default was never stored, so renaming it outright would
+  quietly split somebody's backups across two folders.
+
+The sidecar's *header text* is the exception and was changed: the parser reads `key = value`
+lines and never that note, and `sidecar-test` keeps a header from an older version to prove
+it. The new name begins with "Sakura" partly so that the frozen names still read as the same
+program's files.
 
 The user-facing feature list is a pair: `README.md` (Chinese, the primary) and `README.en.md`
 (English), section for section. **A feature change edits both** — an English page that quietly
@@ -58,6 +94,7 @@ npm run update-test      # the manual update check: version precedence, channels
 npm run guide-test       # walkthrough search: what normalises away, what counts as a match
 npm run binfix-test      # per-build byte fixes: what a fix pack may ask for, and what it may not
 npm run repair-test      # what may be offered as a repair, and — mostly — what may not
+npm run stats-test       # play statistics: which day a minute belongs to, what the page may claim
 npm run share-test       # share exclusion rules
 npm run share-e2e        # calls a real 7-Zip; asserts the source folder is unchanged afterwards
 ```
@@ -719,13 +756,15 @@ These come from user decisions and are load-bearing. Violating one is a bug even
     because the release that would have contradicted "up to date" is exactly the one that
     got dropped.
   - **An asset is matched by suffix, never by the name the build wrote.**
-    `electron-builder.yml` produces `Sakura Launcher-<version>-portable.exe` with a space,
-    and GitHub stores it back as `Sakura.Launcher-…` — the uploader sends the raw name in a
+    Builds up to 0.11 were `Sakura Launcher-<version>-portable.exe` with a space, and
+    GitHub stores that back as `Sakura.Launcher-…` — the uploader sends the raw name in a
     query string and the space is normalised on the way in. Anchoring on the product name
     matches nothing that is actually on a release, and fails silently: an update is reported
     and no file is offered. Verified against the real v0.10.0 assets. The suffix is still
     structural rather than a blacklist, so `.blockmap`, `latest.yml` and every future sidecar
-    file fail it for free.
+    file fail it for free. It is also what carried every installed copy across the rename:
+    they match `-portable.exe` and `-setup.exe`, never the product name, so builds called
+    `Sakuramori-…` are found by code that predates the name.
   - **The renderer names a `kind`, never an address.** The URL comes out of the verdict the
     main process worked out itself, and the destination folder is chosen there too — the same
     rule that keeps a cover candidate's path out of the renderer. The file is written to
@@ -892,6 +931,33 @@ These come from user decisions and are load-bearing. Violating one is a bug even
   repository: a fix is a fact about one build of one commercial game, which is somebody's
   library rather than this program's business to carry a list of, and a pack in the data
   directory can be written, corrected and thrown away without a release.
+- **One copy of the program at a time** (`requestSingleInstanceLock` in `index.ts`). Each
+  instance reads `db.json` once and then writes the whole file back out of its own copy, so
+  two of them silently undo each other — an evening's playtime recorded by the second window
+  is gone the next time the first saves anything. There was no lock until 0.12, and the
+  second window looked exactly like the first. Two details are load-bearing: the losing
+  process leaves with **`app.exit`, never `app.quit`**, because quitting emits `before-quit`,
+  whose handler settles playtime and saves the database — from a process that never opened
+  it; and the lock belongs to the **user-data directory**, which is what keeps the
+  screenshot harness's `--user-data-dir` runs working beside a real copy that is open.
+  Measured: a second launch on the same data exits in about a second with `db.json`
+  byte-identical, and one on different data starts normally.
+- **Every field of `db.json` is carried across `db.load()` by name**, and `Database` has no
+  optional fields so the compiler enforces it. `repairs` was optional at first, `load()`
+  rebuilt the database without it, and the repair journal lived exactly as long as the
+  process: after a restart the undo list was empty and the next save wiped it from disk,
+  leaving a registry shim or a cleared attribute applied with nothing able to put it back.
+- **Play statistics read only what the tracker already records**, through
+  `shared/play-stats.ts`, which **imports nothing** so the renderer can bundle it and
+  `stats-test` can run it under node. A session belongs to the local days it covered —
+  split at midnight, and days advanced by the calendar rather than by 24 hours, which is
+  wrong twice a year. Sessions are capped at `MAX_SESSIONS` per game, so `completeSince`
+  names the day from which every game's record is whole, and the calendar dims and labels
+  the days before it instead of drawing them as days nothing was played. Heat levels are
+  **fixed bands, not a share of the busiest day**: scaled to the maximum, one long weekend
+  turns every ordinary evening pale and a square's colour changes with what else is shown.
+  A day is chosen by tapping, never by hovering, because a tooltip is invisible under a
+  finger.
 - **Diagnosis is read-only** and does not go over the network. It names the missing runtime; it does
   not fetch it.
 - **No hardcoded personal paths anywhere.** Scan roots start empty (`DEFAULT_SETTINGS.roots: []`),

@@ -46,6 +46,7 @@ import { formatBytes } from './lib/format'
 import { LangProvider } from './lib/i18n'
 import DesktopPage from './pages/DesktopPage'
 import DiskPage from './pages/DiskPage'
+import StatsPage from './pages/StatsPage'
 import MatchDialog from './components/MatchDialog'
 import MultiArchiveCard from './components/MultiArchiveCard'
 import TagBar from './components/TagBar'
@@ -867,6 +868,8 @@ export default function App(): React.JSX.Element {
               toast(tr('toast.tiersCleared'))
             }}
           />
+        ) : page === 'stats' ? (
+          <StatsPage games={games} />
         ) : page === 'disk' ? (
           <DiskPage games={games} onToast={toast} onRescan={() => void runScan(false, false)} />
         ) : (

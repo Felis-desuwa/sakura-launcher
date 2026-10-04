@@ -1,11 +1,12 @@
 <div align="center">
 
-<img src="build/icon.png" width="104" alt="Sakura Launcher">
+<img src="build/icon.png" width="104" alt="樱守 Sakuramori">
 
-# 🌸 Sakura Launcher
+# 🌸 樱守 · Sakuramori
 
 **给「没有元数据」的游戏库用的本地启动器**<br>
-判断全部从文件本身来 · 只在你按下按钮时联网 · Windows
+判断全部从文件本身来 · 只在你按下按钮时联网 · Windows<br>
+<sub>原名 Sakura Launcher —— 只改了名字，数据和设置都照旧</sub>
 
 [![最新版本](https://img.shields.io/github/v/release/Felis-desuwa/sakura-launcher?style=flat-square&labelColor=2b1a20&color=e8709b)](https://github.com/Felis-desuwa/sakura-launcher/releases/latest)
 [![下载量](https://img.shields.io/github/downloads/Felis-desuwa/sakura-launcher/total?style=flat-square&labelColor=2b1a20&color=e8709b&label=%E4%B8%8B%E8%BD%BD)](https://github.com/Felis-desuwa/sakura-launcher/releases)
@@ -372,6 +373,11 @@ Magpie 也提权（更省事的办法是以管理员身份运行本启动器）�
   能扛住自我重启、中途开配置工具、多进程引擎。
   代价是一个盲点：卡在报错框上的游戏也是「目录里有进程」。所以启动后会看一眼屏幕上
   到底是什么 —— 是报错框就不计时，并且告诉你它弹了什么
+- **统计页** — 顶栏「统计」：今天、本周、本月和全部的时长，连续游玩了几天，近一年的
+  每日日历，本月和总时长排行。**点日历上的一格就看那天玩了什么**（不用鼠标悬停，手指也能用）。
+  一场跨过午夜的游戏按实际时间拆到两天里，而不是全记在开始那天。
+  每个游戏只保留最近 50 次游玩记录，所以玩得很多的游戏，日历会在某一天之前不完整 ——
+  那段的格子会变淡，并且写明从哪天起不全，而不是画成一段「什么都没玩」。总时长不受影响，它是单独累加的
 - **四个清单** — 全部 / 想玩 / 在玩 / 玩过。「在玩」和「玩过」可以同时成立
   （通关后开二周目），但「想玩」意味着还没开始，与前两者互斥。
   「想玩」清单只作规划，不能从那里启动
@@ -429,7 +435,7 @@ Magpie 也提权（更省事的办法是以管理员身份运行本启动器）�
   哪个是本体、哪些是补丁，得打开才知道，猜错就是一个装了一半的库。
   这张卡片按按钮才消失，不会自己淡掉
 - **待安装** — 库里的压缩包条目。右键「一键解压」装上，双击会提醒它还没装
-- **存档备份** — 右键「备份存档…」，把存档复制到你指定的目录（默认「文档\Sakura Launcher Saves」），
+- **存档备份** — 右键「备份存档…」，把存档复制到你指定的目录（默认「文档\Sakuramori Saves」；改名前就备份过的，继续用原来的「文档\Sakura Launcher Saves」），
   多选可以一次备份多个。每次备份是一个带时间戳的新文件夹，**从不覆盖上一次**。
   **只复制，游戏文件夹一个字节都不改。**
   存档常常**不在游戏目录里** —— Ren'Py 的权威副本在 `%APPDATA%\RenPy`，Unity 在 `LocalLow`，
@@ -516,7 +522,7 @@ magpie/              Magpie 及其配置（第一次开启超分放大时复制�
 lossless/            用 Lossless Scaling 时，它的配置文件在被本程序改动之前的备份
 ```
 
-存档备份不放在这里，默认写到「文档\Sakura Launcher Saves」，设置里可改 ——
+存档备份不放在这里，默认写到「文档\Sakuramori Saves」（改名前已有的旧文件夹照旧用），设置里可改 ——
 备份跟着这个目录一起被删掉就不叫备份了。
 
 删掉这个目录即回到初始状态。项目目录里不写任何用户数据。

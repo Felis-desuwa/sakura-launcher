@@ -96,7 +96,7 @@ export function splashHtml(preparing: string, version: string): string {
         <circle cx="-8" cy="-3" r="1.5"/>
       </g>
     </svg>
-    <div class="title">Sakura Launcher</div>
+    <div class="title">Sakuramori</div>
     <div class="ver">${version}</div>
     <div class="stage" id="stage">${preparing}</div>
     <div class="bar"><span></span></div>

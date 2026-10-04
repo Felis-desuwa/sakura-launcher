@@ -805,14 +805,14 @@ export interface SidecarData {
 function header(): string[] {
   return mainLang() === 'en'
     ? [
-        '> Maintained by Sakura Launcher: what you set for this game, and how long you played.',
+        '> Maintained by Sakuramori: what you set for this game, and how long you played.',
         '> It changes no file the game itself uses and does not affect starting it — keeping',
         '> these here is exactly how renaming the folder is avoided.',
         '>',
         '> Edit it freely; Refresh in the launcher reads it back. Delete it to reset to defaults.'
       ]
     : [
-        '> 这个文件由 Sakura Launcher 维护，记录你对这个游戏的设置与游玩记录。',
+        '> 这个文件由 Sakuramori 维护，记录你对这个游戏的设置与游玩记录。',
         '> 它不会改动游戏本身的任何文件，也不影响游戏启动 —— 正是为了避免直接',
         '> 重命名文件夹导致游戏找不到资源，才把这些记在这里。',
         '>',
