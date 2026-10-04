@@ -225,12 +225,19 @@ export function compareVersions(a: string, b: string): -1 | 0 | 1 | null {
  * Which of the two files this is, by its name.
  *
  * **Matched by suffix alone, and deliberately not by the name electron-builder wrote.**
- * `electron-builder.yml` produces `Sakura Launcher-<version>-portable.exe`, with a space,
- * and GitHub stores it back as `Sakura.Launcher-<version>-portable.exe` — the uploader
- * sends the raw name in a query string and the space is normalised to a dot on the way in.
- * A check anchored on the product name therefore matches nothing that is actually on a
- * release, and the failure is silent: the version panel reports an update and offers no
- * file. Verified against the real v0.10.0 assets, not inferred.
+ * Until 0.11 the product was Sakura Launcher and the build produced
+ * `Sakura Launcher-<version>-portable.exe`, with a space, which GitHub stores back as
+ * `Sakura.Launcher-<version>-portable.exe` — the uploader sends the raw name in a query
+ * string and the space is normalised to a dot on the way in. A check anchored on the
+ * product name therefore matched nothing that was actually on a release, and the failure
+ * was silent: the version panel reported an update and offered no file. Verified against
+ * the real v0.10.0 assets, not inferred.
+ *
+ * The rename to Sakuramori is where this paid for itself a second time. Every copy already
+ * installed runs this function as it was shipped, and the new builds are called
+ * `Sakuramori-<version>-…` — a matcher that knew the product name would have stranded each
+ * of them on the last old-named version for good, since the fix would have had to arrive
+ * through the very update it could no longer see.
  *
  * The suffix is still structural rather than a blacklist, so every present and future
  * sidecar file fails it for free: `…-setup.exe.blockmap` does not end in `-setup.exe`, and
@@ -524,7 +531,7 @@ export function requestHeaders(running: string): Record<string, string> {
   return {
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
-    'User-Agent': `SakuraLauncher/${running} (local game library manager)`
+    'User-Agent': `Sakuramori/${running} (local game library manager)`
   }
 }
 

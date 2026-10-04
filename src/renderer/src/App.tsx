@@ -341,6 +341,12 @@ export default function App(): React.JSX.Element {
     }
   }, [refresh, toast, tr])
 
+  // The window title follows the interface language. index.html can carry only one, and
+  // somebody running in English should not find the window under its Chinese name.
+  useEffect(() => {
+    document.title = tr('app.title')
+  }, [tr])
+
   // A game that turns up late clears its own alarm — the card is about silence, and
   // there is no longer any.
   useEffect(() => {

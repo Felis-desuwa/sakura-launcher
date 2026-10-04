@@ -187,7 +187,7 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     backgroundColor: '#fff5f9',
-    title: 'Sakura Launcher',
+    title: '樱守',
     // The top bar *is* the title bar. Windows' own strip is a white slab above a
     // cherry-blossom window no matter which theme is on, and there is no way to colour it —
     // so the frame goes and the controls are drawn in `WindowControls.tsx` instead.

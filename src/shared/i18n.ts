@@ -48,7 +48,7 @@ export function translate(dict: Record<string, Entry>, lang: Lang, key: string, 
 
 export const MESSAGES = {
   /* ---- shell ---- */
-  'app.title': { zh: 'Sakura Launcher', en: 'Sakura Launcher' },
+  'app.title': { zh: '樱守', en: 'Sakuramori' },
   'tab.all': { zh: '全部', en: 'All' },
   'tab.wishlist': { zh: '想玩', en: 'Wishlist' },
   'tab.playing': { zh: '在玩', en: 'Playing' },
@@ -595,8 +595,8 @@ export const MESSAGES = {
   /* ---- onboarding ---- */
   'onboard.title': { zh: '还没有游戏库', en: 'No library yet' },
   'onboard.detail': {
-    zh: '选择一个存放游戏的文件夹，Sakura 会自动扫描其中的游戏，提取每个游戏的图标，并统计它们占用的磁盘空间。扫描目录只保存在本机，不会上传到任何地方。',
-    en: 'Point Sakura at a folder of games. It finds the games inside, pulls each one’s icon out of its executable, and works out how much disk they take. The folders you name are stored on this machine and sent nowhere.'
+    zh: '选择一个存放游戏的文件夹，樱守会自动扫描其中的游戏，提取每个游戏的图标，并统计它们占用的磁盘空间。扫描目录只保存在本机，不会上传到任何地方。',
+    en: 'Point Sakuramori at a folder of games. It finds the games inside, pulls each one’s icon out of its executable, and works out how much disk they take. The folders you name are stored on this machine and sent nowhere.'
   },
   'onboard.pick': { zh: '选择文件夹开始扫描', en: 'Choose a folder to scan' },
   'onboard.single': { zh: '或者手动添加单个游戏', en: 'Or add a single game by hand' },
@@ -1222,8 +1222,8 @@ export const MESSAGES = {
   'settings.backupSection': { zh: '存档备份', en: 'Save backups' },
   'settings.backupDir': { zh: '备份到', en: 'Back saves up to' },
   'settings.backupDirHint': {
-    zh: '每次备份存进一个带时间的新文件夹，不覆盖上一次。默认在「文档\\Sakura Launcher Saves」。**别选在游戏库里面** —— 删游戏会连备份一起删掉。',
-    en: 'Each backup goes into its own timestamped folder, never overwriting the last. Defaults to Documents\\Sakura Launcher Saves. **Do not put it inside the library** — deleting a game would take the backup with it.'
+    zh: '每次备份存进一个带时间的新文件夹，不覆盖上一次。默认放在「文档」文件夹里。**别选在游戏库里面** —— 删游戏会连备份一起删掉。',
+    en: 'Each backup goes into its own timestamped folder, never overwriting the last. Defaults to a folder in Documents. **Do not put it inside the library** — deleting a game would take the backup with it.'
   },
   'settings.backupDirDefault': { zh: '（默认位置）', en: ' (the default)' },
   'settings.openBackupDir': { zh: '打开', en: 'Open' },

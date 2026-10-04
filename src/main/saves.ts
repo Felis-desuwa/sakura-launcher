@@ -50,9 +50,25 @@ import { scanPersonalData } from './share-rules'
 /** Names the manifest is written under. Fixed, so a second run overwrites nothing else. */
 const MANIFEST = 'sakura-backup.md'
 
-/** The default place to put backups when the user has not chosen one. */
+/**
+ * The default place to put backups when the user has not chosen one.
+ *
+ * Two names, and the order is the point. The program was called Sakura Launcher until
+ * 0.11, and this default was never stored — it is worked out afresh every time — so
+ * renaming it outright would send the next backup to a new folder and leave every earlier
+ * one in the old, with nothing to say the two belong together. A backup somebody cannot
+ * find is not much of a backup. So an existing old folder goes on being used, and only a
+ * machine that never made one gets the new name.
+ */
 export function defaultBackupDir(): string {
-  return path.join(app.getPath('documents'), 'Sakura Launcher Saves')
+  const documents = app.getPath('documents')
+  const legacy = path.join(documents, 'Sakura Launcher Saves')
+  try {
+    if (fs.existsSync(legacy)) return legacy
+  } catch {
+    /* unreadable is the same as absent here */
+  }
+  return path.join(documents, 'Sakuramori Saves')
 }
 
 export function backupDirFor(): string {

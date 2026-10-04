@@ -1,11 +1,12 @@
 <div align="center">
 
-<img src="build/icon.png" width="104" alt="Sakura Launcher">
+<img src="build/icon.png" width="104" alt="Sakuramori">
 
-# 🌸 Sakura Launcher
+# 🌸 Sakuramori (樱守)
 
 **A launcher for game libraries that have no metadata to scrape**<br>
-Every judgement read off the files · online only when you press a button · Windows
+Every judgement read off the files · online only when you press a button · Windows<br>
+<sub>Formerly Sakura Launcher — only the name changed; your data and settings carry over</sub>
 
 [![Latest release](https://img.shields.io/github/v/release/Felis-desuwa/sakura-launcher?style=flat-square&labelColor=2b1a20&color=e8709b)](https://github.com/Felis-desuwa/sakura-launcher/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Felis-desuwa/sakura-launcher/total?style=flat-square&labelColor=2b1a20&color=e8709b)](https://github.com/Felis-desuwa/sakura-launcher/releases)
@@ -605,7 +606,7 @@ Left-click a tile and the drawer has a *Search for a walkthrough* button at the 
 - **Pending install** — archive entries in the library. Right-click → *Extract* installs it;
   a double-click reminds you it is not installed yet
 - **Save backups** — right-click → *Back up saves…* copies the saves to a folder you choose
-  (Documents\Sakura Launcher Saves by default); select several games to do them in one go. Each
+  (Documents\Sakuramori Saves by default, or the old Documents\Sakura Launcher Saves if you already have one); select several games to do them in one go. Each
   run writes a new timestamped folder and **never overwrites the last one**.
   **It only copies — not one byte of the game folder is written to.**
   Saves are frequently **not in the game folder**: Ren'Py keeps the authoritative copy in
@@ -726,8 +727,8 @@ lossless/            with Lossless Scaling, a copy of its settings file as it wa
                      this program changed anything
 ```
 
-Save backups are deliberately not kept here — they go to Documents\Sakura Launcher Saves by
-default, and Settings can move them. A backup that gets deleted along with this directory is
+Save backups are deliberately not kept here — they go to Documents\Sakuramori Saves by
+default (or the old Sakura Launcher Saves folder if one exists), and Settings can move them. A backup that gets deleted along with this directory is
 not a backup.
 
 Delete that directory to return to a clean state. Nothing is ever written into the project

@@ -82,7 +82,7 @@ function fetchBytes(url: string, accept: string, cap: number): Promise<Buffer | 
     }, TIMEOUT_MS)
 
     req.setHeader('Accept', accept)
-    req.setHeader('User-Agent', 'SakuraLauncher (local game library manager)')
+    req.setHeader('User-Agent', 'Sakuramori (local game library manager)')
 
     req.on('response', (res) => {
       const chunks: Buffer[] = []

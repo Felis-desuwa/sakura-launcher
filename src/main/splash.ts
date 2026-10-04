@@ -64,7 +64,7 @@ export function showSplash(): void {
     // "did that do anything?", even before the window has drawn.
     skipTaskbar: false,
     show: false,
-    title: 'Sakura Launcher',
+    title: '樱守',
     webPreferences: { contextIsolation: true, nodeIntegration: false }
   })
 

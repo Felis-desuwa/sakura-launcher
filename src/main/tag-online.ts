@@ -8,7 +8,7 @@ import type { WorkMatch } from '../shared/types'
 /**
  * The one place this program opens a socket.
  *
- * Everything else about Sakura Launcher is deliberately local, and that is not an
+ * Everything else about Sakuramori is deliberately local, and that is not an
  * accident of implementation — it is the promise on the first page of the README. A
  * story's genre is the single thing a launcher cannot read off a disk, so this exists,
  * and it is switched off until the user switches it on.
@@ -103,7 +103,7 @@ function request<T>({ method, url, body }: FetchOptions): Promise<T | null> {
     req.setHeader('Accept', 'application/json')
     // Identify the program honestly. A catalogue being able to see who is calling is what
     // lets it ask us to stop rather than simply block us.
-    req.setHeader('User-Agent', 'SakuraLauncher/0.7 (local game library manager)')
+    req.setHeader('User-Agent', 'Sakuramori/0.7 (local game library manager)')
     if (body !== undefined) req.setHeader('Content-Type', 'application/json; charset=utf-8')
 
     req.on('response', (res) => {
@@ -170,7 +170,7 @@ export function fetchImage(url: string): Promise<Buffer | null> {
     }, TIMEOUT_MS)
 
     req.setHeader('Accept', 'image/*')
-    req.setHeader('User-Agent', 'SakuraLauncher/0.7 (local game library manager)')
+    req.setHeader('User-Agent', 'Sakuramori/0.7 (local game library manager)')
 
     req.on('response', (res) => {
       const chunks: Buffer[] = []

@@ -106,7 +106,7 @@ export default function TopBar({
   return (
     <header className="topbar" onPointerDown={startDrag}>
       {page === 'desktop' ? (
-        <span className="brand">❀ Sakura</span>
+        <span className="brand">❀ {t('app.title')}</span>
       ) : (
         /* The brand mark alone was not a discoverable way back out of a sub-page. */
         <button type="button" className="btn primary back-btn" onClick={() => onPage('desktop')}>
