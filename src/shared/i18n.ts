@@ -48,7 +48,7 @@ export function translate(dict: Record<string, Entry>, lang: Lang, key: string, 
 
 export const MESSAGES = {
   /* ---- shell ---- */
-  'app.title': { zh: '樱守', en: 'Sakuramori' },
+  'app.title': { zh: 'Sakuramori', en: 'Sakuramori' },
   'tab.all': { zh: '全部', en: 'All' },
   'tab.wishlist': { zh: '想玩', en: 'Wishlist' },
   'tab.playing': { zh: '在玩', en: 'Playing' },
@@ -57,6 +57,44 @@ export const MESSAGES = {
   'page.library': { zh: '书架', en: 'Library' },
   'page.tier': { zh: '评价', en: 'Tiers' },
   'page.disk': { zh: '磁盘', en: 'Disk' },
+  'page.stats': { zh: '统计', en: 'Stats' },
+
+  /* ---- play statistics ---- */
+  'stats.playtime': { zh: '游玩时长', en: 'Time played' },
+  'stats.today': { zh: '今天', en: 'Today' },
+  'stats.week': { zh: '本周', en: 'This week' },
+  'stats.month': { zh: '本月', en: 'This month' },
+  'stats.all': { zh: '全部', en: 'All time' },
+  'stats.streak': { zh: '连续游玩', en: 'Current streak' },
+  'stats.longest': { zh: '最长连续', en: 'Longest streak' },
+  'stats.daysPlayed': { zh: '近一年玩过的天数', en: 'Days played, last twelve months' },
+  'stats.days': { zh: '{n} 天', en: '{n} days' },
+  'stats.oneDay': { zh: '1 天', en: '1 day' },
+  'stats.calendar': { zh: '近一年每天玩了多久', en: 'Day by day, last twelve months' },
+  'stats.less': { zh: '少', en: 'Less' },
+  'stats.more': { zh: '多', en: 'More' },
+  'stats.bands': {
+    zh: '由浅到深：不到 30 分钟、1.5 小时以内、3 小时以内、3 小时以上',
+    en: 'Lighter to darker: under 30 min, up to 1.5 h, up to 3 h, over 3 h'
+  },
+  'stats.partial': {
+    zh: '{date}之前的记录不全，那段的格子颜色偏淡：每个游戏只保留最近 {n} 次游玩，有的游戏已经超过了这个数。',
+    en: 'Before {date} the record is incomplete and those squares are dimmed: each game keeps only its last {n} sessions, and some have gone past that.'
+  },
+  'stats.cellLabel': { zh: '{date}：{time}', en: '{date}: {time}' },
+  'stats.dayNone': { zh: '这天没有玩', en: 'Nothing played that day' },
+  'stats.dayHint': {
+    zh: '点日历上的格子，可以看那一天玩了什么',
+    en: 'Tap a square on the calendar to see what was played that day'
+  },
+  'stats.monthTop': { zh: '本月玩得最多', en: 'Most played this month' },
+  'stats.monthNone': { zh: '这个月还没玩过', en: 'Nothing played yet this month' },
+  'stats.allTop': { zh: '总时长排行', en: 'Most played of all time' },
+  'stats.empty.title': { zh: '还没有游玩记录', en: 'Nothing recorded yet' },
+  'stats.empty.detail': {
+    zh: '从这里启动游戏，玩满一分钟就会记下来。直接双击游戏本体启动的不会被记录。',
+    en: 'Start a game from here and anything over a minute is recorded. A game started by double-clicking its own executable is not.'
+  },
   'page.settings': { zh: '设置', en: 'Settings' },
 
   'top.search': { zh: '搜索游戏…', en: 'Search games…' },
@@ -595,7 +633,7 @@ export const MESSAGES = {
   /* ---- onboarding ---- */
   'onboard.title': { zh: '还没有游戏库', en: 'No library yet' },
   'onboard.detail': {
-    zh: '选择一个存放游戏的文件夹，樱守会自动扫描其中的游戏，提取每个游戏的图标，并统计它们占用的磁盘空间。扫描目录只保存在本机，不会上传到任何地方。',
+    zh: '选择一个存放游戏的文件夹，Sakuramori 会自动扫描其中的游戏，提取每个游戏的图标，并统计它们占用的磁盘空间。扫描目录只保存在本机，不会上传到任何地方。',
     en: 'Point Sakuramori at a folder of games. It finds the games inside, pulls each one’s icon out of its executable, and works out how much disk they take. The folders you name are stored on this machine and sent nowhere.'
   },
   'onboard.pick': { zh: '选择文件夹开始扫描', en: 'Choose a folder to scan' },

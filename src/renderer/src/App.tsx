@@ -46,6 +46,7 @@ import { formatBytes } from './lib/format'
 import { LangProvider } from './lib/i18n'
 import DesktopPage from './pages/DesktopPage'
 import DiskPage from './pages/DiskPage'
+import StatsPage from './pages/StatsPage'
 import MatchDialog from './components/MatchDialog'
 import MultiArchiveCard from './components/MultiArchiveCard'
 import TagBar from './components/TagBar'
@@ -340,12 +341,6 @@ export default function App(): React.JSX.Element {
       offFix()
     }
   }, [refresh, toast, tr])
-
-  // The window title follows the interface language. index.html can carry only one, and
-  // somebody running in English should not find the window under its Chinese name.
-  useEffect(() => {
-    document.title = tr('app.title')
-  }, [tr])
 
   // A game that turns up late clears its own alarm — the card is about silence, and
   // there is no longer any.
@@ -873,6 +868,8 @@ export default function App(): React.JSX.Element {
               toast(tr('toast.tiersCleared'))
             }}
           />
+        ) : page === 'stats' ? (
+          <StatsPage games={games} />
         ) : page === 'disk' ? (
           <DiskPage games={games} onToast={toast} onRescan={() => void runScan(false, false)} />
         ) : (

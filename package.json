@@ -36,7 +36,8 @@
     "guide-test": "node scripts/guide-test.mts",
     "binfix-test": "node scripts/binfix-test.mts",
     "binfix-probe": "node scripts/binfix-probe.mts",
-    "repair-test": "node scripts/repair-test.mts"
+    "repair-test": "node scripts/repair-test.mts",
+    "stats-test": "node scripts/stats-test.mts"
   },
   "dependencies": {
     "resedit": "^3.0.2"

@@ -812,7 +812,7 @@ function header(): string[] {
         '> Edit it freely; Refresh in the launcher reads it back. Delete it to reset to defaults.'
       ]
     : [
-        '> 这个文件由樱守维护，记录你对这个游戏的设置与游玩记录。',
+        '> 这个文件由 Sakuramori 维护，记录你对这个游戏的设置与游玩记录。',
         '> 它不会改动游戏本身的任何文件，也不影响游戏启动 —— 正是为了避免直接',
         '> 重命名文件夹导致游戏找不到资源，才把这些记在这里。',
         '>',

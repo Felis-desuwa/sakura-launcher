@@ -527,6 +527,14 @@ Left-click a tile and the drawer has a *Search for a walkthrough* button at the 
   The price is one blind spot: a game frozen on an error box is also "a process in the folder".
   So after launch it takes a look at what is actually on screen — an error dialog is not billed
   as play, and it tells you what the dialog said
+- **Stats** — *Stats* in the top bar: time played today, this week, this month and in all,
+  the current and longest streaks, a day-by-day calendar of the last twelve months, and the
+  most played this month and of all time. **Tap a square to see what was played that day** —
+  no hovering, so a finger works too. A session that runs past midnight is split across the
+  two days it covered rather than credited whole to the evening it began.
+  Each game keeps only its last 50 sessions, so for a heavily played game the calendar is
+  incomplete before some date — those squares are dimmed and the date is named, rather than
+  drawn as a stretch of nothing. The all-time total is unaffected; it accumulates separately
 - **Four lists** — All / Wishlist / Playing / Played. *Playing* and *Played* can hold at once
   (a second playthrough after finishing), but *Wishlist* means not started and is exclusive
   with both. The wishlist is for planning only; you cannot launch from it

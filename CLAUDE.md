@@ -11,8 +11,10 @@ executable names, a dozen exes in one folder, no store IDs). Every judgement it 
 from the files themselves. Nothing goes over the network.
 
 **The name changed and the identifiers did not, on purpose.** The product is 樱守 ·
-Sakuramori: `productName`, the window and splash titles, `app.title`, the top bar, both
-READMEs. Everything already written somewhere outside this repository keeps the old
+Sakuramori. **Inside the program it is always the romaji, Sakuramori, in both languages** —
+`app.title`, the window and splash titles, the top bar, the onboarding text, the sidecar
+header — at the user's request. The Chinese name lives outside it: both READMEs and the
+Start-menu shortcut, which is `樱守 Sakuramori` so it can be found by typing either. Everything already written somewhere outside this repository keeps the old
 spelling, because each one is a key that something else is holding. Do not "finish the
 rename" on any of these:
 
@@ -92,6 +94,7 @@ npm run update-test      # the manual update check: version precedence, channels
 npm run guide-test       # walkthrough search: what normalises away, what counts as a match
 npm run binfix-test      # per-build byte fixes: what a fix pack may ask for, and what it may not
 npm run repair-test      # what may be offered as a repair, and — mostly — what may not
+npm run stats-test       # play statistics: which day a minute belongs to, what the page may claim
 npm run share-test       # share exclusion rules
 npm run share-e2e        # calls a real 7-Zip; asserts the source folder is unchanged afterwards
 ```
@@ -928,6 +931,33 @@ These come from user decisions and are load-bearing. Violating one is a bug even
   repository: a fix is a fact about one build of one commercial game, which is somebody's
   library rather than this program's business to carry a list of, and a pack in the data
   directory can be written, corrected and thrown away without a release.
+- **One copy of the program at a time** (`requestSingleInstanceLock` in `index.ts`). Each
+  instance reads `db.json` once and then writes the whole file back out of its own copy, so
+  two of them silently undo each other — an evening's playtime recorded by the second window
+  is gone the next time the first saves anything. There was no lock until 0.12, and the
+  second window looked exactly like the first. Two details are load-bearing: the losing
+  process leaves with **`app.exit`, never `app.quit`**, because quitting emits `before-quit`,
+  whose handler settles playtime and saves the database — from a process that never opened
+  it; and the lock belongs to the **user-data directory**, which is what keeps the
+  screenshot harness's `--user-data-dir` runs working beside a real copy that is open.
+  Measured: a second launch on the same data exits in about a second with `db.json`
+  byte-identical, and one on different data starts normally.
+- **Every field of `db.json` is carried across `db.load()` by name**, and `Database` has no
+  optional fields so the compiler enforces it. `repairs` was optional at first, `load()`
+  rebuilt the database without it, and the repair journal lived exactly as long as the
+  process: after a restart the undo list was empty and the next save wiped it from disk,
+  leaving a registry shim or a cleared attribute applied with nothing able to put it back.
+- **Play statistics read only what the tracker already records**, through
+  `shared/play-stats.ts`, which **imports nothing** so the renderer can bundle it and
+  `stats-test` can run it under node. A session belongs to the local days it covered —
+  split at midnight, and days advanced by the calendar rather than by 24 hours, which is
+  wrong twice a year. Sessions are capped at `MAX_SESSIONS` per game, so `completeSince`
+  names the day from which every game's record is whole, and the calendar dims and labels
+  the days before it instead of drawing them as days nothing was played. Heat levels are
+  **fixed bands, not a share of the busiest day**: scaled to the maximum, one long weekend
+  turns every ordinary evening pale and a square's colour changes with what else is shown.
+  A day is chosen by tapping, never by hovering, because a tooltip is invisible under a
+  finger.
 - **Diagnosis is read-only** and does not go over the network. It names the missing runtime; it does
   not fetch it.
 - **No hardcoded personal paths anywhere.** Scan roots start empty (`DEFAULT_SETTINGS.roots: []`),
