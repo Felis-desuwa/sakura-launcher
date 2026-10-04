@@ -93,7 +93,8 @@ function empty(): Database {
     groups: [],
     settings: { ...DEFAULT_SETTINGS },
     downloads: [],
-    removed: []
+    removed: [],
+    repairs: []
   }
 }
 
@@ -157,7 +158,13 @@ export function load(): Database {
       // Merge so settings added in later versions get their defaults.
       settings: { ...DEFAULT_SETTINGS, ...migrateSettings(parsed.settings ?? {}) },
       downloads: Array.isArray(parsed.downloads) ? parsed.downloads : [],
-      removed: Array.isArray(parsed.removed) ? parsed.removed.map(normalizeGame) : []
+      removed: Array.isArray(parsed.removed) ? parsed.removed.map(normalizeGame) : [],
+      // Every field of the file has to be carried across here by name, and this one was
+      // not. The repair journal therefore lived exactly as long as the process: after a
+      // restart the undo list was empty, and the next save wrote the empty list back over
+      // the file — leaving a registry shim or a cleared attribute in place with nothing
+      // anywhere that could put it back. Undo that does not survive a restart is not undo.
+      repairs: Array.isArray(parsed.repairs) ? parsed.repairs : []
     }
   } catch {
     cache = empty()

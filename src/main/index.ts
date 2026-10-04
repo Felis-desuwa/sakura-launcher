@@ -187,7 +187,7 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     backgroundColor: '#fff5f9',
-    title: '樱守',
+    title: 'Sakuramori',
     // The top bar *is* the title bar. Windows' own strip is a white slab above a
     // cherry-blossom window no matter which theme is on, and there is no way to colour it —
     // so the frame goes and the controls are drawn in `WindowControls.tsx` instead.
@@ -1351,7 +1351,38 @@ function registerIpc(): void {
   ipcMain.on('app:ready', markLibraryReady)
 }
 
+/**
+ * One copy of this program at a time.
+ *
+ * Not a nicety. Each instance reads `db.json` into memory once at startup and from then on
+ * writes the whole file back out of its own copy, so two of them silently undo each other:
+ * an evening's playtime recorded by the second window is gone the next time the first one
+ * saves anything at all. Nothing ever said so — the second window looked exactly like the
+ * first, and the double-click that made it is the most ordinary thing somebody does when a
+ * minimised window is not where they expect it.
+ *
+ * The lock belongs to the user-data directory, which is what keeps the screenshot
+ * harness's `--user-data-dir` runs working beside a real copy that is already open.
+ */
+const primary = app.requestSingleInstanceLock()
+if (!primary) {
+  // `exit`, never `quit`. Quitting emits `before-quit`, and that handler settles playtime
+  // and saves the database — from a process that never opened it, over the copy the
+  // running instance is using.
+  app.exit(0)
+}
+
+app.on('second-instance', () => {
+  // A double-click on a copy that is already running means "show me the window".
+  const win = mainWindow
+  if (!win) return
+  if (win.isMinimized()) win.restore()
+  if (!win.isVisible()) win.show()
+  win.focus()
+})
+
 app.whenReady().then(() => {
+  if (!primary) return
   // First, before any of the work below: everything that runs ahead of this is time the
   // user spends wondering whether the double-click registered at all.
   // The splash has words on it, so the language has to be settled before it is drawn.
@@ -1428,6 +1459,9 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  // Belt and braces with the `exit` above: a process that lost the lock opened nothing,
+  // and must not save a database it never loaded over the one that is in use.
+  if (!primary) return
   // Settle open sessions first: it writes playtime that the flush then commits.
   shutdownPlaytime()
   // After that, so it sees "nothing is being played" before the hard stop.

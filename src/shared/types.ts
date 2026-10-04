@@ -1951,9 +1951,12 @@ export interface Database {
    * A sidecar carrying them would travel to another computer and offer to undo something
    * that was never done there.
    *
-   * Optional so an older database opens without one.
+   * **Required, and that is the fix for a bug.** It was optional at first, so `db.load()`
+   * could rebuild the database without it and the compiler had nothing to say: the journal
+   * survived only until the program closed, and the next save erased it from disk. A file
+   * written before this field existed simply has none, which `load()` reads as empty.
    */
-  repairs?: RepairRecord[]
+  repairs: RepairRecord[]
 }
 
 /** How many removal records to keep. Past this the oldest fall off. */
